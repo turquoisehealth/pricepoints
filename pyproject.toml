@@ -22,11 +22,28 @@ classifiers = [
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-  "requests>=2.32.3"
+  "pandas>=2.2.3",
+  "polars>=1.26.0",
+  "trino>=0.333.0"
 ]
 
 [project.urls]
 repository = "https://github.com/turquoisehealth/research"
+
+[project.optional-dependencies]
+dev = [
+  "setuptools>=61.0",
+  "pandas-stubs>=2.2.3.241009",
+  "pre-commit>=4.0.1",
+  "pytest>=7.3.0",
+  "pytest-cov>=4.1.0",
+  "types-PyYAML>=6.0.12.20240917",
+  "types-requests>=2.32.0.20241016"
+]
+
+[[tool.mypy.overrides]]
+module = ["trino.*"]
+follow_untyped_imports = true
 
 [tool.pyright]
 # Let ruff handle these
