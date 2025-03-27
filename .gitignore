@@ -2,6 +2,7 @@ __pycache__/
 .venv/
 build/
 venv/
+.vscode/
 *.bak
 *.csv
 *.dat
@@ -21,6 +22,7 @@ venv/
 *temp*
 plan
 .env
+.env.tpl
 .DS_Store
 .gitignore
 
