@@ -13,6 +13,7 @@ venv/
 *.parquet
 *.pbf
 *.pyc
+*.session.sql
 *.tar
 *.tif
 *.tiff
@@ -24,7 +25,6 @@ plan
 .env
 .env.tpl
 .DS_Store
-.gitignore
 
 # Ignore all R files
 renv/
