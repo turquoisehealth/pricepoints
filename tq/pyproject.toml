@@ -1,7 +1,7 @@
 [project]
 name = "tq"
 version = "0.0.1"
-description = ""
+description = "Helper package for Turquoise Health research"
 keywords = [
   "healthcare",
   "data science",
@@ -23,23 +23,19 @@ classifiers = [
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-  "pandas>=2.2.3",
   "python-dotenv>=1.1.0",
   "setuptools>=61.0",
   "trino>=0.333.0"
 ]
 
 [project.urls]
-repository = "https://github.com/turquoisehealth/research"
+repository = "https://github.com/turquoisehealth/research/tq"
 
 [project.optional-dependencies]
 dev = [
-  "pandas-stubs>=2.2.3.241009",
   "pre-commit>=4.0.1",
   "pytest>=7.3.0",
-  "pytest-cov>=4.1.0",
-  "types-PyYAML>=6.0.12.20240917",
-  "types-requests>=2.32.0.20241016"
+  "pytest-cov>=4.1.0"
 ]
 
 [build-system]
@@ -52,6 +48,7 @@ include-package-data = true
 [tool.setuptools.package-data]
 "*" = ["*.parquet"]
 
+# CI and test tools
 [tool.pytest.ini_options]
 minversion = "7.0.0"
 addopts = "-v --cache-clear -rf --cov=tq --cov-report=term --cov-report=html --maxfail=10"
@@ -86,9 +83,10 @@ passenv =
 uv_resolution = highest
 """
 
-[[tool.mypy.overrides]]
-module = ["trino.*"]
-follow_untyped_imports = true
+# Linting and type checking tools
+[tool.mypy]
+disable_error_code = ["import-not-found", "import-untyped"]
+python_version = "3.12"
 
 [tool.pyright]
 # Let ruff handle these
