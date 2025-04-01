@@ -86,7 +86,7 @@ uv_resolution = highest
 # Linting and type checking tools
 [tool.mypy]
 disable_error_code = ["import-not-found", "import-untyped"]
-python_version = "3.12"
+python_version = "3.12.8"
 
 [tool.pyright]
 # Let ruff handle these
