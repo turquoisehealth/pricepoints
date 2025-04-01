@@ -24,7 +24,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "python-dotenv>=1.1.0",
-  "setuptools>=61.0",
+  "setuptools>=75.0.0",
   "trino>=0.333.0"
 ]
 
@@ -39,7 +39,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=75.0.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
@@ -86,7 +86,7 @@ uv_resolution = highest
 # Linting and type checking tools
 [tool.mypy]
 disable_error_code = ["import-not-found", "import-untyped"]
-python_version = "3.12.8"
+python_version = "3.12"
 
 [tool.pyright]
 # Let ruff handle these
