@@ -24,7 +24,7 @@ def get_trino_connection(
 
     trino_conn = trino.dbapi.connect(
         host=config.get("TQ_TRINO_HOST", "trino"),
-        port=str(config.get("TQ_TRINO_PORT", "443")),
+        port=int(str(config.get("TQ_TRINO_PORT", "443"))),
         catalog=config.get("TQ_TRINO_CATALOG", "hive"),
         http_scheme="https",
         auth=trino.auth.BasicAuthentication(
