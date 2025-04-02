@@ -1,8 +1,3 @@
-__pycache__/
-.venv/
-build/
-venv/
-.vscode/
 *.bak
 *.csv
 *.dat
@@ -20,18 +15,25 @@ venv/
 *.wal
 *.zip
 *.zst
-plan
+.DS_Store
+.coverage
 .env
 .env.tpl
-.DS_Store
+.venv/
+.vscode/
+__pycache__/
+build/
+htmlcov/
+plan
+venv/
 
 # Ignore all R files
-renv/
-rosm.cache/
-.Rproj.user/
 *.R
 *.Rproj
-.Renviron
 .Renvignore
+.Renviron
 .Rprofile
+.Rproj.user/
 renv.lock
+renv/
+rosm.cache/
