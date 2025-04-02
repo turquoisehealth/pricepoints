@@ -1,10 +1,9 @@
-import warnings
 from pathlib import Path
 
 import trino
 from dotenv import dotenv_values
 
-from .utils import _get_project_root
+from .utils import _get_env_file_path
 
 
 def get_trino_connection(
@@ -23,20 +22,7 @@ def get_trino_connection(
         A Trino connection object for use with Pandas, Polars, etc.
     :rtype: trino.dbapi.Connection
     """
-
-    if env_file is None:
-        cwd_env = Path(Path.cwd(), ".env")
-        if cwd_env.exists():
-            env_file = cwd_env
-        else:
-            env_file = Path(_get_project_root(), ".env")
-
-    if not env_file.exists():
-        warnings.warn(
-            f".env file not found at {env_file}. "
-            "Using default connection parameters."
-        )
-
+    env_file = _get_env_file_path(env_file)
     config = dotenv_values(env_file)
 
     trino_conn = trino.dbapi.connect(

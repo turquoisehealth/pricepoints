@@ -61,7 +61,8 @@ console_output_style = "count"
 python_classes = "Test"
 python_files = "test_*.py"
 python_functions = "test_*"
-testpaths = "tq/tests"
+testpaths = "tests"
+pythonpath = ["src"]
 
 [tool.tox]
 legacy_tox_ini = """
