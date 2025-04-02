@@ -1,6 +1,7 @@
 [project]
-name = "proj-template"
+name = "0000-00_proj_template"
 version = "0.0.1"
+description = "Project template"
 classifiers = [
   "Intended Audience :: Developers",
   "Intended Audience :: Science/Research",
@@ -8,9 +9,10 @@ classifiers = [
 ]
 requires-python = "==3.12.8"
 dependencies = [
-  "tq @ file:///${PROJECT_ROOT}/../../tq",
+  "ipykernel>=6.29.0",
   "pandas>=2.2.3",
   "pandas-stubs>=2.2.3",
+  "tq @ file:///${PROJECT_ROOT}/../../tq"
 ]
 
 [project.optional-dependencies]

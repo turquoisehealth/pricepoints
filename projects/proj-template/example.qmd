@@ -1,7 +1,14 @@
+---
+title: "Project template"
+format:
+  html:
+jupyter: python3
+---
+
+```{python}
 import pandas as pd
 import tq
 
-# Example script using the built-in tq module
 trino_conn = tq.get_trino_connection()
 
 query = """
@@ -13,3 +20,4 @@ query = """
 
 df = pd.read_sql_query(query, trino_conn)
 print(df)
+```
