@@ -1,5 +1,5 @@
 [project]
-name = "0000-00_proj_template"
+name = "0000_00_proj_template"
 version = "0.0.1"
 description = "Project template"
 classifiers = [
