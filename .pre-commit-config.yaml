@@ -10,6 +10,9 @@ repos:
     rev: v1.1.398
     hooks:
       - id: pyright
+        args:
+          - --level
+          - error
   - repo: https://github.com/adrienverge/yamllint.git
     rev: v1.36.2
     hooks:
