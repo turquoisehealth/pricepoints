@@ -1,3 +1,4 @@
+import warnings
 from pathlib import Path
 
 import trino
@@ -29,6 +30,12 @@ def get_trino_connection(
             env_file = cwd_env
         else:
             env_file = Path(_get_project_root(), ".env")
+
+    if not env_file.exists():
+        warnings.warn(
+            f".env file not found at {env_file}. "
+            "Using default connection parameters."
+        )
 
     config = dotenv_values(env_file)
 
