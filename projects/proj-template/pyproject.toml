@@ -1,0 +1,26 @@
+[project]
+name = "proj-template"
+version = "0.0.1"
+classifiers = [
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3.12",
+]
+requires-python = "==3.12.8"
+dependencies = [
+  "tq @ file:///${PROJECT_ROOT}/../../tq",
+  "pandas>=2.2.3",
+  "pandas-stubs>=2.2.3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pre-commit>=4.0.1",
+]
+
+# Linting and type checking tool configs inherited from the root pyproject.toml
+[tool.pyright]
+extends = "../../pyproject.toml"
+
+[tool.ruff]
+extend = "../../pyproject.toml"

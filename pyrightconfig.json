@@ -1,0 +1,6 @@
+{
+    // Only used by pre-commit to disable certain checks (type checking only)
+    "reportMissingImports": "none",
+    "reportMissingModuleSource": "none",
+    "reportAttributeAccessIssue": "none"
+}
