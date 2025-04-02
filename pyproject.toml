@@ -5,7 +5,7 @@ version = "0.0.1"
 # Linting and type checking tools. These get inherited by subdirectories
 # using extend directives in their respective pyproject.toml files
 [tool.pyright]
-# Disable import and module checking (we mostly want to check types
+# Disable import and module checking (we mostly want to check types)
 reportMissingImports = "warning"
 reportMissingModuleSource = "warning"
 reportAttributeAccessIssue = "warning"
