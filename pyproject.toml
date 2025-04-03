@@ -1,6 +1,6 @@
 [project]
-name = "research"
-version = "0.0.1"
+name = "pricepoints"
+version = "0.0.0"
 
 # Linting and type checking tools. These get inherited by subdirectories
 # using extend directives in their respective pyproject.toml files

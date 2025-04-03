@@ -1,7 +1,7 @@
 [project]
 name = "tq"
 version = "0.0.1"
-description = "Helper package for Turquoise Health research"
+description = "Helper package for Price Points research"
 keywords = [
   "healthcare",
   "data science",
@@ -30,7 +30,7 @@ dependencies = [
 ]
 
 [project.urls]
-repository = "https://github.com/turquoisehealth/research/tq"
+repository = "https://github.com/turquoisehealth/pricepoints/tq"
 
 [project.optional-dependencies]
 dev = [
