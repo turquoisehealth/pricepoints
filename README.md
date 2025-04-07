@@ -47,11 +47,17 @@ means e.g. research/licensing agreements, the Turquoise Community tier, etc.
 #### I want to do my own research. How do I get access to the underlying data?
 
 If you're a researcher and want to use Turquoise Health data, you currently
-have two options:
+have three options. In order, from least to most access:
 
-- Sign up for (free) Community Tier access to the Turquoise platform
-- Request [researcher access](https://turquoise.health/researchers) to the
-  underlying datasets
+1. [Request access](https://turquoise.health/researchers) to Turquoise research
+  datasets, which contain a limited subset of hospital and payer negotiated
+  rate data.
+2. Request (free) researcher access to the Turquoise backend through the
+  Community Tier. This provides nearly full access to the main Turquoise
+  Health rates tables, but limited customer support.
+3. [Contact](https://turquoise.health/products/clear_rates_data) the Turquoise
+  Health sales team for full access to the underlying data (including
+  historical rates).
 
 #### What's in-scope for Price Points research projects?
 
@@ -77,9 +83,9 @@ See the [Contact](#contact) section below.
 #### Who's behind this project?
 
 I’m [Dan Snow](https://github.com/dfsnow), a data scientist and policy wonk
-currently living in the Bay Area. I'm supported by
-[Turquoise Health](https://turquoise.health/), which provides data and
-(most importantly) domain knowledge.
+currently living in the Bay Area. I'm employed by
+[Turquoise Health](https://turquoise.health/), which provides the data,
+domain knowledge, and funding needed to do this work.
 
 ## Structure
 
