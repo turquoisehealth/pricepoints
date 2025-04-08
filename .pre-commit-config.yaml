@@ -17,3 +17,12 @@ repos:
     rev: v1.36.2
     hooks:
       - id: yamllint
+  - repo: https://github.com/sqlfluff/sqlfluff
+    rev: 2.3.5
+    hooks:
+      - id: sqlfluff-lint
+        args: [--dialect=trino]
+        files: \.sql$
+      - id: sqlfluff-fix
+        args: [--dialect=trino]
+        files: \.sql$

@@ -18,6 +18,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pre-commit>=4.0.1",
+  "ruff>=0.11.0",
+  "sqlfluff>=2.3.5"
 ]
 
 # Linting and type checking tool configs inherited from the root pyproject.toml
