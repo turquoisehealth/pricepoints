@@ -9,10 +9,16 @@ classifiers = [
 ]
 requires-python = "==3.12.8"
 dependencies = [
+  "census>=0.8.24",
+  "geopandas>=1.0.1",
   "ipykernel>=6.29.0",
   "pandas>=2.2.3",
   "pandas-stubs>=2.2.3",
-  "tq @ file:///${PROJECT_ROOT}/../../tq"
+  "polars>=1.27.0",
+  "pyarrow>=19.0.1",
+  "pygris>=0.1.6",
+  "python-dotenv>=1.1.0",
+  "tq @ file:///${PROJECT_ROOT}/../../tq",
 ]
 
 [project.optional-dependencies]
@@ -28,3 +34,6 @@ extends = "../../pyproject.toml"
 
 [tool.ruff]
 extend = "../../pyproject.toml"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
