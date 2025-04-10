@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from tq.utils import _get_env_file_path
+from tq.utils import get_env_file_path
 
 
 class TestGetEnvFilePath:
@@ -10,7 +10,7 @@ class TestGetEnvFilePath:
         env_file = tmp_path / ".env"
         env_file.touch()
 
-        result = _get_env_file_path(env_file)
+        result = get_env_file_path(env_file)
         assert result == env_file
 
     def test_load_env_file_cwd(self, tmp_path, monkeypatch):
@@ -20,14 +20,14 @@ class TestGetEnvFilePath:
         env_file = tmp_path / ".env"
         env_file.touch()
 
-        result = _get_env_file_path()
+        result = get_env_file_path()
         assert result == env_file
 
     def test_load_env_file_not_found(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "cwd", lambda: tmp_path)
-        monkeypatch.setattr("tq.utils._get_project_root", lambda: tmp_path)
+        monkeypatch.setattr("tq.utils.get_project_root", lambda: tmp_path)
 
         with pytest.warns(UserWarning, match=".env file not found"):
-            result = _get_env_file_path()
+            result = get_env_file_path()
 
         assert result == tmp_path / ".env"
