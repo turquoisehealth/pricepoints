@@ -1,3 +1,12 @@
+WITH payer_stats AS (
+    SELECT
+        pr.county,
+        pr.covered_lives,
+        pr.tq_payer_payer_id
+    FROM redshift.reference.policy_reporter_county AS pr
+    WHERE pr.line_of_business = 'Commercial'
+)
+
 SELECT
     hr.billing_code,
     hr.billing_code_type,
@@ -7,6 +16,62 @@ SELECT
     hr.setting,
     hr.description,
     hr.code_description,
+    CASE
+        -- There are loads of obvious case rates labelled as 'per diem', so we
+        -- try to take only "true" per diem rates by finding ones that less than
+        -- 2x the medicare "day rate" for the same DRG
+        WHEN hr.contract_methodology = 'per diem'
+            AND hr.negotiated_dollar < (hr.medicare_rate / los.alos) * 3
+            AND hr.negotiated_dollar IS NOT NULL
+            THEN hr.negotiated_dollar * los.alos
+        -- Some % TBC contracts use decimal values for the percentages, others
+        -- use whole numbers. We want to convert them all to decimal values and
+        -- cap the highest possible percentage
+        WHEN hr.contract_methodology = 'percent of total billed charges'
+            AND hr.negotiated_percentage < 1
+            AND hr.gross_charge IS NOT NULL
+            AND hr.negotiated_percentage IS NOT NULL
+            THEN hr.gross_charge * (hr.negotiated_percentage)
+        WHEN hr.contract_methodology = 'percent of total billed charges'
+            AND hr.negotiated_percentage >= 1
+            AND hr.gross_charge IS NOT NULL
+            AND hr.negotiated_percentage IS NOT NULL
+            THEN hr.gross_charge * (LEAST(hr.negotiated_percentage, 500) / 100)
+        -- Use estimated allowed amount if nothing else is available
+        WHEN hr.contract_methodology = 'other'
+            AND hr.estimated_allowed_amount IS NOT NULL
+            AND hr.estimated_allowed_amount != 999999999.00
+            THEN hr.estimated_allowed_amount
+        ELSE hr.negotiated_dollar
+    END AS final_rate_amount,
+    CASE
+        WHEN hr.contract_methodology = 'per diem'
+            AND hr.negotiated_dollar < (hr.medicare_rate / los.alos) * 3
+            AND hr.negotiated_dollar IS NOT NULL
+            THEN 'per diem'
+        WHEN hr.contract_methodology = 'percent of total billed charges'
+            AND hr.negotiated_percentage < 1
+            AND hr.gross_charge IS NOT NULL
+            AND hr.negotiated_percentage IS NOT NULL
+            THEN 'percent of total billed charges'
+        WHEN hr.contract_methodology = 'percent of total billed charges'
+            AND hr.negotiated_percentage >= 1
+            AND hr.gross_charge IS NOT NULL
+            AND hr.negotiated_percentage IS NOT NULL
+            THEN 'percent of total billed charges'
+        WHEN hr.contract_methodology = 'other'
+            AND hr.estimated_allowed_amount IS NOT NULL
+            AND hr.estimated_allowed_amount > 0
+            AND hr.estimated_allowed_amount <= 10000000
+            THEN 'estimated allowed amount'
+        WHEN hr.contract_methodology = 'case rate'
+            AND hr.negotiated_dollar IS NOT NULL
+            THEN 'case rate'
+        WHEN hr.contract_methodology = 'fee schedule'
+            AND hr.negotiated_dollar IS NOT NULL
+            THEN 'fee schedule'
+        ELSE 'other'
+    END AS final_rate_type,
     hr.negotiated_dollar,
     hr.negotiated_percentage,
     hr.gross_charge,
@@ -38,15 +103,19 @@ SELECT
     hp.zip_code AS provider_zip_code,
     hp.total_beds AS provider_total_beds,
     hp.hq_longitude AS provider_lon,
-    hp.hq_latitude AS provider_lat
+    hp.hq_latitude AS provider_lat,
+    ps.covered_lives AS payer_covered_lives
 FROM glue.hospital_data.hospital_rates AS hr
 LEFT JOIN glue.hospital_data.hospital_provider AS hp
     ON hr.provider_id = hp.id
+LEFT JOIN redshift.reference.ref_cms_msdrg AS los
+    ON hr.billing_code = los.msdrg
+LEFT JOIN payer_stats AS ps
+    ON hr.payer_id = CAST(ps.tq_payer_payer_id AS BIGINT)
+    AND hp.county = ps.county
 WHERE NOT hr.rate_is_outlier
     AND hr.provider_npi IS NOT NULL
-    AND hr.setting = 'Inpatient'
     AND hr.payer_class_name = 'Commercial'
-    AND hr.payer_name != 'Unsorted'
     AND (
         hr.billing_code_type IN ('MS-DRG', 'DRG', 'APR-DRG')
         OR hr.billing_code_type IS NULL
@@ -59,8 +128,25 @@ WHERE NOT hr.rate_is_outlier
         )
         OR hr.hospital_type IS NULL
     )
-    -- All delivery related DRGs
-    AND hr.billing_code IN (
+    -- Keep only the most common contract methods
+    AND (
+        (
+            hr.contract_methodology = 'other'
+            AND hr.negotiated_dollar IS NOT NULL
+        ) OR hr.contract_methodology IN (
+            'per diem',
+            'percent of total billed charges',
+            'case rate',
+            'fee schedule'
+        )
+    )
+    -- Drop crazy high gross charges for % TBC contracts
+    AND NOT (
+        hr.gross_charge > 500000.0
+        AND hr.contract_methodology = 'percent of total billed charges'
+    )
+    -- Get all delivery related DRGs
+    AND SUBSTR(hr.billing_code, -3) IN (
         -- Cesarean Section with Sterilization
         '783',
         '784',
@@ -70,7 +156,7 @@ WHERE NOT hr.rate_is_outlier
         '787',
         '788',
         -- Vaginal Delivery with O.R. Procedure
-        '768',
+        -- '768',
         -- Vaginal Delivery with Sterilization and/or D&C
         '796',
         '797',
