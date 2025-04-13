@@ -1,12 +1,3 @@
-WITH payer_stats AS (
-    SELECT
-        pr.county,
-        pr.covered_lives,
-        pr.tq_payer_payer_id
-    FROM redshift.reference.policy_reporter_county AS pr
-    WHERE pr.line_of_business = 'Commercial'
-)
-
 SELECT
     hr.billing_code,
     hr.billing_code_type,
@@ -100,19 +91,18 @@ SELECT
     hr.health_system_id,
     hr.rate_is_outlier,
     hr.outlier_reason,
-    hp.zip_code AS provider_zip_code,
-    hp.total_beds AS provider_total_beds,
-    hp.hq_longitude AS provider_lon,
-    hp.hq_latitude AS provider_lat,
-    ps.covered_lives AS payer_covered_lives
+    hp.state,
+    hp.county,
+    hp.cbsa_name AS cbsa,
+    hp.zip_code,
+    hp.total_beds,
+    hp.hq_longitude AS lon,
+    hp.hq_latitude AS lat
 FROM glue.hospital_data.hospital_rates AS hr
 LEFT JOIN glue.hospital_data.hospital_provider AS hp
     ON hr.provider_id = hp.id
 LEFT JOIN redshift.reference.ref_cms_msdrg AS los
     ON hr.billing_code = los.msdrg
-LEFT JOIN payer_stats AS ps
-    ON hr.payer_id = CAST(ps.tq_payer_payer_id AS BIGINT)
-    AND hp.county = ps.county
 WHERE NOT hr.rate_is_outlier
     AND hr.provider_npi IS NOT NULL
     AND hr.payer_class_name = 'Commercial'
