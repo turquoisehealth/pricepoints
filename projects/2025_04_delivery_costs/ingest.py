@@ -1,6 +1,7 @@
 # %% Import Python libraries and set up Trino
 import logging
 
+import duckdb
 import polars as pl
 import requests as r
 from census import Census
@@ -11,6 +12,14 @@ from tq.utils import get_env_file_path
 trino_conn = get_trino_connection()
 config = dotenv_values(get_env_file_path())
 logger = logging.getLogger(__name__)
+
+# Get OpenTimes DuckDB database
+duckdb_conn = duckdb.connect(database=":memory:")
+duckdb_conn.execute("""
+  INSTALL httpfs;
+  LOAD httpfs;
+  ATTACH 'https://data.opentimes.org/databases/0.0.1.duckdb' AS opentimes;
+""")
 
 
 # %% Grab hospital delivery rate data from Turquoise Health
@@ -30,17 +39,13 @@ rates_df = (
     rates_df.join(payer_stats_df, on=["payer_id", "geoid_state"], how="left")
     .with_columns(
         pl.col("state_market_share")
-        .cast(pl.Float64)
+        .fill_null(0.005)
         .alias("state_market_share")
     )
     .with_columns(
-        pl.when(
-            (pl.col("state_market_share").is_null())
-            | (pl.col("state_market_share") < 0.001)
-        )
-        .then(pl.col("state_market_share").fill_null(0.005))
-        .otherwise(pl.col("state_market_share"))
-        .alias("state_market_share")
+        pl.col("state_market_share")
+        .replace(0, 0.005)
+        .alias("state_market_share"),
     )
 )
 
@@ -111,6 +116,19 @@ rates_fil_df = (
         .otherwise(pl.col("final_rate_amount_all_rc"))
         .round(2)
         .alias("final_rate_amount")
+    )
+)
+
+# Drop per diem rates that seemingly apply to days after the standard
+# length of stay (e.g. 1-2 days for inpatient stays)
+rates_fil_df = rates_fil_df.filter(
+    ~(
+        (pl.col("final_rate_type") == "per diem")
+        & (
+            pl.col("additional_payer_notes").str.contains(
+                "(?i)Days?\\s+[3-9]\\+.*"
+            )
+        )
     )
 )
 
@@ -225,4 +243,64 @@ rates_clean_df = (
         .otherwise(pl.col("median_hh_income_county"))
         .alias("median_hh_income_county"),
     )
+).select(
+    [
+        "provider_id",
+        "provider_name",
+        "hospital_type",
+        "total_beds",
+        "star_rating",
+        "state_market_share",
+        "provider_npi",
+        "payer_id",
+        "payer_name",
+        "parent_payer_name",
+        "plan_name",
+        "payer_product_network",
+        "health_system_name",
+        "health_system_id",
+        "billing_code_type",
+        "billing_code",
+        "code_description",
+        "revenue_code",
+        "billing_code_modifiers",
+        "medicare_pricing_type",
+        "medicare_rate",
+        "final_rate_type",
+        "final_rate_amount",
+        "additional_generic_notes",
+        "additional_payer_notes",
+        pl.col("^geoid_.*$"),
+        pl.col("^total_pop_.*$"),
+        pl.col("^median_hh_income_.*$"),
+    ]
 )
+
+rates_clean_df.write_parquet("data/rates_clean.parquet")
+
+
+# %% Fetch ZIP code travel time data
+
+# Grab ZIP-to-ZIP driving travel times
+times_zcta_df = pl.DataFrame(
+    duckdb_conn.execute("""
+  SELECT origin_id, destination_id, duration_sec
+  FROM opentimes.public.times
+  WHERE version = '0.0.1'
+      AND mode = 'car'
+      AND year = '2024'
+      AND geography = 'zcta'
+      AND duration_sec <= 14400
+""").fetchdf()
+)
+
+# Get all providers within the catchment of each ZIP
+times_provider_df = times_zcta_df.join(
+    rates_clean_df.select(
+        pl.col("geoid_zcta"),
+        pl.col("provider_id"),
+    ).unique(),
+    left_on="destination_id",
+    right_on="geoid_zcta",
+    how="inner",
+).write_parquet("data/zip_adj_matrix.parquet")
