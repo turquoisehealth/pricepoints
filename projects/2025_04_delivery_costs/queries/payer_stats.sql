@@ -49,7 +49,7 @@ payer_market_share AS (
 )
 
 SELECT
-    state,
+    state AS geoid_state,
     CAST(payer_id AS BIGINT) AS payer_id,
     CAST(state_market_share AS DOUBLE) AS state_market_share
 FROM payer_market_share

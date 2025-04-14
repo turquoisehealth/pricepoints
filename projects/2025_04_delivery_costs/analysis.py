@@ -2,11 +2,12 @@
 # Many hospitals are missing DRGs. Most don't report
 # Ignoring inpatient room and board rates
 # Provider ID vs NPI?
+# No attached standard geo identifiers
+# Database is difficult to navigate
+# Lots of deprecated stuff
 
 # Ingest
-# TODO: Grab census data for state, county, CBSA, ZCTA
-# TODO: Grab CMS quality
-# TODO: Grab maternal mortality
+# TODO: Grab travel times by zip and get adjacency matrix
 
 # Aggs
 # TODO: Collapse plans by payer (no weight)
@@ -19,7 +20,6 @@
 # - Map of ZIPs, with travel times
 # - Map of variance
 # - Cost vs CMS quality
-# - Cost vs maternal mortality
 
 # %%
 import polars as pl

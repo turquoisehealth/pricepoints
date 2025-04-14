@@ -1,3 +1,10 @@
+WITH cbsa_xwalk AS (
+    SELECT DISTINCT
+        cbsa,
+        npi
+    FROM redshift.reference.provider_demographics
+)
+
 SELECT
     hr.billing_code,
     hr.billing_code_type,
@@ -89,20 +96,28 @@ SELECT
     hr.hospital_type,
     hr.health_system_name,
     hr.health_system_id,
-    hr.rate_is_outlier,
-    hr.outlier_reason,
-    hp.state,
-    hp.county,
-    hp.cbsa_name AS cbsa,
-    hp.zip_code,
+    state.state_fips_code AS geoid_state,
+    county.state_fips_code || county.county_fips_code AS geoid_county,
+    cbsa.cbsa AS geoid_cbsa,
+    hp.zip_code AS geoid_zcta,
     hp.total_beds,
     hp.hq_longitude AS lon,
-    hp.hq_latitude AS lat
+    hp.hq_latitude AS lat,
+    cmsq.hospital_overall_rating AS star_rating
 FROM glue.hospital_data.hospital_rates AS hr
 LEFT JOIN glue.hospital_data.hospital_provider AS hp
     ON hr.provider_id = hp.id
+LEFT JOIN glue.hospital_data.price_transparency_state AS state
+    ON hp.state = state.state_postal_abbreviation
+LEFT JOIN glue.hospital_data.price_transparency_county AS county
+    ON state.state_fips_code = county.state_fips_code
+    AND hp.county = county.name
+LEFT JOIN cbsa_xwalk AS cbsa
+    ON hp.npi = cbsa.npi
 LEFT JOIN redshift.reference.ref_cms_msdrg AS los
     ON hr.billing_code = los.msdrg
+LEFT JOIN hive.labps.quality_cms_hospital_ratings_v0 AS cmsq
+    ON hr.provider_id = CAST(cmsq.provider_id AS VARCHAR)
 WHERE NOT hr.rate_is_outlier
     AND hr.provider_npi IS NOT NULL
     AND hr.payer_class_name = 'Commercial'
