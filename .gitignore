@@ -28,12 +28,8 @@ plan
 venv/
 
 # Ignore all R files
-*.R
-*.Rproj
 .Renvignore
-.Renviron
 .Rprofile
 .Rproj.user/
 renv.lock
-renv/
 rosm.cache/
