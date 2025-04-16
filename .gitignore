@@ -29,6 +29,7 @@ venv/
 
 # Ignore all R files
 .Renvignore
+.Rhistory
 .Rprofile
 .Rproj.user/
 renv.lock
