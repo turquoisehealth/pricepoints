@@ -1,0 +1,384 @@
+---
+title: "How much does it cost to give birth in the United States?"
+subtitle: "By Dan Snow"
+format:
+  html:
+    toc: false
+    embed-resources: true
+    grid:
+      body-width: 900px
+execute:
+  echo: false
+jupyter: python3
+---
+
+```{r setup, message=FALSE}
+library(arrow)
+library(dplyr)
+library(forcats)
+library(ggplot2)
+library(ggtext)
+library(Hmisc)
+library(scales)
+library(sf)
+library(stringr)
+library(tigris)
+library(tidyr)
+
+sf_use_s2(FALSE)
+options(tigris_use_cache = TRUE)
+```
+
+```{r load_data, message=FALSE, warning=FALSE}
+# Load data from ingest script
+rates_df <- read_parquet("data/rates_clean.parquet")
+zip_adj_df <- read_parquet("data/zip_adj_matrix.parquet")
+
+# Need to load shapefiles locally because the Census website is borked and
+# returning 403s when using tigris
+load_tiger <- function(path) {
+  tmp_dir <- tempdir()
+  unzip(path, exdir = tmp_dir)
+  shp_file <- file.path(tmp_dir, gsub(".zip", ".shp", basename(path = path)))
+  obj <- sf::st_read(shp_file, quiet = TRUE, stringsAsFactors = FALSE)
+  if (is.na(sf::st_crs(obj)$proj4string)) {
+    sf::st_crs(obj) <- "+proj=longlat +datum=NAD83 +no_defs"
+  }
+  unlink(tmp_dir)
+  return(obj)
+}
+
+states_bbox <- c(xmin = -126, xmax = -65, ymin = 21.7, ymax = 50) %>%
+  st_bbox(crs = 4326) %>%
+  st_as_sfc() %>%
+  st_transform(4269)
+states_gdf <- load_tiger("data/cb_2023_us_state_500k.zip") %>%
+  select(state = STUSPS, geoid = GEOID, geometry) %>%
+  st_intersection(states_bbox) %>%
+  st_transform("ESRI:102003")
+county_gdf <- load_tiger("data/cb_2023_us_county_500k.zip") %>%
+  select(geoid = GEOID, geometry) %>%
+  st_intersection(states_bbox) %>%
+  st_transform("ESRI:102003")
+cbsa_gdf <- load_tiger("data/cb_2023_us_cbsa_500k.zip") %>%
+  select(geoid = GEOID, cbsa_name = NAME, geometry) %>%
+  st_intersection(states_bbox) %>%
+  st_transform("ESRI:102003")
+zcta_gdf <- load_tiger("data/cb_2020_us_zcta520_500k.zip") %>%
+  select(geoid = GEOID20, geometry) %>%
+  st_intersection(states_bbox) %>%
+  st_transform("ESRI:102003")
+
+billing_code_values <- c("807", "788")
+billing_code_labels <- c(
+  "807: Vaginal Delivery",
+  "788: Cesarean Section"
+)
+```
+
+```{r rate_summary, message=FALSE}
+# Merge CBSA names to rates data + add some missing bed counts pulled
+# from CMS / the internet
+rates_fil_df <- rates_df %>%
+  left_join(
+    cbsa_gdf %>% st_drop_geometry(),
+    by = c("geoid_cbsa" = "geoid")
+  ) %>%
+  mutate(
+    total_beds = case_when(
+      provider_id == "1676" ~ 67,
+      provider_id == "453" ~ 25,
+      provider_id == "7916" ~ 15,
+      provider_id == "7999" ~ 72,
+      .default = total_beds
+    )
+  ) %>%
+  filter(
+    # These are actually mislabelled ASCs and cancer centers
+    !provider_id %in% c("2354", "7951", "7985", "7986", "7991")
+  )
+
+# Collapse plans to the provider-payer level, keeping only PPO or HMO if they
+# exist exclusively, otherwise taking the median
+provider_payer_df <- rates_fil_df %>%
+  mutate(
+    is_ppo = str_detect(payer_product_network, "PPO"),
+    is_hmo = str_detect(payer_product_network, "HMO")
+  ) %>%
+  group_by(provider_id, billing_code_type, billing_code, payer_id) %>%
+  summarise(
+    across(
+      c(
+        provider_name, provider_npi,
+        hospital_type, total_beds, star_rating, state_market_share, cbsa_name,
+        starts_with("geoid_"), starts_with("total_"), starts_with("median_hh_")
+      ),
+      first
+    ),
+    final_rate_plan_type = case_when(
+      any(is_ppo) & any(is_hmo) ~ "PPO/HMO",
+      any(is_ppo) ~ "PPO",
+      any(is_hmo) ~ "HMO",
+      .default = "MIX"
+    ),
+    final_rate_med_by_plan = case_when(
+      any(is_ppo) & any(is_hmo) ~ median(
+        final_rate_amount[payer_product_network %in% c("PPO", "HMO")]
+      ),
+      any(is_ppo) ~ median(final_rate_amount[payer_product_network == "PPO"]),
+      any(is_hmo) ~ median(final_rate_amount[payer_product_network == "HMO"]),
+      .default = median(final_rate_amount)
+    )
+  )
+
+# Collapse plan-level rates to the provider level, weighting by number of
+# covered lives / market share per payer (to downweight tiny payer)
+providers_df <- provider_payer_df %>%
+  group_by(provider_id, billing_code_type, billing_code) %>%
+  summarise(
+    across(everything(), first),
+    final_rate_med_final = wtd.quantile(
+      final_rate_med_by_plan, state_market_share, 0.5
+    )
+  )
+```
+
+```{r top_n_pop_plot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 12
+#| fig-height: 10
+
+# Get the median rate for each code for all providers. Used later to draw
+# vlines on plots
+us_code_price_df <- providers_df %>%
+  filter(billing_code %in% billing_code_values) %>%
+  group_by(billing_code) %>%
+  summarise(med_rate = wtd.quantile(final_rate_med_final, total_beds, 0.50)) %>%
+  mutate(
+    billing_code_label = factor(
+      billing_code,
+      levels = billing_code_values,
+      labels = billing_code_labels
+    )
+  )
+
+# Get the top N largest CBSAs by population and the top N most expensive
+top_n_pop_df <- providers_df %>%
+  group_by(cbsa_name) %>%
+  summarise(cbsa_pop = first(total_pop_cbsa)) %>%
+  slice_max(cbsa_pop, n = 15)
+
+# Create fancy ggplot labels and boxplots for the top N CBSAs
+providers_df %>%
+  group_by(cbsa_name) %>%
+  filter(
+    cbsa_name %in% top_n_pop_df$cbsa_name,
+    billing_code %in% billing_code_values
+  ) %>%
+  mutate(cbsa_name = factor(cbsa_name, levels = top_n_pop_df$cbsa_name)) %>%
+  arrange(cbsa_name) %>%
+  mutate(
+    cbsa_label = fct_relabel(cbsa_name, \(x) unique(paste0(
+      "**", x, "**<br>",
+      "Population: ", purrr::map_chr(
+        total_pop_cbsa,
+        scales::label_number(scale_cut = cut_short_scale())
+      ),
+      " | ",
+      "Providers: ", n_distinct(provider_id)
+    ))),
+    billing_code_label = factor(
+      billing_code,
+      levels = billing_code_values,
+      labels = billing_code_labels
+    )
+  ) %>%
+  group_by(cbsa_label, billing_code_label) %>%
+  summarise(
+    xmin = wtd.quantile(final_rate_med_final, total_beds, 0.10),
+    lower = wtd.quantile(final_rate_med_final, total_beds, 0.25),
+    median = wtd.quantile(final_rate_med_final, total_beds, 0.50),
+    upper = wtd.quantile(final_rate_med_final, total_beds, 0.75),
+    xmax = wtd.quantile(final_rate_med_final, total_beds, 0.90)
+  ) %>%
+ggplot() +
+  geom_vline(
+    data = us_code_price_df,
+    aes(xintercept = med_rate, group = billing_code_label),
+    color = "darkred",
+    linetype = "dashed"
+  ) +
+  geom_boxplot(
+    aes(
+      xmin = xmin, xlower = lower, xmiddle = median,
+      xupper = upper, xmax = xmax, y = fct_rev(cbsa_label)
+    ),
+    width = 0.5,
+    outliers = FALSE,
+    stat = "identity"
+  ) +
+  scale_x_continuous(
+    name = "Delivery Price (USD)",
+    labels = scales::label_dollar(scale = 1 / 1000, suffix = "K"),
+    n.breaks = 6,
+    expand = c(0, 0)
+  ) +
+  facet_wrap(vars(billing_code_label)) +
+  labs(
+    title = paste0(
+      "New York City is the most expensive large U.S. ",
+      "market for childbirth"
+    ),
+    subtitle = paste0(
+      "Other areas are closer to the ",
+      "**<span style='color:darkred'>national median price</span>** ",
+      "for each delivery type"
+    ),
+    caption = paste0(
+      "Delivery types include the most common delivery MS-DRG codes without ",
+      "sterilization or complications\n",
+      "Based on ",
+      rates_fil_df %>%
+        nrow() %>%
+        scales::label_comma()(),
+      " negotiated commmercial insurance rates from Turquoise Health, covering ",
+      providers_df %>%
+        filter(billing_code == "807") %>%
+        nrow() %>%
+        scales::label_comma()(),
+      " providers\n",
+      "Boxes show the 10th, 25th, 50th, 75th, and 90th percentiles of ",
+      "provider-level delivery prices, weighted by bed count\n",
+      "Markets are defined using 2023 Core-Based Statistical Areas (CBSAs)"
+    )
+  ) +
+  coord_cartesian(xlim = c(3000, 37000)) +
+  theme(
+    plot.title = element_text(size = 20, face = "bold", margin = margin(b = 6, l = -115)),
+    plot.subtitle = element_markdown(size = 17, margin = margin(b = 24, l = -80)),
+    axis.title.y = element_blank(),
+    axis.text.y = element_markdown(lineheight = 1.35, size = 10),
+    axis.title.x = element_text(margin = margin(t = 10), size = 15, face = "bold"),
+    axis.text.x = element_text(size = 12),
+    axis.ticks.y = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.background = element_rect(fill = "grey90"),
+    strip.background = element_blank(),
+    strip.text = element_text(size = 15, margin = margin(b = 6)),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 20)
+    )
+  )
+```
+
+```{r state_map_plot, message=FALSE, warning=FALSE, results='hide'}
+#| column: page
+#| out-width: 100%
+#| fig-width: 12
+#| fig-height: 8
+
+states_summ_df <- providers_df %>%
+  filter(billing_code == "807") %>%
+  group_by(geoid_state) %>%
+  filter(!all(is.na(final_rate_med_final))) %>%
+  summarise(
+    inc = first(median_hh_income_state),
+    med_rate = wtd.quantile(final_rate_med_final, total_beds, 0.50),
+    pct_inc = med_rate / first(median_hh_income_state),
+    irq = wtd.quantile(final_rate_med_final, total_beds, 0.75) -
+      wtd.quantile(final_rate_med_final, total_beds, 0.25),
+    cnt = n()
+  ) %>%
+  mutate(
+    rate_label = cut(
+      med_rate,
+      breaks = c(0, 7000, 10000, 13000, 16000, Inf),
+      labels = c(
+        "< $7K", "$7-10K", "$10-13K",
+        "$13-16K", "> $16K"
+      )
+    ),
+    rate_label = fct_rev(rate_label),
+    pct_inc_label = cut(
+      pct_inc,
+      breaks = c(0, 0.8, 0.10, 0.12, 0.14, 0.16, Inf),
+      labels = c("< 8%", "8-10%", "10-12%", "12-14%", "14-16%", "> 16%")
+    ),
+    pct_inc_label = fct_rev(pct_inc_label)
+  )
+
+# Create a binned, state-level map of median rates
+states_gdf %>%
+  left_join(states_summ_df, by = c("geoid" = "geoid_state")) %>%
+ggplot() +
+  geom_sf(
+    aes(fill = rate_label, color = rate_label),
+    linewidth = 0.3,
+    show.legend = TRUE
+  ) +
+  scale_fill_brewer(
+    name = "Wtd. Median\nDelivery Price",
+    palette = "BuPu",
+    direction = -1, 
+    na.value = "grey80",
+    drop = FALSE
+  ) +
+  scale_color_manual(
+    name = "Wtd. Median\nDelivery Price",
+    values = c(
+        "< $7K" = "grey65", "$7-10K" = "grey65", "$10-13K" = "grey80",
+        "$13-16K" = "grey85", "> $16K" = "grey85"
+    ),
+    na.value = "grey80",
+    drop = FALSE
+  ) +
+  coord_sf(expand = FALSE) +
+  guides(fill = guide_legend(override.aes = list(color = "grey20"))) +
+  labs(
+    title = paste0(
+      "New York, New Jersey, and Oregon have the ",
+      "highest delivery prices nationwide"
+    ),
+    subtitle = paste0(
+      "States in"
+    ),
+    caption = paste0(
+      "Includes only vaginal deliveries without sterilization ",
+      "or complications (MS-DRG 807)\n",
+      "Based on ",
+      rates_fil_df %>%
+        nrow() %>%
+        scales::label_comma()(),
+      " negotiated commmercial insurance rates from Turquoise Health, covering ",
+      providers_df %>%
+        filter(billing_code == "807") %>%
+        nrow() %>%
+        scales::label_comma()(),
+      " providers\n",
+      "Commercial rates are aggregated to the provider level, then to ",
+      "the state level (weighted by provider bed count)\n"
+    )
+  ) +
+  theme(
+    panel.grid = element_blank(),
+    panel.background = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    legend.key.spacing.y = unit(0.15, "cm"),
+    legend.title = element_text(size = 15, face = "bold", margin = margin(b = 10)),
+    legend.margin = margin(t = 80, l = -50),
+    legend.key.size = unit(0.75, "cm"),
+    legend.text = element_text(size = 12),
+    plot.title = element_text(size = 20, face = "bold", margin = margin(b = -44)),
+    plot.subtitle = element_markdown(size = 17, margin = margin(t = 50, b = 16)),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(r = -60, t = 20)
+    )
+  )
+```
