@@ -1,3 +1,4 @@
+# type: ignore
 # %% Import Python libraries and set up Trino
 import logging
 
@@ -136,12 +137,41 @@ rates_fil_df = rates_fil_df.filter(
 # %% Fetch Census population, housing, and income data
 logger.info("Fetching Census data")
 cen = Census(config.get("CENSUS_API_KEY"), year=2023)
-cen_vars = {"B01001_001E": "total_pop", "B19013_001E": "median_hh_income"}
+cen_vars = {
+    "B01001_001E": "total_pop",
+    "B19013_001E": "median_hh_income",
+    "C27013_003E": "ins_pri_work_full_time",
+    "C27013_006E": "ins_pri_work_part_time",
+    "C27013_009E": "ins_pri_work_none",
+    "C27014_003E": "ins_pub_work_full_time",
+    "C27014_006E": "ins_pub_work_part_time",
+    "C27014_009E": "ins_pub_work_none",
+}
+
+
+# Mini-class for aggregating insurance columns
+@pl.api.register_dataframe_namespace("cen")
+class CenDataFrame:
+    def __init__(self, df: pl.DataFrame) -> None:
+        self._df = df
+
+    def ins_agg(self) -> pl.DataFrame:
+        return self._df.with_columns(
+            (
+                pl.sum_horizontal(pl.col("^ins_pri.*$")) / pl.col("total_pop")
+            ).alias("pct_ins_pri"),
+            (
+                pl.sum_horizontal(pl.col("^ins_pub.*$")) / pl.col("total_pop")
+            ).alias("pct_ins_pub"),
+        ).select(pl.all().exclude("^ins_p.._work.*$"))
+
 
 # State
-cen_df_state = pl.DataFrame(
-    cen.acs5.state(list(cen_vars.keys()), state_fips="*")
-).rename({**cen_vars, "state": "geoid"})
+cen_df_state = (
+    pl.DataFrame(cen.acs5.state(list(cen_vars.keys()), state_fips="*"))
+    .rename({**cen_vars, "state": "geoid"})
+    .cen.ins_agg()  # type: ignore
+)
 
 # County
 cen_df_county = (
@@ -155,6 +185,7 @@ cen_df_county = (
         pl.concat_str(pl.col("state"), pl.col("county")).alias("geoid")
     )
     .select(pl.exclude(["state", "county"]))
+    .cen.ins_agg()
 )
 
 # CBSA (no helper method for this one, so use the Census API directly)
@@ -170,21 +201,27 @@ cen_df_cbsa = (
     .transpose()
     .rename(
         {
-            "column_0": "total_pop",
-            "column_1": "median_hh_income",
-            "column_2": "geoid",
+            **{
+                "column_" + str(i): list(cen_vars.values())[i]
+                for i in range(0, len(cen_vars))
+            },
+            "column_" + str(len(cen_vars)): "geoid",
         }
     )
     .with_columns(
-        pl.col("total_pop").cast(pl.Float64),
-        pl.col("median_hh_income").cast(pl.Float64),
+        pl.all().exclude("geoid").cast(pl.Float64),
     )
+    .cen.ins_agg()
 )
 
 # ZCTA
-cen_df_zcta = pl.DataFrame(
-    cen.acs5.state_zipcode(list(cen_vars.keys()), state_fips="*", zcta="*")
-).rename({**cen_vars, "zip code tabulation area": "geoid"})
+cen_df_zcta = (
+    pl.DataFrame(
+        cen.acs5.state_zipcode(list(cen_vars.keys()), state_fips="*", zcta="*")
+    )
+    .rename({**cen_vars, "zip code tabulation area": "geoid"})
+    .cen.ins_agg()
+)
 
 
 # %% Attach Census data to rates and keep only needed columns
@@ -223,6 +260,8 @@ rates_clean_df = (
         {
             "total_pop": "total_pop_state",
             "median_hh_income": "median_hh_income_state",
+            "pct_ins_pri": "pct_ins_pri_state",
+            "pct_ins_pub": "pct_ins_pub_state",
         }
     )
     .with_columns(
@@ -273,6 +312,7 @@ rates_clean_df = (
         pl.col("^geoid_.*$"),
         pl.col("^total_pop_.*$"),
         pl.col("^median_hh_income_.*$"),
+        pl.col("^pct_ins_.*$"),
     ]
 )
 
