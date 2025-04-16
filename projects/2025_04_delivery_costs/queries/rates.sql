@@ -121,17 +121,17 @@ LEFT JOIN hive.labps.quality_cms_hospital_ratings_v0 AS cmsq
 WHERE NOT hr.rate_is_outlier
     AND hr.provider_npi IS NOT NULL
     AND hr.payer_class_name = 'Commercial'
-    AND (
-        hr.billing_code_type IN ('MS-DRG', 'DRG', 'APR-DRG')
-        OR hr.billing_code_type IS NULL
+    AND COALESCE(
+        hr.billing_code_type IN ('MS-DRG', 'DRG', 'APR-DRG'),
+        TRUE
     )
-    AND (
+    AND COALESCE(
         hr.hospital_type IN (
             'Short Term Acute Care Hospital',
             'Critical Access Hospital',
             'Childrens Hospital'
-        )
-        OR hr.hospital_type IS NULL
+        ),
+        TRUE
     )
     -- Keep only the most common contract methods
     AND (
@@ -149,6 +149,17 @@ WHERE NOT hr.rate_is_outlier
     AND NOT (
         hr.gross_charge > 500000.0
         AND hr.contract_methodology = 'percent of total billed charges'
+    )
+    AND COALESCE(hr.negotiated_percentage <= 110, TRUE)
+    -- Drop rates where the negotiated value exceeds the list price,
+    -- as long as the list price is reasonable
+    AND NOT (
+        COALESCE(hr.negotiated_dollar > hr.gross_charge * 1.1, FALSE)
+        AND COALESCE(
+            hr.gross_charge * 1.1
+            BETWEEN hr.medicare_rate * 0.6 AND hr.medicare_rate * 10,
+            FALSE
+        )
     )
     -- Get all delivery related DRGs
     AND SUBSTR(hr.billing_code, -3) IN (
