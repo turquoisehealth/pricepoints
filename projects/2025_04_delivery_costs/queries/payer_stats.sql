@@ -49,7 +49,9 @@ payer_market_share AS (
 )
 
 SELECT
-    state AS geoid_state,
-    CAST(payer_id AS BIGINT) AS payer_id,
-    CAST(state_market_share AS DOUBLE) AS state_market_share
-FROM payer_market_share
+    state.state_fips_code AS geoid_state,
+    CAST(pms.payer_id AS BIGINT) AS payer_id,
+    CAST(pms.state_market_share AS DOUBLE) AS state_market_share
+FROM payer_market_share AS pms
+LEFT JOIN glue.hospital_data.price_transparency_state AS state
+    ON pms.state = state.state_postal_abbreviation
