@@ -19,28 +19,22 @@ SELECT
         -- try to take only "true" per diem rates by finding ones that less than
         -- 2x the medicare "day rate" for the same DRG
         WHEN hr.contract_methodology = 'per diem'
-            AND hr.negotiated_dollar < (hr.medicare_rate / los.alos)
-            * CAST(3 AS DOUBLE)
+            AND hr.negotiated_dollar < (hr.medicare_rate / los.alos) * 3
             AND hr.negotiated_dollar IS NOT NULL
             THEN hr.negotiated_dollar * los.alos
         -- Some % TBC contracts use decimal values for the percentages, others
         -- use whole numbers. We want to convert them all to decimal values and
         -- cap the highest possible percentage
         WHEN hr.contract_methodology = 'percent of total billed charges'
-            AND hr.negotiated_percentage < CAST(1.0 AS DOUBLE)
+            AND hr.negotiated_percentage < 1
             AND hr.gross_charge IS NOT NULL
             AND hr.negotiated_percentage IS NOT NULL
             THEN hr.gross_charge * (hr.negotiated_percentage)
         WHEN hr.contract_methodology = 'percent of total billed charges'
-            AND hr.negotiated_percentage >= CAST(1.0 AS DOUBLE)
+            AND hr.negotiated_percentage >= 1
             AND hr.gross_charge IS NOT NULL
             AND hr.negotiated_percentage IS NOT NULL
-            THEN ROUND(
-                hr.gross_charge * (
-                    LEAST(hr.negotiated_percentage, CAST(500 AS DOUBLE))
-                    / CAST(100 AS DOUBLE)
-                )
-            )
+            THEN hr.gross_charge * (LEAST(hr.negotiated_percentage, 500) / 100)
         -- Use estimated allowed amount if nothing else is available
         WHEN hr.contract_methodology = 'other'
             AND hr.estimated_allowed_amount IS NOT NULL
@@ -50,8 +44,7 @@ SELECT
     END AS final_rate_amount,
     CASE
         WHEN hr.contract_methodology = 'per diem'
-            AND hr.negotiated_dollar < (hr.medicare_rate / los.alos)
-            * CAST(3 AS DOUBLE)
+            AND hr.negotiated_dollar < (hr.medicare_rate / los.alos) * 3
             AND hr.negotiated_dollar IS NOT NULL
             THEN 'per diem'
         WHEN hr.contract_methodology = 'percent of total billed charges'
@@ -66,8 +59,8 @@ SELECT
             THEN 'percent of total billed charges'
         WHEN hr.contract_methodology = 'other'
             AND hr.estimated_allowed_amount IS NOT NULL
-            AND hr.estimated_allowed_amount > CAST(0 AS DOUBLE)
-            AND hr.estimated_allowed_amount <= CAST(10000000 AS DOUBLE)
+            AND hr.estimated_allowed_amount > 0
+            AND hr.estimated_allowed_amount <= 10000000
             THEN 'estimated allowed amount'
         WHEN hr.contract_methodology = 'case rate'
             AND hr.negotiated_dollar IS NOT NULL
@@ -154,21 +147,17 @@ WHERE NOT hr.rate_is_outlier
     )
     -- Drop crazy high gross charges for % TBC contracts
     AND NOT (
-        hr.gross_charge > CAST(500000.0 AS DOUBLE)
+        hr.gross_charge > 500000.0
         AND hr.contract_methodology = 'percent of total billed charges'
     )
-    AND COALESCE(hr.negotiated_percentage <= CAST(110 AS DOUBLE), TRUE)
+    AND COALESCE(hr.negotiated_percentage <= 110, TRUE)
     -- Drop rates where the negotiated value exceeds the list price,
     -- as long as the list price is reasonable
     AND NOT (
-        COALESCE(
-            hr.negotiated_dollar > hr.gross_charge * CAST(1.1 AS DOUBLE),
-            FALSE
-        )
+        COALESCE(hr.negotiated_dollar > hr.gross_charge * 1.1, FALSE)
         AND COALESCE(
-            hr.gross_charge * CAST(1.1 AS DOUBLE)
-            BETWEEN hr.medicare_rate * CAST(0.6 AS DOUBLE)
-            AND hr.medicare_rate * CAST(10 AS DOUBLE),
+            hr.gross_charge * 1.1
+            BETWEEN hr.medicare_rate * 0.6 AND hr.medicare_rate * 10,
             FALSE
         )
     )
