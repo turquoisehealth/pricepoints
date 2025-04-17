@@ -6,7 +6,19 @@ WITH cbsa_xwalk AS (
 )
 
 SELECT
-    hr.billing_code,
+    CASE
+        -- Convert APR-DRG to MS-DRG using TQ crosswalk
+        -- https://www.notion.so/turquoisehealth/MS-DRG-APR-DRG-PRD-157b775c0e97807eb9dcda1641a40580?pvs=4 # -- noqa: LT05
+        WHEN hr.billing_code_type IN ('MS-DRG', 'DRG')
+            THEN SUBSTR(hr.billing_code, -3)
+        WHEN hr.billing_code_type IN ('APR-DRG')
+            AND hr.billing_code IN ('5601', '560-1')
+            THEN '807'
+        WHEN hr.billing_code_type IN ('APR-DRG')
+            AND hr.billing_code IN ('5604', '560-4')
+            THEN '805'
+        ELSE hr.billing_code
+    END AS billing_code,
     hr.billing_code_type,
     hr.revenue_code,
     hr.billing_code_modifiers,
@@ -163,24 +175,34 @@ WHERE NOT hr.rate_is_outlier
             FALSE
         )
     )
-    -- Get all delivery related DRGs
-    AND SUBSTR(hr.billing_code, -3) IN (
-        -- Cesarean Section with Sterilization
-        '783',
-        '784',
-        '785',
-        -- Cesarean Section without Sterilization
-        '786',
-        '787',
-        '788',
-        -- Vaginal Delivery with O.R. Procedure
-        -- '768',
-        -- Vaginal Delivery with Sterilization and/or D&C
-        '796',
-        '797',
-        '798',
-        -- Vaginal Delivery without Sterilization/D&C
-        '805',
-        '806',
-        '807'
+    -- Get all delivery-related DRGs
+    AND (
+        (
+            COALESCE(
+                hr.billing_code_type IN ('MS-DRG', 'DRG', 'APR-DRG'),
+                TRUE
+            )
+            AND SUBSTR(hr.billing_code, -3) IN (
+                -- Cesarean Section without Sterilization
+                '788', -- No CC/MCC
+                -- Vaginal Delivery without Sterilization/D&C
+                '805', -- MCC
+                '807'  -- No CC/MCC
+            )
+        )
+        OR (
+            COALESCE(
+                hr.billing_code_type IN ('APR-DRG'),
+                TRUE
+            )
+            AND hr.billing_code IN (
+                -- Can't use these since the severity isn't specified
+                -- '560-',
+                -- '560—',
+                '560-1',
+                '560-4',
+                '5601',
+                '5604'
+            )
+        )
     )
