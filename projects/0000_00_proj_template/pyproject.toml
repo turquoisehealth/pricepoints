@@ -12,6 +12,7 @@ dependencies = [
   "ipykernel>=6.29.0",
   "pandas>=2.2.3",
   "pandas-stubs>=2.2.3",
+  "pyarrow>=19.0.1",
   "tq @ file:///${PROJECT_ROOT}/../../tq"
 ]
 
@@ -28,3 +29,6 @@ extends = "../../pyproject.toml"
 
 [tool.ruff]
 extend = "../../pyproject.toml"
+
+[tool.setuptools.packages.find]
+include = ["src*"]

@@ -3,7 +3,7 @@ from pathlib import Path
 import trino
 from dotenv import dotenv_values
 
-from .utils import _get_env_file_path
+from .utils import get_env_file_path
 
 
 def get_trino_connection(
@@ -22,7 +22,7 @@ def get_trino_connection(
         A Trino connection object for use with Pandas, Polars, etc.
     :rtype: trino.dbapi.Connection
     """
-    env_file = _get_env_file_path(env_file)
+    env_file = get_env_file_path(env_file)
     config = dotenv_values(env_file)
 
     trino_conn = trino.dbapi.connect(

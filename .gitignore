@@ -4,6 +4,7 @@
 *.duckdb
 *.egg-info/
 *.html
+*.ipynb
 *.jar
 *.osm
 *.parquet
