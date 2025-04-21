@@ -3,11 +3,13 @@
 *.dat
 *.duckdb
 *.egg-info/
+*.html
 *.jar
 *.osm
 *.parquet
 *.pbf
 *.pyc
+*.quarto*
 *.session.sql
 *.tar
 *.tif
