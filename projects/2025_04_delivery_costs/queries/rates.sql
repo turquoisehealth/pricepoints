@@ -183,11 +183,24 @@ WHERE NOT hr.rate_is_outlier
                 TRUE
             )
             AND SUBSTR(hr.billing_code, -3) IN (
+                -- Cesarean Section with Sterilization
+                '783',
+                '784',
+                '785',
                 -- Cesarean Section without Sterilization
-                '788', -- No CC/MCC
+                '786',
+                '787',
+                '788',
+                -- Vaginal Delivery with O.R. Procedure
+                '768',
+                -- Vaginal Delivery with Sterilization and/or D&C
+                '796',
+                '797',
+                '798',
                 -- Vaginal Delivery without Sterilization/D&C
-                '805', -- MCC
-                '807'  -- No CC/MCC
+                '805',
+                '806',
+                '807'
             )
         )
         OR (
