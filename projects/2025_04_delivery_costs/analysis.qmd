@@ -169,18 +169,18 @@ providers_df <- provider_payer_df %>%
     )),
     billing_code_label = factor(case_when(
       billing_code %in% c("783", "784", "785") ~
-        "Caesarean Section<br>w/ Steril.",
+        "C-Section<br>w/ Steril.",
       billing_code %in% c("786", "787", "788") ~
-        "Caesarean Section<br>no Steril.",
+        "C-Section<br>no Steril.",
       billing_code %in% c("796", "797", "798") ~
-        "Vaginal Delivery<br>w/ Steril./D&C",
+        "Vaginal Deliv.<br>w/ Steril./D&C",
       billing_code %in% c("805", "806", "807") ~
-        "Vaginal Delivery<br>no Steril./D&C"
+        "Vaginal Deliv.<br>no Steril./D&C"
     ), levels = c(
-      "Vaginal Delivery<br>no Steril./D&C",
-      "Vaginal Delivery<br>w/ Steril./D&C",
-      "Caesarean Section<br>no Steril.",
-      "Caesarean Section<br>w/ Steril."
+      "Vaginal Deliv.<br>no Steril./D&C",
+      "Vaginal Deliv.<br>w/ Steril./D&C",
+      "C-Section<br>no Steril.",
+      "C-Section<br>w/ Steril."
     ))
   ) %>%
   ungroup()
@@ -192,112 +192,72 @@ providers_df <- provider_payer_df %>%
 #| fig-width: 9
 #| fig-height: 7
 
-# Get the distribution of prices for each DRG, weighted by provider bed count
-# and organized by delivery type and severity
-price_by_drg_df <- providers_df %>%
-  group_by(billing_code, billing_code_label, severity_label) %>%
-  summarise(
-    xmin = wtd.quantile(agg_rate_provider_med, total_beds, 0.10),
-    lower = wtd.quantile(agg_rate_provider_med, total_beds, 0.25),
-    median = wtd.quantile(agg_rate_provider_med, total_beds, 0.50),
-    upper = wtd.quantile(agg_rate_provider_med, total_beds, 0.75),
-    xmax = wtd.quantile(agg_rate_provider_med, total_beds, 0.90),
-    drg_label = unique(paste0(
-      billing_code_label, " ", severity_label
-    )),
-    count_label = paste0(
-      "(", scales::label_comma()(sum(agg_rate_provider_count)), ")"
-    )
-  )
 
 # Fancy pants boxplot of cost and count by delivery DRG
-price_by_drg_df %>%
+providers_df %>%
   ggplot() +
-  geom_boxplot(
+  ggridges::geom_density_ridges(
     aes(
-      xmin = xmin, xlower = lower, xmiddle = median,
-      xupper = upper, xmax = xmax, y = NA
+      x = agg_rate_provider_med,
+      y = severity_label,
+      group = severity_label,
+      weight = total_beds,
+      fill = severity_label
     ),
-    width = 0.5,
-    outliers = FALSE,
-    stat = "identity",
-    position = position_nudge(y = -0.1)
+    position = position_nudge(y = -0.1),
+    quantile_lines = TRUE,
+    quantiles = 2,
+    quantile_fun = Hmisc::wtd.quantile
   ) +
-  annotate(
-    "rect",
-    xmin = -Inf, xmax = 35000, ymin = 1.45, ymax = 1.8,
-    fill = "grey80"
-  ) +
-  annotate(
-    "rect",
-    xmin = -Inf, xmax = 11500, ymin = 1.45, ymax = 1.8,
-    fill = "grey75"
-  ) +
-  annotate(
-    "rect",
-    xmin = 25500, xmax = Inf, ymin = -Inf, ymax = 0.625,
-    fill = "#e0ebea"
-  ) +
-  geom_richtext(
-    aes(label = paste0("**", billing_code, "**")),
-    x = 5500,
-    y = 1.6,
-    label.colour = "transparent",
-    fill = "transparent",
-    text.color = "grey30",
-    size = 5,
-    hjust = 0
-  ) +
-  geom_richtext(
-    aes(label = drg_label),
-    x = 12000,
-    y = 1.62,
-    label.colour = "transparent",
-    fill = "transparent",
-    text.color = "grey10",
-    size = 3,
-    hjust = 0
-  ) +
-  geom_richtext(
-    aes(label = count_label),
-    x = 32200,
-    y = 0.5,
-    label.colour = "transparent",
-    fill = "transparent",
-    text.color = "grey40",
-    size = 2.8,
-    hjust = 1
+  geom_text(
+    data = data.frame(
+      x = c(17800, 22800, 26000),
+      y = c(3.7, 2.5, 1.5),
+      billing_code_label = providers_df %>%
+        filter(billing_code_label == "Vaginal Deliv.<br>no Steril./D&C") %>%
+        pull(billing_code_label) %>%
+        rep(3),
+      label = c("No CC/MCC", "w/ CC", "w/ MCC")
+    ),
+    aes(x = x, y = y, label = label, color = label),
+    size = 4.5,
+    fontface = "bold",
+    hjust = 0,
+    check_overlap = TRUE
   ) +
   scale_x_continuous(
     labels = scales::label_dollar(scale = 1 / 1000, suffix = "K"),
-    n.breaks = 5,
+    n.breaks = 7,
     expand = c(0.1, 0)
   ) +
-  coord_cartesian(xlim = c(7500, 30000)) +
-  facet_grid(
-    cols = vars(billing_code_label),
-    rows = vars(severity_label),
-    switch = "both"
+  scale_y_discrete(position = "left", expand = expansion(add = c(0, 2))) +
+  scale_color_manual(
+    values = c(
+      "No CC/MCC" = "#3a9276",
+      "w/ CC" = "#627cb7",
+      "w/ MCC" = "#d95926"
+    )
   ) +
+  scale_fill_manual(
+    values = c(
+      "no CC/MCC" = "#66c2a5",
+      "w/ CC" = "#8da0cb",
+      "w/ MCC" = "#fc8d62"
+    )
+  ) +
+  coord_cartesian(xlim = c(5000, 30000)) +
+  facet_grid(rows = vars(billing_code_label), switch = "y") +
   labs(
     title = "The cost of giving birth increases with complexity",
-    x = paste0(
-      "<span style='color:grey60;'>Delivery price</span>",
-      "<br><span style='font-size:20px'>",
-      "More complex delivery types ",
-      "<span style='font-size:36px'>→</span></span>"
-    ),
-    y = paste0(
-      "**More complications and comorbidities ",
-      "<span style='font-size:36px'>→</span>**"
-    ),
+    x = "Delivery price",
+    y = "**<span style='font-size:42px'>←</span> More complex care**",
     subtitle = paste0(
       "Complicated care (a C-section with comorbidities) costs ",
       "roughly double an uncomplicated vaginal birth"
     ),
     caption = paste0(
-      "Counts (in parenthesis) are the number of unique *rates* per ",
-      "combined delivery type and level of complication<br>",
+      "Distributions show provider-level delivery prices, weighted by",
+      " bed count. Lines represent the median of each distribution<br>",
       "Based on ",
       providers_df %>%
         pull(agg_rate_provider_count) %>%
@@ -309,40 +269,48 @@ price_by_drg_df %>%
         distinct(provider_id) %>%
         nrow() %>%
         scales::label_comma()(),
-      " providers<br>",
-      "Boxes show the 10th, 25th, 50th, 75th, and 90th percentiles of ",
-      "provider-level delivery prices, weighted by bed count"
+      " providers"
     )
   ) +
   theme(
-    plot.title = element_text(size = 18, face = "bold", margin = margin(b = 6)),
-    plot.subtitle = element_markdown(size = 13, margin = margin(b = 16)),
-    plot.margin = margin(r = 10, t = 6, b = 6, l = 6),
-    axis.text.y = element_markdown(
-      size = 14,
-      margin = margin(r = 4),
-      lineheight = 1.25,
-      color = "grey40"
-    ),
-    axis.title.x = element_markdown(
-      margin = margin(t = 4),
-      size = 14,
+    plot.title = element_text(
+      size = 18,
       face = "bold",
-      color = "grey40",
+      margin = margin(b = 6, l = -100),
+    ),
+    plot.subtitle = element_markdown(
+      size = 13,
+      margin = margin(b = 16, l = -100)
+    ),
+    plot.margin = margin(r = 10, t = 6, b = 6, l = 6),
+    legend.position = "none",
+    axis.title.x = element_markdown(
+      margin = margin(t = 6),
+      size = 15,
+      face = "bold",
+      color = "grey30",
       linewidth = 1.2
     ),
-    axis.text.x = element_text(size = 12, angle = -45, hjust = 0),
+    axis.text.x = element_text(size = 12),
     axis.ticks.y = element_blank(),
     axis.title.y = element_markdown(
-      size = 15,
-      color = "grey40",
+      size = 20,
+      color = "grey50",
       margin = margin(r = 2)
     ),
+    axis.text.y.left = element_blank(),
     panel.grid.major.y = element_blank(),
     panel.grid.minor.y = element_blank(),
     panel.background = element_rect(fill = "#e0ebea"),
     strip.background = element_blank(),
-    strip.text = element_blank(),
+    strip.text.y.left = element_markdown(
+      angle = 0,
+      size = 13,
+      hjust = 1,
+      lineheight = 1.2,
+      color = "grey30",
+      margin = margin(r = 6)
+    ),
     plot.caption = element_markdown(
       size = 10,
       lineheight = 1.1,
@@ -479,7 +447,7 @@ ggplot() +
 billing_code_values <- c("807", "788", "805")
 billing_code_labels <- c(
   "**807:** Vaginal Delivery (no MCC)",
-  "**788:** Cesarean Section",
+  "**788:** Cesarean Section (no MCC)",
   "**805:** Vaginal Delivery (w/ MCC)"
 )
 
@@ -533,11 +501,7 @@ providers_df %>%
     )
   ) %>%
   group_by(cbsa_label, billing_code_label) %>%
-  mutate(
-    lower = wtd.quantile(agg_rate_provider_med, total_beds, 0.25),
-    median = wtd.quantile(agg_rate_provider_med, total_beds, 0.50),
-    upper = wtd.quantile(agg_rate_provider_med, total_beds, 0.75)
-  ) %>%
+  mutate(median = wtd.quantile(agg_rate_provider_med, total_beds, 0.50)) %>%
   group_by(billing_code_label) %>%
   mutate(cbsa_label = fct_reorder(cbsa_label, median, .desc = FALSE)) %>%
   ggplot() +
@@ -564,6 +528,9 @@ providers_df %>%
     labels = scales::label_dollar(scale = 1 / 1000, suffix = "K"),
     n.breaks = 6,
     expand = c(0, 0)
+  ) +
+  scale_y_discrete(
+    expand = expansion(add = c(0, 0.8))
   ) +
   facet_wrap(vars(billing_code_label)) +
   labs(
@@ -634,7 +601,7 @@ providers_df %>%
     panel.background = element_rect(fill = "#e0ebea"),
     strip.background = element_rect(fill = "grey80"),
     strip.text = element_markdown(
-      size = 13.5,
+      size = 13,
       margin = margin(b = 4, t = 6),
       color = "grey20"
     ),
