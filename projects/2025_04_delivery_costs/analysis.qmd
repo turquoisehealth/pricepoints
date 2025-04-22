@@ -18,6 +18,7 @@ library(dplyr)
 library(forcats)
 library(ggplot2)
 library(ggrepel)
+library(ggridges)
 library(ggtext)
 library(Hmisc)
 library(scales)
@@ -155,20 +156,9 @@ providers_df <- provider_payer_df %>%
       agg_rate_provider_payer_med, state_market_share, 0.5
     ),
     agg_rate_provider_count = sum(agg_rate_provider_payer_count)
-  )
-```
-
-```{r price_by_drg, message=FALSE}
-#| column: page
-#| out-width: 100%
-#| fig-width: 9
-#| fig-height: 7
-
-# Get the distribution of prices for each DRG, weighted by provider bed count
-# and organized by delivery type and severity
-price_by_drg_df <- providers_df %>%
+  ) %>%
   mutate(
-    severity = factor(case_when(
+    severity_label = factor(case_when(
       billing_code %in% c("783", "786", "796", "805") ~ "w/ MCC",
       billing_code %in% c("784", "787", "797", "806") ~ "w/ CC",
       billing_code %in% c("785", "788", "798", "807") ~ "no CC/MCC"
@@ -193,30 +183,27 @@ price_by_drg_df <- providers_df %>%
       "Caesarean Section<br>w/ Steril."
     ))
   ) %>%
-  group_by(billing_code, billing_code_label, severity) %>%
+  ungroup()
+```
+
+```{r price_by_drg, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 7
+
+# Get the distribution of prices for each DRG, weighted by provider bed count
+# and organized by delivery type and severity
+price_by_drg_df <- providers_df %>%
+  group_by(billing_code, billing_code_label, severity_label) %>%
   summarise(
     xmin = wtd.quantile(agg_rate_provider_med, total_beds, 0.10),
     lower = wtd.quantile(agg_rate_provider_med, total_beds, 0.25),
     median = wtd.quantile(agg_rate_provider_med, total_beds, 0.50),
     upper = wtd.quantile(agg_rate_provider_med, total_beds, 0.75),
     xmax = wtd.quantile(agg_rate_provider_med, total_beds, 0.90),
-    xmin_pct = wtd.quantile(
-      agg_rate_provider_med / medicare_rate, total_beds, 0.10
-    ),
-    lower_pct = wtd.quantile(
-      agg_rate_provider_med / medicare_rate, total_beds, 0.25
-    ),
-    median_pct = wtd.quantile(
-      agg_rate_provider_med / medicare_rate, total_beds, 0.50
-    ),
-    upper_pct = wtd.quantile(
-      agg_rate_provider_med / medicare_rate, total_beds, 0.75
-    ),
-    xmax_pct = wtd.quantile(
-      agg_rate_provider_med / medicare_rate, total_beds, 0.90
-    ),
     drg_label = unique(paste0(
-      billing_code_label, " ", severity
+      billing_code_label, " ", severity_label
     )),
     count_label = paste0(
       "(", scales::label_comma()(sum(agg_rate_provider_count)), ")"
@@ -289,7 +276,7 @@ price_by_drg_df %>%
   coord_cartesian(xlim = c(7500, 30000)) +
   facet_grid(
     cols = vars(billing_code_label),
-    rows = vars(severity),
+    rows = vars(severity_label),
     switch = "both"
   ) +
   labs(
@@ -371,92 +358,56 @@ price_by_drg_df %>%
 #| fig-height: 7
 
 # Same plot as before, but this time for rate as a percent of Medicare
-price_by_drg_df %>%
-  ggplot() +
-  geom_boxplot(
+providers_df %>%
+  mutate(provider_med = median(agg_rate_provider_med), .by = provider_id) %>%
+  mutate(price_ntile = ntile(provider_med, n = 10), .by = NULL) %>%
+  group_by(billing_code_label, severity_label, price_ntile) %>%
+  summarise(
+    med = wtd.quantile(agg_rate_provider_med / medicare_rate, total_beds, 0.50)
+  ) %>%
+ggplot() +
+  geom_point(
     aes(
-      xmin = xmin_pct, xlower = lower_pct, xmiddle = median_pct,
-      xupper = upper_pct, xmax = xmax_pct, y = NA
-    ),
-    width = 0.5,
-    outliers = FALSE,
-    stat = "identity",
-    position = position_nudge(y = -0.1)
+      x = price_ntile,
+      y = med,
+      color = severity_label,
+      group = severity_label
+    )
   ) +
-  annotate(
-    "rect",
-    xmin = -Inf, xmax = Inf, ymin = 1.45, ymax = 1.8,
-    fill = "grey80"
-  ) +
-  annotate(
-    "rect",
-    xmin = -Inf, xmax = 1.1, ymin = 1.45, ymax = 1.8,
-    fill = "grey75"
-  ) +
-  annotate(
-    "rect",
-    xmin = 2.3, xmax = Inf, ymin = -Inf, ymax = 0.625,
-    fill = "#e0ebea"
-  ) +
-  geom_richtext(
-    aes(label = paste0("**", billing_code, "**")),
-    x = 0.58,
-    y = 1.6,
-    label.colour = "transparent",
-    fill = "transparent",
-    text.color = "grey30",
-    size = 5,
-    hjust = 0
-  ) +
-  geom_richtext(
-    aes(label = drg_label),
-    x = 1.1325,
-    y = 1.62,
-    label.colour = "transparent",
-    fill = "transparent",
-    text.color = "grey10",
-    size = 3,
-    hjust = 0
-  ) +
-  geom_richtext(
-    aes(label = count_label),
-    x = 2.825,
-    y = 0.5,
-    label.colour = "transparent",
-    fill = "transparent",
-    text.color = "grey40",
-    size = 2.8,
-    hjust = 1
+  geom_line(
+    aes(
+      x = price_ntile,
+      y = med,
+      color = severity_label,
+      group = severity_label
+    )
   ) +
   scale_x_continuous(
+    n.breaks = 10
+  ) +
+  scale_y_continuous(
     labels = scales::label_percent(),
-    n.breaks = 5,
+    n.breaks = 6,
     expand = c(0.1, 0)
   ) +
-  coord_cartesian(xlim = c(0.75, 2.65)) +
-  facet_grid(
-    cols = vars(billing_code_label),
-    rows = vars(severity),
-    switch = "both"
-  ) +
+  guides(color = guide_legend(title = "Severity", reverse = TRUE)) +
+  facet_wrap(vars(billing_code_label), nrow = 2, dir = "v") +
   labs(
     title = paste0(
-      "Hospitals charge more for deliveries with fewer complications,\n",
-      "relative to Medicare benchmark pricing"
+      "Delivery prices increase non-linearly"
     ),
-    x = paste0(
-      "<span style='color:grey60;'>Percent of Medicare price</span>",
-      "<br><span style='font-size:20px'>",
-      "More complex delivery types ",
-      "<span style='font-size:36px'>→</span></span>"
+    subtitle = paste0(
+      "The most expensive providers charge signficantly more than their",
+      " slightly less expensive peers"
     ),
-    y = paste0(
-      "**More complications and comorbidities ",
-      "<span style='font-size:36px'>→</span>**"
-    ),
+    x = "Provider decile",
+    y = "Median percent of Medicare rate",
     caption = paste0(
-      "Counts (in parenthesis) are the number of unique *rates* per ",
-      "combined delivery type and level of complication<br>",
+      "Deciles are based on the median price of each provider's combined ",
+      "MS-DRG rates for delivery<br>",
+      "Lines show provider-level delivery prices divided by their respective ",
+      "Medicare rates and weighted by",
+      " bed count<br>",
       "Based on ",
       providers_df %>%
         pull(agg_rate_provider_count) %>%
@@ -468,47 +419,52 @@ price_by_drg_df %>%
         distinct(provider_id) %>%
         nrow() %>%
         scales::label_comma()(),
-      " providers<br>",
-      "Boxes show the 10th, 25th, 50th, 75th, and 90th percentiles of ",
-      "provider-level delivery prices compared to Medicare prices"
+      " providers<br>"
     )
   ) +
   theme(
-    plot.title = element_text(
-      size = 18,
-      face = "bold",
-      margin = margin(b = 16)
+    plot.title = element_text(size = 18, face = "bold", margin = margin(b = 6)),
+    plot.subtitle = element_markdown(
+      size = 13,
+      margin = margin(b = 16),
+      lineheight = 1.1
     ),
-    plot.margin = margin(r = 6, t = 6, b = 6, l = 6),
+    plot.margin = margin(r = 6, t = 6, l = 6),
+    legend.title = element_text(
+      size = 14,
+      face = "bold",
+      color = "grey30",
+      margin = margin(b = 8)
+    ),
+    legend.text = element_text(size = 12, color = "grey40"),
+    legend.key.spacing.y = unit(0.25, "cm"),
+    axis.text.x = element_text(size = 12, color = "grey40"),
     axis.text.y = element_markdown(
       size = 14,
       margin = margin(r = 4),
       lineheight = 1.25,
       color = "grey40"
     ),
-    axis.title.x = element_markdown(
+    axis.title.x = element_text(
       margin = margin(t = 4),
       size = 14,
       face = "bold",
-      color = "grey40",
-      linewidth = 1.2
+      color = "grey40"
     ),
-    axis.text.x = element_text(size = 12, angle = -45, hjust = 0),
-    axis.ticks.y = element_blank(),
     axis.title.y = element_markdown(
       size = 15,
       color = "grey40",
-      margin = margin(r = 2)
+      margin = margin(r = 4),
+      face = "bold"
     ),
-    panel.grid.major.y = element_blank(),
+    panel.grid.minor.x = element_blank(),
     panel.grid.minor.y = element_blank(),
     panel.background = element_rect(fill = "#e0ebea"),
-    strip.background = element_blank(),
-    strip.text = element_blank(),
+    strip.text = element_markdown(size = 12),
     plot.caption = element_markdown(
       size = 10,
       lineheight = 1.1,
-      margin = margin(t = 16, r = 2)
+      margin = margin(t = 16, r = -104)
     )
   )
 ```
@@ -547,7 +503,7 @@ us_code_price_df <- providers_df %>%
 top_n_pop_df <- providers_df %>%
   group_by(cbsa_name) %>%
   summarise(cbsa_pop = first(total_pop_cbsa)) %>%
-  slice_max(cbsa_pop, n = 25)
+  slice_max(cbsa_pop, n = 30)
 
 # Create fancy ggplot labels and boxplots for the top N CBSAs
 providers_df %>%
@@ -577,30 +533,31 @@ providers_df %>%
     )
   ) %>%
   group_by(cbsa_label, billing_code_label) %>%
-  summarise(
-    xmin = wtd.quantile(agg_rate_provider_med, total_beds, 0.10),
+  mutate(
     lower = wtd.quantile(agg_rate_provider_med, total_beds, 0.25),
     median = wtd.quantile(agg_rate_provider_med, total_beds, 0.50),
-    upper = wtd.quantile(agg_rate_provider_med, total_beds, 0.75),
-    xmax = wtd.quantile(agg_rate_provider_med, total_beds, 0.90)
+    upper = wtd.quantile(agg_rate_provider_med, total_beds, 0.75)
   ) %>%
   group_by(billing_code_label) %>%
-  mutate(cbsa_label = fct_reorder(cbsa_label, median, .desc = TRUE)) %>%
+  mutate(cbsa_label = fct_reorder(cbsa_label, median, .desc = FALSE)) %>%
   ggplot() +
+  ggridges::geom_density_ridges(
+    aes(
+      x = agg_rate_provider_med,
+      y = cbsa_label,
+      group = cbsa_label,
+      weight = total_beds
+    ),
+    position = position_nudge(y = -0.1),
+    quantile_lines = TRUE,
+    quantiles = 2,
+    quantile_fun = Hmisc::wtd.quantile
+  ) +
   geom_vline(
     data = us_code_price_df,
     aes(xintercept = med_rate, group = billing_code_label),
     color = "darkred",
     linetype = "dashed"
-  ) +
-  geom_boxplot(
-    aes(
-      xmin = xmin, xlower = lower, xmiddle = median,
-      xupper = upper, xmax = xmax, y = fct_rev(cbsa_label)
-    ),
-    width = 0.5,
-    outliers = FALSE,
-    stat = "identity"
   ) +
   scale_x_continuous(
     name = "Delivery Price",
@@ -641,9 +598,9 @@ providers_df %>%
         nrow() %>%
         scales::label_comma()(),
       " providers\n",
-      "Boxes show the 10th, 25th, 50th, 75th, and 90th percentiles of ",
-      "provider-level delivery prices, weighted by bed count\n",
-      "Markets are defined as the top 25 most populous 2023 Census ",
+      "Distributions show provider-level delivery prices, weighted by",
+      " bed count. Line represents the median\n",
+      "Markets are defined as the top 30 most populous 2023 Census ",
       "Core-Based Statistical Areas (CBSAs)"
     )
   ) +
@@ -1210,3 +1167,35 @@ buca_df %>%
     )
   )
 ```
+
+```{r}
+providers_df %>%
+  filter(billing_code == "807") %>%
+  group_by(region, star_rating) %>%
+  filter(!all(is.na(agg_rate_provider_med))) %>%
+  summarise(
+    xmin = wtd.quantile(agg_rate_provider_payer_med, total_beds, 0.10),
+    lower = wtd.quantile(agg_rate_provider_payer_med, total_beds, 0.25),
+    median = wtd.quantile(agg_rate_provider_payer_med, total_beds, 0.50),
+    upper = wtd.quantile(agg_rate_provider_payer_med, total_beds, 0.75),
+    xmax = wtd.quantile(agg_rate_provider_payer_med, total_beds, 0.90),
+    cnt = n()
+  ) %>%
+ggplot() +
+  geom_boxplot(
+    aes(
+      xmin = xmin, xlower = lower, xmiddle = median,
+      xupper = upper, xmax = xmax, y = NA
+    ),
+    width = 0.5,
+    outliers = FALSE,
+    stat = "identity"
+  ) +
+  facet_grid(
+    cols = vars(region),
+    rows = vars(star_rating),
+    scales = "free_x"
+  )
+  
+```
+
