@@ -192,8 +192,6 @@ providers_df <- provider_payer_df %>%
 #| fig-width: 9
 #| fig-height: 7
 
-
-# Fancy pants boxplot of cost and count by delivery DRG
 providers_df %>%
   ggplot() +
   ggridges::geom_density_ridges(
@@ -252,7 +250,8 @@ providers_df %>%
     x = "Delivery price",
     y = "**<span style='font-size:42px'>←</span> More complex care**",
     subtitle = paste0(
-      "Complicated care (a C-section with comorbidities) costs ",
+      "Complicated care (a C-section **<span style='color:#627cb7'>",
+      "with comorbidities</span>**) costs ",
       "roughly double an uncomplicated vaginal birth"
     ),
     caption = paste0(
@@ -524,7 +523,7 @@ providers_df %>%
     linetype = "dashed"
   ) +
   scale_x_continuous(
-    name = "Delivery Price",
+    name = "Delivery price",
     labels = scales::label_dollar(scale = 1 / 1000, suffix = "K"),
     n.breaks = 6,
     expand = c(0, 0)
@@ -616,8 +615,18 @@ providers_df %>%
 ```{r state_map_plot, message=FALSE, warning=FALSE, results='hide'}
 #| column: page
 #| out-width: 100%
-#| fig-width: 12
+#| fig-width: 9
 #| fig-height: 9
+
+states_hexbin_gdf <- st_read(
+  paste0(
+    "https://raw.githubusercontent.com/donmeltz/US-States---Hexbins",
+    "/master/GeoJSON/US_HexBinStates_EPSG4326.geojson"
+  ),
+  crs = 4326
+) %>%
+  select(geoid_state = FIPS, state_name = Code) %>%
+  filter(geoid_state != "11")
 
 states_summ_df <- providers_df %>%
   filter(billing_code == "807") %>%
@@ -629,8 +638,14 @@ states_summ_df <- providers_df %>%
     med_rate = wtd.quantile(agg_rate_provider_med, total_beds, 0.50),
     med_income = first(median_hh_income_state),
     cnt = n()
-  ) %>%
+  )
+
+# Create a binned, state-level map of median rates
+states_hexbin_gdf %>%
+  left_join(states_summ_df, by = "geoid_state") %>%
   mutate(
+    lon = st_coordinates(st_centroid(geometry))[, 1],
+    lat = st_coordinates(st_centroid(geometry))[, 2],
     rate_label = cut(
       med_rate,
       breaks = c(0, 7000, 10000, 13000, 16000, Inf),
@@ -639,12 +654,13 @@ states_summ_df <- providers_df %>%
         "$13-16K", "> $16K"
       )
     ),
-    rate_label = fct_rev(rate_label)
-  )
-
-# Create a binned, state-level map of median rates
-states_gdf %>%
-  left_join(states_summ_df, by = c("geoid" = "geoid_state")) %>%
+    rate_label = fct_rev(rate_label),
+    rate_label_long = scales::label_dollar(
+      accuracy = 0.1,
+      scale = 1 / 1000,
+      suffix = "K"
+    )(med_rate)
+  ) %>%
   ggplot() +
   geom_sf(
     aes(fill = rate_label),
@@ -652,28 +668,60 @@ states_gdf %>%
     linewidth = 0.7,
     show.legend = TRUE
   ) +
+  geom_sf(
+    data = . %>% filter(geoid_state == "24"),
+    fill = "grey80",
+    color = "grey30",
+    linewidth = 0.7
+  ) +
+  geom_text(
+    aes(x = lon, y = lat, label = state_name, color = rate_label),
+    nudge_y = 0.75,
+    size = 4.5,
+    fontface = "bold"
+  ) +
+  geom_text(
+    aes(x = lon, y = lat, label = rate_label_long, color = rate_label),
+    nudge_y = -0.5
+  ) +
+  geom_text(
+    data = . %>% filter(geoid_state == "24"),
+    aes(x = lon, y = lat),
+    label = "None",
+    color = "grey30",
+    nudge_y = -0.5
+  ) +
+  scale_color_manual(
+    values = c(
+      "< $7K" = "grey40", "$7-10K" = "grey30", "$10-13K" = "grey10",
+      "$13-16K" = "grey95", "> $16K" = "grey95"
+    ),
+    na.value = "grey30"
+  ) +
   scale_fill_brewer(
-    name = "Wtd. Median\nDelivery Price",
+    name = "Wtd. median\ndelivery price",
     palette = "BuPu",
     direction = -1,
-    na.value = "grey80",
+    na.translate = FALSE,
     drop = FALSE
   ) +
   coord_sf(expand = FALSE) +
-  guides(fill = guide_legend(override.aes = list(color = "grey20"))) +
+  guides(
+    fill = guide_legend(override.aes = list(color = "grey20")),
+    color = FALSE
+  ) +
   labs(
     title = paste0(
-      "Alaska, New York, and New Jersey have the ",
+      "Alaska, New York, and New Jersey have the\n",
       "highest delivery prices nationwide"
     ),
     subtitle = paste0(
-      "Compared to the national median of ",
+      "Compared to the national median price of ",
       us_code_price_df %>%
         filter(billing_code == "807") %>%
         pull(med_rate) %>%
         round() %>%
-        scales::label_currency()(),
-      " for uncomplicated vaginal delivery"
+        scales::label_currency()()
     ),
     caption = paste0(
       "Includes only vaginal deliveries without sterilization ",
@@ -696,33 +744,39 @@ states_gdf %>%
       "the state level (weighted by provider bed count)\n"
     )
   ) +
+  theme_void() +
   theme(
+    plot.margin = margin(t = -40),
     panel.grid = element_blank(),
     panel.background = element_blank(),
     axis.text = element_blank(),
     axis.ticks = element_blank(),
+    legend.justification = c(0, 0.22),
     legend.key.spacing.y = unit(0.15, "cm"),
     legend.title = element_text(
       size = 15,
       face = "bold",
       margin = margin(b = 10)
     ),
-    legend.margin = margin(t = 80, l = -50),
+    legend.margin = margin(t = 80, l = -110),
     legend.key.size = unit(0.75, "cm"),
     legend.text = element_text(size = 12),
     plot.title = element_text(
-      size = 20,
+      size = 22,
       face = "bold",
-      margin = margin(b = -44)
+      vjust = -16,
+      hjust = 0,
+      margin = margin(l = 80)
     ),
-    plot.subtitle = element_markdown(
+    plot.subtitle = element_text(
       size = 17,
-      margin = margin(t = 50, b = 24)
+      vjust = -22,
+      margin = margin(t = 8, l = 80)
     ),
     plot.caption = element_text(
       size = 11,
       lineheight = 1.1,
-      margin = margin(r = -60, t = 10)
+      margin = margin(r = 0, t = 14)
     )
   )
 ```
@@ -733,11 +787,11 @@ states_gdf %>%
 #| fig-width: 12
 #| fig-height: 9
 
-# Logistic distance decay. A hospital that's an hour away has half the weight
+# Logistic distance decay. A hospital that's 45 minutes away has half the weight
 # of one that's 0 minutes away. Probably should be a different (closer) midpoint
 # for cities, but it's hard to get ZIP code urban/rural classifications
 decay_function <- function(x) {
-  midpoint <- 3600
+  midpoint <- 2700
   steepness <- 0.001
   weight <- 1 / (1 + exp(steepness * (x - midpoint)))
   weight
@@ -758,11 +812,11 @@ zcta_summ_df <- merge(
   all.x = TRUE,
   allow.cartesian = TRUE
 )[!is.na(agg_rate_provider_med), ][, .(
-  med_rate = wtd.quantile(
-    agg_rate_provider_med,
-    total_beds * decay_function(duration_sec),
-    0.50,
-    na.rm = TRUE
+  med_rate = sum(
+    agg_rate_provider_med * (
+      (total_beds * decay_function(duration_sec)) /
+        sum(total_beds * decay_function(duration_sec))
+    )
   ),
   med_duration = median(duration_sec),
   n = .N
