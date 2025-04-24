@@ -77,12 +77,28 @@ rates_fil_df <- rates_df %>%
       provider_id == "7916" ~ 15,
       provider_id == "7999" ~ 72,
       provider_id == "8000" ~ 36,
+      provider_id == "4913" ~ 43,
+      provider_id == "7987" ~ 10,
+      provider_id == "8045" ~ 24,
+      provider_id == "8047" ~ 77,
+      provider_id == "8048" ~ 373,
+      provider_id == "8049" ~ 102,
+      provider_id == "8049" ~ 102,
+      provider_id == "8050" ~ 407,
+      provider_id == "8125" ~ 210,
+      provider_id == "8158" ~ 13,
+      provider_id == "8159" ~ 8,
+      provider_id == "8160" ~ 100,
+      provider_id == "8160" ~ 100,
       .default = total_beds
     )
   ) %>%
   filter(
-    # These are actually mislabeled ASCs and cancer centers
-    !provider_id %in% c("2354", "7951", "7985", "7986", "7991")
+    # These are actually mislabeled ASCs, psych, and cancer centers
+    !provider_id %in% c(
+      "2354", "7951", "7985", "7986", "7991", "7992", "8052", "8080",
+      "8124", "8166", "8169"
+    )
   ) %>%
   # This billing code is different from the other DRGs to we're going to
   # exclude it in this case

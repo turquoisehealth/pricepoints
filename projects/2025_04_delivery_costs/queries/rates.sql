@@ -149,8 +149,10 @@ WHERE NOT hr.rate_is_outlier
     AND COALESCE(
         hr.hospital_type IN (
             'Short Term Acute Care Hospital',
-            'Critical Access Hospital',
-            'Childrens Hospital'
+            'Critical Access Hospital'
+            -- Technically, childen's hospitals can/do perform L&D, but not all
+            -- of them. Easier to exclude these as a whole class
+            -- 'Childrens Hospital'
         ),
         TRUE
     )
