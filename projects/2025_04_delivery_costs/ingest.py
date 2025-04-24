@@ -54,14 +54,24 @@ rates_df = (
 # applied to the full set of rates
 # https://turquoisehealth.zendesk.com/hc/en-us/articles/31190981752603-Outlier-Management-in-hospital-rates
 rates_fil_df = rates_df.filter(
-    (pl.col("final_rate_amount") / pl.col("medicare_rate") >= 0.6)
-    & (pl.col("final_rate_amount") / pl.col("medicare_rate") <= 10.0)
+    (
+        # Don't use Medicare rates for comparison if they're null or 0
+        (pl.col("medicare_rate").is_null())
+        | (pl.col("medicare_rate") == 0)
+        | (
+            (pl.col("final_rate_amount") / pl.col("medicare_rate") >= 0.6)
+            & (pl.col("final_rate_amount") / pl.col("medicare_rate") <= 10.0)
+        )
+    )
     & pl.col("final_rate_amount").is_between(3000, 500_000)
     & pl.col("final_rate_amount").is_not_nan()
 )
 
-# If multiple rates exist for the same provider-payer-plan-code
-# combination, then prioritize by most simple rate type
+# If multiple rates exist for the same provider-payer-plan-drg
+# combination, then prioritize by most simple rate type. Many hospitals combine
+# case rates and per diem rates (i.e. a case rate for the first 2 days, then
+# a per diem rate for the rest of the stay), so we need to preferentially pick
+# the case rate
 rates_sort_cols = [
     "provider_id",
     "payer_id",
@@ -99,7 +109,7 @@ rates_fil_df = rates_fil_df.filter(
 )
 
 # Collapse the negotiated rates to the mean across all revenue codes
-# by provider-payer-plan-code, prioritizing the mean of only NULL revenue
+# by provider-payer-plan-drg, prioritizing the mean of only NULL revenue
 # code rates first (if there are any)
 rates_fil_df = (
     rates_fil_df.group_by(rates_sort_cols[:-2], maintain_order=True)
@@ -130,6 +140,14 @@ rates_fil_df = rates_fil_df.filter(
                 "(?i)Days?\\s+[3-9]\\+.*"
             )
         )
+    )
+)
+
+# Drop rates related to exchange and indemnity plans, per Arian
+rates_fil_df = rates_fil_df.filter(
+    ~(
+        (pl.col("plan_name").str.contains("(?i).*exchange.*"))
+        | (pl.col("plan_name").str.contains("(?i).*indemnity.*"))
     )
 )
 
