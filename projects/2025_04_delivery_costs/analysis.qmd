@@ -13,19 +13,27 @@ execute:
 
 ```{r setup, message=FALSE}
 library(arrow)
+library(conflicted)
 library(data.table)
 library(dplyr)
 library(forcats)
 library(ggplot2)
 library(ggrepel)
 library(ggridges)
+library(ggspatial)
 library(ggtext)
 library(Hmisc)
+library(patchwork)
+library(prettymapr)
+library(raster)
 library(scales)
 library(sf)
 library(stringr)
 library(tigris)
 library(tidyr)
+
+# Always use dplyr over other packages
+conflict_prefer_all("dplyr", quiet = TRUE)
 
 # Necessary for fast/accurate map rendering
 sf_use_s2(FALSE)
@@ -38,7 +46,7 @@ rates_df <- read_parquet("data/rates_clean.parquet")
 zip_adj_df <- read_parquet("data/zip_adj_matrix.parquet")
 census_regions <- readr::read_csv("data/us_census_regions.csv")
 
-# Bounding box cuts off the Aleutian islands in Alaska
+# Bounding box to cut off the Aleutian islands in Alaska
 states_bbox <- c(xmin = -168, xmax = -65, ymin = 18.5, ymax = 72) %>%
   st_bbox(crs = 4326) %>%
   st_as_sfc() %>%
@@ -64,7 +72,7 @@ zcta_gdf <- tigris::zctas(cb = TRUE, year = 2020) %>%
 
 ```{r rate_summary, message=FALSE}
 # Merge CBSA names to rates data + add some missing bed counts pulled
-# from CMS / the internet
+# from CMS / hospital websites / the internet
 rates_fil_df <- rates_df %>%
   left_join(
     cbsa_gdf %>% st_drop_geometry(),
@@ -94,16 +102,16 @@ rates_fil_df <- rates_df %>%
     )
   ) %>%
   filter(
-    # These are actually mislabeled ASCs, psych, and cancer centers
+    # These are actually mis/unlabeled ASCs, psych hospitals, and cancer centers
     !provider_id %in% c(
       "2354", "7951", "7985", "7986", "7991", "7992", "8052", "8080",
       "8124", "8166", "8169", "8073", "8079"
     )
   ) %>%
-  # This billing code is different from the other DRGs to we're going to
-  # exclude it in this case
+  # This billing code is different from the other DRGs (no different severity
+  # levels) to we're going to drop it for now
   filter(billing_code != "768") %>%
-  # Lots of "other" contract methodologies are actually medicare and medicaid
+  # Some "other" contract methodologies are actually Medicare and Medicaid rates
   filter(!coalesce(
     final_rate_type == "other" & (
       str_detect(tolower(additional_payer_notes), "medicare|medicaid|tricare") |
@@ -112,7 +120,7 @@ rates_fil_df <- rates_df %>%
     FALSE
   ))
 
-# Collapse plans to the provider-payer level, prioritizing PPO + HMO rates,
+# Collapse plans to the provider-payer-drg level, prioritizing PPO + HMO rates,
 # then PPO only, then HMO only, then any other plan types (we want the highest
 # utilization plans only, and this is a trick to get them)
 provider_payer_df <- rates_fil_df %>%
@@ -120,15 +128,16 @@ provider_payer_df <- rates_fil_df %>%
     is_ppo = str_detect(payer_product_network, "PPO"),
     is_hmo = str_detect(payer_product_network, "HMO")
   ) %>%
-  group_by(provider_id, billing_code, payer_id) %>%
-  summarise(
+  group_by(provider_id, payer_id, billing_code) %>%
+  summarize(
     across(
-      # These don't vary within group, so it's fine to just take the first value
-      # in order to preserve them
+      # These variables don't vary within group, so it's fine to just take the
+      # first value in order to preserve them when summarising
       c(
-        provider_name, provider_npi, parent_payer_name, medicare_rate,
-        hospital_type, total_beds, star_rating, state_market_share, cbsa_name,
-        starts_with("geoid_"), starts_with("total_"), starts_with("median_hh_"),
+        provider_name, provider_npi, parent_payer_name, health_system_name,
+        medicare_rate, hospital_type, total_beds, star_rating, lon, lat,
+        state_market_share, cbsa_name, starts_with("geoid_"),
+        starts_with("total_"), starts_with("median_hh_"),
         starts_with("pct_ins_")
       ),
       first
@@ -166,11 +175,11 @@ provider_payer_df <- rates_fil_df %>%
     by = "state"
   )
 
-# Collapse provider-plan-level rates to the provider level, weighting by number
-# of covered lives / market share per payer (to downweight tiny payers)
+# Collapse provider-plan-drg level rates to the provider level, weighting by
+# number of covered lives / market share per payer (to downweight tiny payers)
 providers_df <- provider_payer_df %>%
   group_by(provider_id, billing_code) %>%
-  summarise(
+  summarize(
     across(-all_of(c(
       "payer_id", "parent_payer_name",
       "agg_rate_provider_payer_type",
@@ -182,6 +191,7 @@ providers_df <- provider_payer_df %>%
     agg_rate_provider_count = sum(agg_rate_provider_payer_count)
   ) %>%
   mutate(
+    # Order codes by their severity and delivery type
     severity_label = factor(case_when(
       billing_code %in% c("783", "786", "796", "805") ~ "w/ MCC",
       billing_code %in% c("784", "787", "797", "806") ~ "w/ CC",
@@ -216,12 +226,12 @@ billing_code_labels <- c(
   "**788:** Cesarean Section (no CC/MCC)"
 )
 
-# Get the median rate for each code for all providers. Used later to draw
-# vlines on plots
+# Get the national median rate for each DRG across all providers. Used later to
+# draw baselines on plots
 us_code_price_df <- providers_df %>%
   filter(billing_code %in% billing_code_values) %>%
   group_by(billing_code) %>%
-  summarise(
+  summarize(
     med_rate = wtd.quantile(agg_rate_provider_med, total_beds, 0.50)
   ) %>%
   mutate(
@@ -239,6 +249,8 @@ us_code_price_df <- providers_df %>%
 #| fig-width: 9
 #| fig-height: 9
 
+# Grab state-level hexbin geometries from GitHub. Better than a normal
+# state map because we can actually see every state
 states_hexbin_gdf <- st_read(
   paste0(
     "https://raw.githubusercontent.com/donmeltz/US-States---Hexbins",
@@ -249,19 +261,15 @@ states_hexbin_gdf <- st_read(
   select(geoid_state = FIPS, state_name = Code) %>%
   filter(geoid_state != "11")
 
+# Grab the median rate (median of provider-level median) for each state,
+# weighting by the provider bed count (to downweight tiny providers)
 states_summ_df <- providers_df %>%
   filter(billing_code == "807") %>%
   group_by(geoid_state, state) %>%
   filter(!all(is.na(agg_rate_provider_med))) %>%
-  summarise(
-    pct_ins_pri_state = first(pct_ins_pri_state),
-    pct_ins_pub_state = first(pct_ins_pub_state),
-    med_rate = wtd.quantile(agg_rate_provider_med, total_beds, 0.50),
-    med_income = first(median_hh_income_state),
-    cnt = n()
-  )
+  summarize(med_rate = wtd.quantile(agg_rate_provider_med, total_beds, 0.50))
 
-# Create a binned, state-level map of median rates
+# Create the actual state-level map of median rates
 states_hexbin_gdf %>%
   left_join(states_summ_df, by = "geoid_state") %>%
   mutate(
@@ -320,16 +328,17 @@ states_hexbin_gdf %>%
   ) +
   labs(
     title = paste0(
-      "Alaska, Oregon, and New Jersey have the\n",
+      "Alaska, New Jersey, and Oregon have the\n",
       "highest delivery prices nationwide"
     ),
     subtitle = paste0(
-      "Compared to the national median price of ",
+      "Compared to the national median price of **<span style='color:darkred'>",
       us_code_price_df %>%
         filter(billing_code == "807") %>%
         pull(med_rate) %>%
         round() %>%
-        scales::label_currency()()
+        scales::label_currency()(),
+      "</span>**"
     ),
     caption = paste0(
       "Includes only vaginal deliveries without sterilization ",
@@ -376,10 +385,10 @@ states_hexbin_gdf %>%
       hjust = 0,
       margin = margin(l = 80)
     ),
-    plot.subtitle = element_text(
+    plot.subtitle = element_markdown(
       size = 17,
       vjust = -22,
-      margin = margin(t = 8, l = 80)
+      margin = margin(t = 92, l = 80, b = -84)
     ),
     plot.caption = element_text(
       size = 11,
@@ -395,13 +404,13 @@ states_hexbin_gdf %>%
 #| fig-width: 11
 #| fig-height: 12
 
-# Get the top N largest CBSAs by population and the top N most expensive
+# Get the top N largest CBSAs by population
 top_n_pop_df <- providers_df %>%
   group_by(cbsa_name) %>%
-  summarise(cbsa_pop = first(total_pop_cbsa)) %>%
+  summarize(cbsa_pop = first(total_pop_cbsa)) %>%
   slice_max(cbsa_pop, n = 20)
 
-# Create fancy ggplot labels and boxplots for the top N CBSAs
+# Add fancy labels for each CBSA and order the top 20 by the median DRG 807 rate
 provider_cbsa_df <- providers_df %>%
   group_by(cbsa_name) %>%
   filter(
@@ -573,6 +582,9 @@ zcta_summ_df <- merge(
   all.x = TRUE,
   allow.cartesian = TRUE
 )[!is.na(agg_rate_provider_med), ][, .(
+  # Aggregate provider-level rates using a modified Huff model:
+  # https://en.wikipedia.org/wiki/Huff_model that replaces the power term
+  # with a (more accurate) logistic decay function
   med_rate = sum(
     agg_rate_provider_med * (
       (total_beds * decay_function(duration_sec)) /
@@ -671,12 +683,169 @@ zcta_gdf %>%
   )
 ```
 
+```{r nyc_cbsa_plot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 11
+#| fig-height: 10.5
+
+# Grab only the NY area CBSA providers, then add a count for each provider label
+nyc_dot_df <- providers_df %>%
+  filter(geoid_cbsa == "35620", billing_code == "807") %>%
+  st_as_sf(coords = c("lon", "lat"), crs = 4326) %>%
+  ungroup() %>%
+  mutate(
+    hsn = case_match(
+      health_system_name,
+      "New York City Health and Hospitals Corporation" ~ "New York City Health",
+      "Catholic Health Services of Long Island" ~ "Catholic Health Services",
+      "New York Presbyterian Healthcare System" ~ "New York Presbyterian",
+      .default = health_system_name
+    ),
+    hsn = fct_lump_min(hsn, min = 6),
+    hsn = fct_na_value_to_level(hsn, "Other"),
+    .by = health_system_name
+  ) %>%
+  mutate(
+    hsn = fct_relabel(hsn, ~ paste0(
+      "**", n(), "** - ", .x
+    )),
+    .by = hsn
+  ) %>%
+  mutate(
+    hsn = fct_infreq(hsn),
+    hsn = fct_relevel(hsn, "**43** - Other", after = Inf),
+  )
+
+# Combined dotplot and map of NYC health systems
+cbsa_gdf %>%
+  filter(geoid == "35620") %>%
+  st_transform(4326) %>%
+ggplot() +
+  annotation_map_tile(type = "cartolight", zoomin = 0, progress = "none") +
+  geom_sf(fill = "transparent", linewidth = 0.9) +
+  geom_sf(
+    data = nyc_dot_df,
+    aes(color = hsn),
+    size = 2.5
+  ) +
+  annotate(
+    "point",
+    x = -73.667,
+    y = 39.775,
+    color = "darkred",
+    size = 5
+  ) +
+  scale_x_continuous(expand = c(0.01, 0)) +
+  scale_y_continuous(expand = c(0.01, 0)) +
+  scale_color_brewer(
+    name = "Health system name",
+    palette = "Set1"
+  ) +
+  labs(
+    title = paste0(
+      "New York area hospitals charge a ",
+      "huge range of prices for delivery"
+    ),
+    subtitle = paste0(
+      "Each dot represents one hospital, while the ",
+      "dark red dot represents the ",
+      "<span style='color:darkred'>**national median price**</span>"
+    ),
+    caption = paste0(
+      "Includes only vaginal deliveries without sterilization ",
+      "or complications (MS-DRG 807)\n",
+      "Based on ",
+      nyc_dot_df %>%
+        pull(agg_rate_provider_count) %>%
+        sum() %>%
+        scales::label_comma()(),
+      " negotiated commmercial insurance rates from",
+      " Turquoise Health, covering ",
+      nyc_dot_df %>%
+        distinct(provider_id) %>%
+        nrow() %>%
+        scales::label_comma()(),
+      " providers\n",
+      "Boundary is the 2023 New York-Newark-Jersey City, NY-NJ CBSA"
+    )
+  ) +
+  theme_void() +
+  theme(
+    legend.position = "inside",
+    legend.justification = c(0.95, 0.375),
+    legend.text = element_markdown(size = 12),
+    legend.title = element_text(
+      size = 15,
+      face = "bold",
+      margin = margin(b = 10),
+      color = "grey20"
+    ),
+    plot.title = element_text(
+      size = 20,
+      face = "bold",
+      margin = margin(b = 6, l = 6)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 14, l = 6)
+    ),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 16, r = 6)
+    )
+  ) +
+  inset_element(
+    ggplot(data = nyc_dot_df) +
+      geom_dotplot(
+        aes(x = agg_rate_provider_med, color = fct_rev(hsn), fill = fct_rev(hsn)),
+        method = "histodot",
+        stackgroups = TRUE,
+        dotsize = 0.7
+      ) +
+      scale_x_continuous(
+        name = "Delivery price",
+        labels = scales::label_dollar(scale = 1 / 1000, suffix = "K"),
+        n.breaks = 6,
+        expand = c(0, 0)
+      ) +
+      scale_y_continuous(expand = expansion(add = 0)) +
+      scale_color_brewer(palette = "Set1", direction = -1) +
+      scale_fill_brewer(palette = "Set1", direction = -1) +
+      theme(
+        plot.background = element_blank(),
+        panel.background = element_blank(),
+        panel.grid = element_blank(),
+        legend.position = "none",
+        axis.title.x = element_markdown(
+          margin = margin(t = 6, b = 6),
+          size = 15,
+          face = "bold",
+          color = "grey20",
+          linewidth = 1.2
+        ),
+        axis.text.x = element_text(size = 13),
+        axis.ticks.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank()
+      ),
+    left = 0.33,
+    bottom = 0.0,
+    right = 0.99,
+    top = 0.8
+  )
+```
+
 ```{r price_by_drg, message=FALSE}
 #| column: page
 #| out-width: 100%
 #| fig-width: 9
 #| fig-height: 7
 
+# Density ridge plot of price for all delivery DRGs. Price varies a LOT,
+# especially with complications and comorbidities
 providers_df %>%
   ggplot() +
   ggridges::geom_density_ridges(
@@ -799,552 +968,6 @@ providers_df %>%
       size = 10,
       lineheight = 1.1,
       margin = margin(t = 16, r = -2)
-    )
-  )
-```
-
-```{r price_by_medicare, message=FALSE}
-#| column: page
-#| out-width: 100%
-#| fig-width: 9
-#| fig-height: 7
-
-# Same plot as before, but this time for rate as a percent of Medicare
-providers_df %>%
-  mutate(provider_med = median(agg_rate_provider_med), .by = provider_id) %>%
-  mutate(price_ntile = ntile(provider_med, n = 10), .by = NULL) %>%
-  group_by(billing_code_label, severity_label, price_ntile) %>%
-  summarise(
-    med = wtd.quantile(agg_rate_provider_med / medicare_rate, total_beds, 0.50)
-  ) %>%
-ggplot() +
-  geom_point(
-    aes(
-      x = price_ntile,
-      y = med,
-      color = severity_label,
-      group = severity_label
-    )
-  ) +
-  geom_line(
-    aes(
-      x = price_ntile,
-      y = med,
-      color = severity_label,
-      group = severity_label
-    )
-  ) +
-  scale_x_continuous(
-    n.breaks = 10
-  ) +
-  scale_y_continuous(
-    labels = scales::label_percent(),
-    n.breaks = 6,
-    expand = c(0.1, 0)
-  ) +
-  guides(color = guide_legend(title = "Severity", reverse = TRUE)) +
-  facet_wrap(vars(billing_code_label), nrow = 2, dir = "v") +
-  labs(
-    title = paste0(
-      "Delivery prices increase non-linearly"
-    ),
-    subtitle = paste0(
-      "The most expensive providers charge signficantly more than their",
-      " slightly less expensive peers"
-    ),
-    x = "Provider decile",
-    y = "Median percent of Medicare rate",
-    caption = paste0(
-      "Deciles are based on the median price of each provider's combined ",
-      "MS-DRG rates for delivery<br>",
-      "Lines show provider-level delivery prices divided by their respective ",
-      "Medicare rates and weighted by",
-      " bed count<br>",
-      "Based on ",
-      providers_df %>%
-        pull(agg_rate_provider_count) %>%
-        sum() %>%
-        scales::label_comma()(),
-      " negotiated commmercial insurance rates from Turquoise Health,",
-      " covering ",
-      providers_df %>%
-        distinct(provider_id) %>%
-        nrow() %>%
-        scales::label_comma()(),
-      " providers<br>"
-    )
-  ) +
-  theme(
-    plot.title = element_text(size = 18, face = "bold", margin = margin(b = 6)),
-    plot.subtitle = element_markdown(
-      size = 13,
-      margin = margin(b = 16),
-      lineheight = 1.1
-    ),
-    plot.margin = margin(r = 6, t = 6, l = 6),
-    legend.title = element_text(
-      size = 14,
-      face = "bold",
-      color = "grey30",
-      margin = margin(b = 8)
-    ),
-    legend.text = element_text(size = 12, color = "grey40"),
-    legend.key.spacing.y = unit(0.25, "cm"),
-    axis.text.x = element_text(size = 12, color = "grey40"),
-    axis.text.y = element_markdown(
-      size = 14,
-      margin = margin(r = 4),
-      lineheight = 1.25,
-      color = "grey40"
-    ),
-    axis.title.x = element_text(
-      margin = margin(t = 4),
-      size = 14,
-      face = "bold",
-      color = "grey40"
-    ),
-    axis.title.y = element_markdown(
-      size = 15,
-      color = "grey40",
-      margin = margin(r = 4),
-      face = "bold"
-    ),
-    panel.grid.minor.x = element_blank(),
-    panel.grid.minor.y = element_blank(),
-    panel.background = element_rect(fill = "#e0ebea"),
-    strip.text = element_markdown(size = 12),
-    plot.caption = element_markdown(
-      size = 10,
-      lineheight = 1.1,
-      margin = margin(t = 16, r = -104)
-    )
-  )
-```
-
-```{r top_n_buca, message=FALSE}
-#| column: page
-#| out-width: 100%
-#| fig-width: 11
-#| fig-height: 12
-
-# Create fancy ggplot labels and boxplots for the top N CBSAs
-provider_payer_df %>%
-  group_by(cbsa_name) %>%
-  filter(
-    cbsa_name %in% top_n_pop_df$cbsa_name,
-    billing_code %in% "807",
-    parent_payer_name %in% c(
-      "Blue Cross Blue Shield Association",
-      "United Healthcare",
-      "Cigna",
-      "Aetna"
-    )
-  ) %>%
-  mutate(
-    payer_label = case_match(
-      parent_payer_name,
-      "Blue Cross Blue Shield Association" ~ "BCBS",
-      "United Healthcare" ~ "UHC",
-      .default = parent_payer_name
-    ),
-    payer_label = factor(
-      payer_label,
-      levels = c("BCBS", "UHC", "Cigna", "Aetna")
-    )
-  ) %>%
-  left_join(
-    provider_cbsa_df %>%
-      select(
-        provider_id, billing_code,
-        cbsa_label, billing_code_label
-      ),
-    by = c("provider_id", "billing_code")
-  ) %>%
-  ggplot() +
-  ggridges::geom_density_ridges(
-    aes(
-      x = agg_rate_provider_payer_med,
-      y = cbsa_label,
-      group = cbsa_label,
-      weight = total_beds
-    ),
-    position = position_nudge(y = -0.1),
-    quantile_lines = TRUE,
-    quantiles = 2,
-    quantile_fun = Hmisc::wtd.quantile
-  ) +
-  geom_vline(
-    data = us_code_price_df %>%
-      filter(billing_code == "807"),
-    aes(xintercept = med_rate),
-    color = "darkred",
-    linetype = "dashed"
-  ) +
-  scale_x_continuous(
-    name = "Delivery price",
-    labels = scales::label_dollar(scale = 1 / 1000, suffix = "K"),
-    n.breaks = 6,
-    expand = c(0, 0)
-  ) +
-  scale_y_discrete(
-    expand = expansion(add = c(0, 0.8))
-  ) +
-  facet_wrap(vars(payer_label), nrow = 1) +
-  labs(
-    title = paste0(
-      "New York City is the most expensive large U.S. ",
-      "market for childbirth"
-    ),
-    subtitle = paste0(
-      "Other areas are closer to the ",
-      "**<span style='color:darkred'>national median price</span>** ",
-      "for each delivery type"
-    ),
-    caption = paste0(
-      "Delivery types include the most common delivery-related MS-DRG codes\n",
-      "Based on ",
-      providers_df %>%
-        filter(
-          cbsa_name %in% top_n_pop_df$cbsa_name,
-          billing_code %in% billing_code_values
-        ) %>%
-        pull(agg_rate_provider_count) %>%
-        sum() %>%
-        scales::label_comma()(),
-      " negotiated commmercial insurance rates from",
-      " Turquoise Health, covering ",
-      providers_df %>%
-        filter(
-          cbsa_name %in% top_n_pop_df$cbsa_name,
-          billing_code %in% billing_code_values
-        ) %>%
-        distinct(provider_id) %>%
-        nrow() %>%
-        scales::label_comma()(),
-      " providers\n",
-      "Distributions show provider-level delivery prices, weighted by",
-      " bed count. Lines represent the median\n",
-      "Markets are defined as the top 20 most populous 2023 Census ",
-      "Core-Based Statistical Areas (CBSAs)"
-    )
-  ) +
-  coord_cartesian(xlim = c(3000, 35000)) +
-  theme(
-    plot.title = element_text(
-      size = 20,
-      face = "bold",
-      margin = margin(b = 6, l = -200)
-    ),
-    plot.subtitle = element_markdown(
-      size = 17,
-      margin = margin(b = 16, l = -160)
-    ),
-    axis.title.y = element_blank(),
-    axis.text.y = element_markdown(
-      lineheight = 1.3,
-      size = 11,
-      margin = margin(t = 4)
-    ),
-    axis.title.x = element_text(
-      margin = margin(t = 10),
-      size = 15,
-      face = "bold",
-      color = "grey30"
-    ),
-    axis.text.x = element_text(size = 12),
-    axis.ticks.y = element_blank(),
-    panel.grid.major.y = element_blank(),
-    panel.grid.minor.y = element_blank(),
-    panel.background = element_rect(fill = "#e0ebea"),
-    strip.background = element_rect(fill = "grey80"),
-    strip.text = element_markdown(
-      size = 13,
-      margin = margin(b = 4, t = 6),
-      color = "grey20"
-    ),
-    plot.caption = element_text(
-      size = 11,
-      lineheight = 1.1,
-      margin = margin(t = 20)
-    )
-  )
-```
-
-```{r price_vs_fertility, message=FALSE}
-#| column: page
-#| out-width: 100%
-#| fig-width: 8
-#| fig-height: 6
-
-cdc_fertility <- readr::read_csv("data/cdc_fertility.csv") %>%
-  select(year = YEAR, state = STATE, fertility_rate = `FERTILITY RATE`) %>%
-  filter(year == 2022) %>%
-  mutate(state = case_match(
-    state,
-    "District of Columbia" ~ "DC",
-    .default = state
-  ))
-
-states_summ_df %>%
-  left_join(cdc_fertility, by = "state") %>%
-  ggplot(aes(x = med_rate, y = fertility_rate)) +
-  geom_point() +
-  geom_text_repel(aes(label = state), color = "grey70") +
-  geom_smooth(
-    method = "lm",
-    color = "darkred",
-    se = FALSE,
-    alpha = 0.5
-  ) +
-  scale_y_continuous(
-    name = "Fertility Rate<sup>1</sup>",
-    n.breaks = 8,
-    expand = c(0.02, 0)
-  ) +
-  scale_x_continuous(
-    name = "Delivery Price",
-    labels = scales::label_dollar(scale = 1 / 1000, suffix = "K"),
-    n.breaks = 6,
-    expand = c(0.02, 0)
-  ) +
-  labs(
-    title = "States with high delivery costs have lower fertility rates",
-    caption = paste0(
-      "<sup>1</sup> Rate per 1,000 women aged 15–44, ",
-      "based on 2022 CDC/NCHS data<br>",
-      "Includes only vaginal deliveries without sterilization ",
-      "or complications (MS-DRG 807)<br>",
-      "Based on ",
-      providers_df %>%
-        filter(billing_code == "807") %>%
-        pull(agg_rate_provider_count) %>%
-        sum() %>%
-        scales::label_comma()(),
-      " negotiated commmercial insurance rates from",
-      " Turquoise Health, covering ",
-      providers_df %>%
-        filter(billing_code == "807") %>%
-        distinct(provider_id) %>%
-        nrow() %>%
-        scales::label_comma()(),
-      " providers<br>",
-      "Rates are aggregated to the provider level, then to ",
-      "the state level (weighted by provider bed count)\n"
-    )
-  ) +
-  theme_minimal() +
-  theme(
-    plot.title = element_text(
-      size = 18,
-      face = "bold",
-      margin = margin(b = 10)
-    ),
-    plot.subtitle = element_markdown(size = 15),
-    axis.title.y = element_markdown(
-      size = 13,
-      face = "bold",
-      margin = margin(r = 10),
-      color = "grey40"
-    ),
-    axis.text.y = element_markdown(size = 11),
-    axis.title.x = element_text(
-      margin = margin(t = 10),
-      size = 13,
-      face = "bold",
-      color = "grey40"
-    ),
-    axis.text.x = element_text(size = 11),
-    strip.background = element_blank(),
-    plot.caption = element_markdown(
-      size = 10,
-      lineheight = 1.1,
-      margin = margin(t = 20)
-    )
-  )
-```
-
-```{r buca_dist, message=FALSE}
-#| column: page
-#| out-width: 100%
-#| fig-width: 8
-#| fig-height: 7
-
-buca_df <- provider_payer_df %>%
-  filter(
-    billing_code == "807",
-    parent_payer_name %in% c(
-      "Blue Cross Blue Shield Association",
-      "United Healthcare",
-      "Cigna",
-      "Aetna"
-    )
-  ) %>%
-  mutate(
-    payer_label = case_match(
-      parent_payer_name,
-      "Blue Cross Blue Shield Association" ~ "BCBS",
-      "United Healthcare" ~ "UHC",
-      .default = parent_payer_name
-    ),
-    payer_label = factor(
-      payer_label,
-      levels = c("BCBS", "UHC", "Cigna", "Aetna")
-    ),
-    region_label = factor(
-      region,
-      levels = c("West", "Midwest", "South", "Northeast")
-    )
-  ) %>%
-  group_by(payer_label) %>%
-  mutate(
-    payer_label = fct_relabel(payer_label, \(x) {
-      unique(paste0(
-        "**", x, "**<br>",
-        "<sup>(", purrr::map_chr(
-          n(),
-          scales::label_comma()
-        ), ")</sup>"
-      ))
-    })
-  ) %>%
-  group_by(region_label) %>%
-  mutate(
-    region_label = fct_relabel(region_label, \(x) {
-      unique(paste0(
-        "**", x, "**<br>",
-        "<sup>(", purrr::map_chr(
-          n(),
-          scales::label_comma()
-        ), ")</sup>"
-      ))
-    }),
-    region_med = wtd.quantile(agg_rate_provider_payer_med, total_beds, 0.50)
-  ) %>%
-  ungroup()
-
-buca_df %>%
-  group_by(payer_label, region_label) %>%
-  summarise(
-    region = first(region),
-    region_med = first(region_med),
-    xmin = wtd.quantile(agg_rate_provider_payer_med, total_beds, 0.10),
-    lower = wtd.quantile(agg_rate_provider_payer_med, total_beds, 0.25),
-    median = wtd.quantile(agg_rate_provider_payer_med, total_beds, 0.50),
-    upper = wtd.quantile(agg_rate_provider_payer_med, total_beds, 0.75),
-    xmax = wtd.quantile(agg_rate_provider_payer_med, total_beds, 0.90),
-    count = paste0("(", purrr::map_chr(n(), scales::label_comma()), ")")
-  ) %>%
-  ggplot() +
-  geom_vline(
-    aes(xintercept = region_med),
-    color = "darkred",
-    linetype = "dashed"
-  ) +
-  geom_boxplot(
-    aes(
-      xmin = xmin, xlower = lower, xmiddle = median,
-      xupper = upper, xmax = xmax, y = NA
-    ),
-    width = 0.5,
-    outliers = FALSE,
-    stat = "identity"
-  ) +
-  annotate(
-    "rect",
-    xmin = 16500, xmax = Inf, ymin = 0.4, ymax = 0.65,
-    fill = "#e0ebea"
-  ) +
-  geom_text(
-    aes(x = 18000, y = NA, label = count),
-    nudge_y = -0.46,
-    color = "grey40",
-    size = 2.8
-  ) +
-  scale_x_continuous(
-    name = "Delivery Price",
-    labels = scales::label_dollar(scale = 1 / 1000, suffix = "K"),
-    n.breaks = 5,
-    expand = c(0.1, 0)
-  ) +
-  facet_grid(
-    cols = vars(region_label),
-    rows = vars(payer_label),
-    switch = "y"
-  ) +
-  coord_cartesian(xlim = c(5500, 18500)) +
-  labs(
-    title = "Major insurance companies have similar delivery prices",
-    subtitle = paste0(
-      "Across U.S. regions, large payers stay close to the ",
-      "**<span style='color:darkred'>regional median price</span>** ",
-      "for delivery"
-    ),
-    caption = paste0(
-      "Includes only vaginal deliveries without sterilization ",
-      "or complications (MS-DRG 807)<br>",
-      "Counts (in parenthesis) are the number of unique",
-      " *rates* per U.S. Census ",
-      "region, payer, or combination thereof<br>",
-      "Based on ",
-      buca_df %>%
-        pull(agg_rate_provider_payer_count) %>%
-        sum() %>%
-        scales::label_comma()(),
-      " negotiated commmercial insurance rates from",
-      " Turquoise Health, covering ",
-      buca_df %>%
-        distinct(provider_id) %>%
-        nrow() %>%
-        scales::label_comma()(),
-      " providers<br>",
-      "Boxes show the 10th, 25th, 50th, 75th, and 90th percentiles of ",
-      "provider-level delivery prices, weighted by bed count"
-    )
-  ) +
-  theme(
-    plot.title = element_text(
-      size = 18,
-      face = "bold",
-      margin = margin(b = 6, l = -10)
-    ),
-    plot.subtitle = element_markdown(
-      size = 13,
-      margin = margin(b = 24, l = -20)
-    ),
-    axis.title.y = element_blank(),
-    axis.text.y = element_markdown(
-      size = 14, margin = margin(r = 4),
-      lineheight = 1.25,
-      color = "grey40"
-    ),
-    axis.title.x = element_text(
-      margin = margin(t = 10),
-      size = 14,
-      face = "bold",
-      color = "grey40"
-    ),
-    axis.text.x = element_text(size = 12, angle = -45, hjust = 0),
-    axis.ticks.y = element_blank(),
-    panel.grid.major.y = element_blank(),
-    panel.grid.minor.y = element_blank(),
-    panel.background = element_rect(fill = "#e0ebea"),
-    strip.background = element_blank(),
-    strip.text = element_markdown(
-      size = 14,
-      margin = margin(b = 2),
-      lineheight = 1.25,
-      color = "grey40"
-    ),
-    strip.text.y.left = element_markdown(
-      angle = 0,
-      margin = margin(r = 6),
-      color = "grey40",
-      hjust = 1
-    ),
-    plot.caption = element_markdown(
-      size = 10,
-      lineheight = 1.1,
-      margin = margin(t = 20)
     )
   )
 ```
