@@ -327,6 +327,8 @@ rates_clean_df = (
         "final_rate_amount",
         "additional_generic_notes",
         "additional_payer_notes",
+        "lon",
+        "lat",
         pl.col("^geoid_.*$"),
         pl.col("^total_pop_.*$"),
         pl.col("^median_hh_income_.*$"),
