@@ -45,6 +45,9 @@ options(tigris_use_cache = TRUE)
 rates_df <- read_parquet("data/rates_clean.parquet")
 zip_adj_df <- read_parquet("data/zip_adj_matrix.parquet")
 census_regions <- readr::read_csv("data/us_census_regions.csv")
+nchs_urban_rural_df <- readr::read_csv("data/NCHSurb-rural-codes.csv") %>%
+  mutate(geoid_county = paste0(st_fips, cty_fips)) %>%
+  select(geoid_county, nchs_code)
 
 # Bounding box to cut off the Aleutian islands in Alaska
 states_bbox <- c(xmin = -168, xmax = -65, ymin = 18.5, ymax = 72) %>%
@@ -173,6 +176,10 @@ provider_payer_df <- rates_fil_df %>%
   left_join(
     census_regions,
     by = "state"
+  ) %>%
+  left_join(
+    nchs_urban_rural_df,
+    by = "geoid_county"
   )
 
 # Collapse provider-plan-drg level rates to the provider level, weighting by
@@ -557,12 +564,25 @@ ggplot(provider_cbsa_df) +
 #| fig-width: 12
 #| fig-height: 9
 
-# Logistic distance decay. A hospital that's 45 minutes away has half the weight
-# of one that's 0 minutes away. Probably should be a different (closer) midpoint
-# for cities, but it's hard to get ZIP code urban/rural classifications
-decay_function <- function(x) {
-  midpoint <- 2700
-  steepness <- 0.001
+# Logistic distance decay which varies by rurality. For example, in a
+# small metro county, a hospital that's 45 minutes away has half the weight
+# of one that's 0 minutes away
+decay_function <- function(x, nchs_code) {
+  # Replaces null and NaN values with NA
+  nchs_code <- as.numeric(as.character(nchs_code))
+  # Midpoint and steepness of the logistic are from eyeballing LODES data
+  midpoint <- case_match(
+    nchs_code,
+    1 ~ 20 * 60, 2 ~ 25 * 60, 3 ~ 30 * 60,
+    4 ~ 40 * 60, 5 ~ 50 * 60, 6 ~ 60 * 60,
+    .default = 30 * 60
+  )
+  steepness <- case_match(
+    nchs_code,
+    1 ~ 0.0018, 2 ~ 0.0017, 3 ~ 0.0016,
+    4 ~ 0.0015, 5 ~ 0.0015, 6 ~ 0.0015,
+    .default = 0.0016
+  )
   weight <- 1 / (1 + exp(steepness * (x - midpoint)))
   weight
 }
@@ -576,7 +596,7 @@ zcta_summ_df <- merge(
   zip_adj_df,
   providers_df[
     billing_code == "807",
-    c("provider_id", "agg_rate_provider_med", "total_beds")
+    c("provider_id", "agg_rate_provider_med", "total_beds", "nchs_code")
   ],
   by = "provider_id",
   all.x = TRUE,
@@ -587,8 +607,8 @@ zcta_summ_df <- merge(
   # with a (more accurate) logistic decay function
   med_rate = sum(
     agg_rate_provider_med * (
-      (total_beds * decay_function(duration_sec)) /
-        sum(total_beds * decay_function(duration_sec))
+      (total_beds * decay_function(duration_sec, nchs_code)) /
+        sum(total_beds * decay_function(duration_sec, nchs_code))
     )
   ),
   med_duration = median(duration_sec),
