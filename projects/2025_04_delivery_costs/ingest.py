@@ -133,21 +133,23 @@ rates_fil_df = (
 # Drop per diem rates that seemingly apply to days after the standard
 # length of stay (e.g. 1-2 days for inpatient stays)
 rates_fil_df = rates_fil_df.filter(
-    ~(
-        (pl.col("final_rate_type") == "per diem")
+    ~pl.coalesce(
+        (pl.col("final_rate_type").is_in(["per diem", "case rate"]))
         & (
             pl.col("additional_payer_notes").str.contains(
-                "(?i)Days?\\s+[3-9]\\+.*"
+                r"(?i)Day\(*s?\)*\s+*[2-9][\+-]?[0-9]*\s+*[\+\.]?\s+*"
             )
-        )
+        ),
+        False,
     )
 )
 
 # Drop rates related to exchange and indemnity plans, per Arian
 rates_fil_df = rates_fil_df.filter(
-    ~(
+    ~pl.coalesce(
         (pl.col("plan_name").str.contains("(?i).*exchange.*"))
-        | (pl.col("plan_name").str.contains("(?i).*indemnity.*"))
+        | (pl.col("plan_name").str.contains("(?i).*indemnity.*")),
+        False,
     )
 )
 
