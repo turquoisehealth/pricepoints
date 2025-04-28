@@ -744,7 +744,7 @@ ggplot() +
   ) +
   labs(
     title = paste0(
-      "New York area hospitals charge a ",
+      "New York area hospitals are reimbursed for a ",
       "huge range of prices for delivery"
     ),
     subtitle = paste0(
