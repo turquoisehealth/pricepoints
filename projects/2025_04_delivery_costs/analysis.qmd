@@ -349,7 +349,7 @@ states_hexbin_gdf %>%
         pull(agg_rate_provider_count) %>%
         sum() %>%
         scales::label_comma()(),
-      " negotiated commmercial insurance rates from",
+      " negotiated commercial insurance rates from",
       " Turquoise Health, covering ",
       providers_df %>%
         filter(billing_code == "807") %>%
@@ -492,7 +492,7 @@ ggplot(provider_cbsa_df) +
         pull(agg_rate_provider_count) %>%
         sum() %>%
         scales::label_comma()(),
-      " negotiated commmercial insurance rates from",
+      " negotiated commercial insurance rates from",
       " Turquoise Health, covering ",
       providers_df %>%
         filter(
@@ -642,7 +642,7 @@ zcta_gdf %>%
         pull(agg_rate_provider_count) %>%
         sum() %>%
         scales::label_comma()(),
-      " negotiated commmercial insurance rates from",
+      " negotiated commercial insurance rates from",
       " Turquoise Health, covering ",
       providers_df %>%
         filter(billing_code == "807") %>%
@@ -760,7 +760,7 @@ ggplot() +
         pull(agg_rate_provider_count) %>%
         sum() %>%
         scales::label_comma()(),
-      " negotiated commmercial insurance rates from",
+      " negotiated commercial insurance rates from",
       " Turquoise Health, covering ",
       nyc_dot_df %>%
         distinct(provider_id) %>%
@@ -916,7 +916,7 @@ providers_df %>%
         pull(agg_rate_provider_count) %>%
         sum() %>%
         scales::label_comma()(),
-      " negotiated commmercial insurance rates from Turquoise Health,",
+      " negotiated commercial insurance rates from Turquoise Health,",
       " covering ",
       providers_df %>%
         distinct(provider_id) %>%
