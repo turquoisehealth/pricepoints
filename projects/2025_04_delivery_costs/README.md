@@ -11,7 +11,7 @@ some relevant data and methodological challenges.
 
 ## Data used
 
-This analysis primarily uses 551,477 negotiated rates exported from the
+This analysis primarily uses 576,860 negotiated rates exported from the
 Turquoise Health hospital rates database. It uses hospital rates (instead of
 payer rates) to simplify the analysis and because hospital rates should be
 broadly representative of the cost of delivery in the U.S. (since most births
@@ -30,6 +30,8 @@ The following additional data sources are used:
   columns in the main rates data extract.
 - [NCHS Urban-Rural Classification Scheme for Counties](https://www.cdc.gov/nchs/data-analysis-tools/urban-rural.html).
   Used to classify hospitals as urban or rural for driving distance weightings.
+- [NCHS Maternal Mortality Rates](https://www.cdc.gov/nchs/maternal-mortality/mmr-2018-2022-state-data.pdf).
+  Used to compare maternal mortality rates across states.
 - [OpenTimes](https://opentimes.org/) (driving times) between U.S. ZIP codes.
   Used to create a detailed map of hospital prices.
 
@@ -95,7 +97,7 @@ charts.
 
 Doulas and other outpatient childbirth/delivery providers are excluded.
 
-Overall, the analysis includes 2,534 unique providers, out of around 4,500
+Overall, the analysis includes 2,561 unique providers, out of around 4,500
 total acute care and critical access hospitals in the United States.
 
 ### Payers
@@ -288,4 +290,6 @@ the data ingest step in Python. To do so, first:
 - Raval, D., & Rosenbaum, T. (2018, June 15). *Why is Distance Important for Hospital Choice? Separating Home Bias from Transport Costs.* <https://www.ftc.gov/system/files/documents/reports/why-distance-important-hospital-choice-separating-home-bias-transport-costs/working_paper_335_revised.pdf>
 - U.S. Census Bureau. 2023 TIGER/Line Shapefiles (machine readable data files). U.S. Department of Commerce. <https://www2.census.gov/geo/tiger>
 - U.S. Census Bureau. American Community Survey 5-Year Estimates Subject Tables, Tables B01001, B19013, C27014, 2023, <https://data.census.gov>
+- National Center for Health Statistics. (2023). *Urban-Rural Classification Scheme for Counties.* <https://www.cdc.gov/nchs/data-analysis-tools/urban-rural.html>
+- National Center for Health Statistics. (2022). *Maternal Mortality Rates in the United States, 2018-2022.* <https://www.cdc.gov/nchs/maternal-mortality/mmr-2018-2022-state-data.pdf>
 - Snow, D. OpenTimes (Version 0.0.1) [Data set]. <https://github.com/dfsnow/opentimes>
