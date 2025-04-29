@@ -58,7 +58,8 @@ SELECT
             ) / 100)
         -- Use estimated allowed amount if nothing else is available
         WHEN hr.contract_methodology = 'other'
-            AND hr.estimated_allowed_amount != 999999999.00
+            AND hr.estimated_allowed_amount > 0
+            AND hr.estimated_allowed_amount <= 10000000
             THEN hr.estimated_allowed_amount
         ELSE hr.negotiated_dollar
     END AS final_rate_amount,
@@ -160,7 +161,10 @@ WHERE NOT hr.rate_is_outlier
     AND (
         (
             hr.contract_methodology = 'other'
-            AND hr.negotiated_dollar IS NOT NULL
+            AND (
+                hr.negotiated_dollar IS NOT NULL
+                OR hr.estimated_allowed_amount IS NOT NULL
+            )
         ) OR hr.contract_methodology IN (
             'per diem',
             'percent of total billed charges',

@@ -11,7 +11,7 @@ some relevant data and methodological challenges.
 
 ## Data used
 
-This analysis primarily uses 576,860 negotiated rates exported from the
+This analysis primarily uses 645,393 negotiated rates exported from the
 Turquoise Health hospital rates database. It uses hospital rates (instead of
 payer rates) to simplify the analysis and because hospital rates should be
 broadly representative of the cost of delivery in the U.S. (since most births
@@ -97,7 +97,7 @@ charts.
 
 Doulas and other outpatient childbirth/delivery providers are excluded.
 
-Overall, the analysis includes 2,561 unique providers, out of around 4,500
+Overall, the analysis includes 2,889 unique providers, out of around 4,500
 total acute care and critical access hospitals in the United States.
 
 ### Payers

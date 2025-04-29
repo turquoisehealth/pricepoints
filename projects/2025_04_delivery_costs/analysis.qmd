@@ -103,7 +103,12 @@ rates_fil_df <- rates_df %>%
       provider_id == "8158" ~ 13,
       provider_id == "8159" ~ 8,
       provider_id == "8160" ~ 100,
-      provider_id == "8160" ~ 100,
+      provider_id == "8065" ~ 285,
+      provider_id == "8067" ~ 285,
+      provider_id == "4048" ~ 25,
+      provider_id == "7998" ~ 322,
+      provider_id == "8075" ~ 128,
+      provider_id == "8037" ~ 17,
       .default = total_beds
     )
   ) %>%
@@ -111,7 +116,7 @@ rates_fil_df <- rates_df %>%
     # These are actually mis/unlabeled ASCs, psych hospitals, and cancer centers
     !provider_id %in% c(
       "2354", "7951", "7985", "7986", "7991", "7992", "8052", "8080",
-      "8124", "8166", "8169", "8073", "8079"
+      "8124", "8166", "8169", "8073", "8079", "8064", "8063", "7914"
     )
   ) %>%
   # This billing code is different from the other DRGs (no different severity
@@ -344,7 +349,7 @@ states_hexbin_gdf %>%
   ) +
   labs(
     title = paste0(
-      "Alaska, New Jersey, and Oregon have the\n",
+      "New Jersey, Delaware, and Maryland have\nthe ",
       "highest delivery prices nationwide"
     ),
     subtitle = paste0(
@@ -423,6 +428,7 @@ states_hexbin_gdf %>%
 # Get the top N largest CBSAs by population
 top_n_pop_df <- providers_df %>%
   group_by(cbsa_name) %>%
+  filter(n_distinct(provider_id) >= 15) %>%
   summarize(cbsa_pop = first(total_pop_cbsa)) %>%
   slice_max(cbsa_pop, n = 20)
 
@@ -431,7 +437,8 @@ provider_cbsa_df <- providers_df %>%
   group_by(cbsa_name) %>%
   filter(
     cbsa_name %in% top_n_pop_df$cbsa_name,
-    billing_code %in% billing_code_values
+    billing_code %in% billing_code_values,
+    !is.na(agg_rate_provider_med)
   ) %>%
   mutate(cbsa_name = factor(cbsa_name, levels = top_n_pop_df$cbsa_name)) %>%
   arrange(cbsa_name) %>%
@@ -489,7 +496,7 @@ ggplot(provider_cbsa_df) +
   facet_wrap(vars(billing_code_label)) +
   labs(
     title = paste0(
-      "New York City is the most expensive large U.S. ",
+      "San Francisco is the most expensive large U.S. ",
       "market for childbirth"
     ),
     subtitle = paste0(
@@ -522,7 +529,7 @@ ggplot(provider_cbsa_df) +
       "Distributions show provider-level delivery prices, weighted by",
       " bed count. Lines represent the median\n",
       "Markets are defined as the top 20 most populous 2023 Census ",
-      "Core-Based Statistical Areas (CBSAs)"
+      "Core-Based Statistical Areas (CBSAs) with at least 15 providers"
     )
   ) +
   coord_cartesian(xlim = c(3000, 32000)) +
@@ -530,7 +537,7 @@ ggplot(provider_cbsa_df) +
     plot.title = element_text(
       size = 20,
       face = "bold",
-      margin = margin(b = 6, l = -200)
+      margin = margin(b = 6, l = -204)
     ),
     plot.subtitle = element_markdown(
       size = 17,
@@ -1019,7 +1026,7 @@ state_mmr_rate_df %>%
   annotate(
     "richtext",
     x = 14500,
-    y = 12,
+    y = 13,
     label = paste0("β<sub>1</sub> = ", round(state_mmr_coefs[2], 4))
   ) +
   scale_x_continuous(
@@ -1033,10 +1040,13 @@ state_mmr_rate_df %>%
   ) +
   coord_cartesian(xlim = c(6000, 14500)) +
   labs(
-    title = "As delivery price increases, maternal mortality decreases",
+    title = paste0(
+      "States with high delivery prices have lower ",
+      "maternal mortality"
+    ),
     subtitle = paste0(
-      "States with the lowest delivery prices also have the ",
-      "highest maternal mortality"
+      "Low-population states are excluded from the plot (and NCHS data) ",
+      "for privacy reasons"
     ),
     x = "Delivery price",
     y = "Maternal mortality rate",
@@ -1060,7 +1070,7 @@ state_mmr_rate_df %>%
       "Points show the state-level median delivery price, weighted by the",
       " bed count of each provider\n",
       "Maternal mortality rates are from CDC/NCHS data and represent",
-      " deaths per 100,000 live births. Not all states are shown"
+      " deaths per 100,000 live births"
     )
   ) +
   theme(
