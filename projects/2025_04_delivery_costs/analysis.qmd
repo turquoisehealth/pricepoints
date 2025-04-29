@@ -120,8 +120,14 @@ rates_fil_df <- rates_df %>%
   # Some "other" contract methodologies are actually Medicare and Medicaid rates
   filter(!coalesce(
     final_rate_type == "other" & (
-      str_detect(tolower(additional_payer_notes), "medicare|medicaid|tricare") |
-      str_detect(tolower(additional_generic_notes), "medicare|medicaid|tricare")
+      str_detect(
+        tolower(additional_payer_notes),
+        "medicare|medicaid|tricare"
+      ) |
+        str_detect(
+          tolower(additional_generic_notes),
+          "medicare|medicaid|tricare"
+        )
     ),
     FALSE
   ))
@@ -759,7 +765,7 @@ providers_df %>%
       ))
     })
   ) %>%
-ggplot() +
+  ggplot() +
   geom_boxplot(
     aes(
       xmin = xmin,
@@ -993,13 +999,15 @@ providers_df %>%
 state_mmr_rate_df <- providers_df %>%
   filter(billing_code == "807") %>%
   group_by(geoid_state, state, billing_code) %>%
-  summarize(med_rate = wtd.quantile(agg_rate_provider_med, total_beds, 0.50)) %>%
+  summarize(
+    med_rate = wtd.quantile(agg_rate_provider_med, total_beds, 0.50)
+  ) %>%
   left_join(state_mmr_df, by = "state")
 
 state_mmr_coefs <- coef(lm(mmr ~ med_rate, data = state_mmr_rate_df))
 
 state_mmr_rate_df %>%
-ggplot(aes(y = mmr, x = med_rate)) +
+  ggplot(aes(y = mmr, x = med_rate)) +
   geom_abline(
     intercept = state_mmr_coefs[1],
     slope = state_mmr_coefs[2],
@@ -1026,7 +1034,10 @@ ggplot(aes(y = mmr, x = med_rate)) +
   coord_cartesian(xlim = c(6000, 14500)) +
   labs(
     title = "As delivery price increases, maternal mortality decreases",
-    subtitle = "States with the lowest delivery prices also have the highest maternal mortality",
+    subtitle = paste0(
+      "States with the lowest delivery prices also have the ",
+      "highest maternal mortality"
+    ),
     x = "Delivery price",
     y = "Maternal mortality rate",
     caption = paste0(
