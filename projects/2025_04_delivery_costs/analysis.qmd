@@ -473,7 +473,8 @@ ggplot(provider_cbsa_df) +
     position = position_nudge(y = -0.1),
     quantile_lines = TRUE,
     quantiles = 2,
-    quantile_fun = Hmisc::wtd.quantile
+    quantile_fun = Hmisc::wtd.quantile,
+    panel_scaling = FALSE
   ) +
   geom_vline(
     data = us_code_price_df,
@@ -803,6 +804,7 @@ providers_df %>%
       "for vaginal delivery"
     ),
     x = "Delivery price",
+    y = "**<span style='font-size:42px'>←</span> More urban**",
     caption = paste0(
       "Includes only vaginal deliveries without sterilization ",
       "or complications (MS-DRG 807)\n",
@@ -823,7 +825,7 @@ providers_df %>%
       "Distributions show provider-level delivery prices, weighted by",
       " bed count. Lines represent the median\n",
       "Rurality is defined using the 2023 NCHS Urban-Rural Classification ",
-      " Scheme for Counties"
+      "Scheme for Counties"
     )
   ) +
   theme(
@@ -847,7 +849,11 @@ providers_df %>%
     ),
     axis.text.x = element_text(size = 12),
     axis.ticks.y = element_blank(),
-    axis.title.y = element_blank(),
+    axis.title.y = element_markdown(
+      size = 20,
+      color = "grey50",
+      margin = margin(r = 2)
+    ),
     axis.text.y = element_markdown(size = 14, lineheight = 1.3),
     panel.grid.major.y = element_blank(),
     panel.grid.minor.y = element_blank(),
@@ -886,12 +892,12 @@ providers_df %>%
   geom_text(
     data = data.frame(
       x = c(17800, 22800, 26000),
-      y = c(3.7, 2.5, 1.5),
+      y = c(3.6, 2.4, 1.5),
       billing_code_label = providers_df %>%
         filter(billing_code_label == "Vaginal Deliv.<br>no Steril./D&C") %>%
         pull(billing_code_label) %>%
         rep(3),
-      label = c("No CC/MCC", "w/ CC", "w/ MCC")
+      label = c("No Complications or Comorbidities (CC)", "w/ CC", "w/ MCC")
     ),
     aes(x = x, y = y, label = label, color = label),
     size = 4.5,
@@ -907,7 +913,7 @@ providers_df %>%
   scale_y_discrete(position = "left", expand = expansion(add = c(0, 2))) +
   scale_color_manual(
     values = c(
-      "No CC/MCC" = "#3a9276",
+      "No Complications or Comorbidities (CC)" = "#3a9276",
       "w/ CC" = "#627cb7",
       "w/ MCC" = "#d95926"
     )
@@ -926,8 +932,7 @@ providers_df %>%
     x = "Delivery price",
     y = "**<span style='font-size:42px'>←</span> More complex care**",
     subtitle = paste0(
-      "Complicated care (a C-section **<span style='color:#627cb7'>",
-      "with comorbidities</span>**) costs ",
+      "Complicated care costs ",
       "roughly double an uncomplicated vaginal birth"
     ),
     caption = paste0(
@@ -951,11 +956,11 @@ providers_df %>%
     plot.title = element_text(
       size = 18,
       face = "bold",
-      margin = margin(b = 6, l = -100),
+      margin = margin(b = 6),
     ),
     plot.subtitle = element_markdown(
       size = 13,
-      margin = margin(b = 16, l = -100)
+      margin = margin(b = 16)
     ),
     plot.margin = margin(r = 10, t = 6, b = 6, l = 6),
     legend.position = "none",
