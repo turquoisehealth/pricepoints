@@ -19,7 +19,9 @@ broadly representative of the cost of delivery in the U.S. (since most births
 
 The following additional data sources are used:
 
-- Policy Reporter data, which is used to weight payers when aggregating to
+- Policy Reporter data, which is an online subscription commercial and
+  government coverage policy database containing the number of covered lives
+  per policy/payer. This data is used to weight payers when aggregating to
   geographies like states. Low market share payers are downweighted to make
   sure rates are representative of what most people will see on their bills.
   Included as a column in the main rates data extract.
@@ -299,6 +301,7 @@ the data ingest step in Python. To do so, first:
 - Claxton, G., Cotter, L., Rakshit, S. (2025, February 25) *Challenges with effective price transparency analyses.* KFF. <https://www.healthsystemtracker.org/brief/challenges-with-effective-price-transparency-analyses/>
 - Lo, J., Claxton, G., Wager, E., Cox C., Amin K. (2023, February 10) *Ongoing challenges with hospital price transparency.* KFF. <https://www.healthsystemtracker.org/brief/ongoing-challenges-with-hospital-price-transparency/>
 - Raval, D., & Rosenbaum, T. (2018, June 15). *Why is Distance Important for Hospital Choice? Separating Home Bias from Transport Costs.* <https://www.ftc.gov/system/files/documents/reports/why-distance-important-hospital-choice-separating-home-bias-transport-costs/working_paper_335_revised.pdf>
+- Policy Reporter, by Mercalis. (2025). *Covered Lives retrieved from PolicyCore database.* <https://www.policyreporter.com>. 2025, 05 01.
 - U.S. Census Bureau. 2023 TIGER/Line Shapefiles (machine readable data files). U.S. Department of Commerce. <https://www2.census.gov/geo/tiger>
 - U.S. Census Bureau. American Community Survey 5-Year Estimates Subject Tables, Tables B01001, B19013, C27014, 2023, <https://data.census.gov>
 - National Center for Health Statistics. (2023). *Urban-Rural Classification Scheme for Counties.* <https://www.cdc.gov/nchs/data-analysis-tools/urban-rural.html>
