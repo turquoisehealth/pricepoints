@@ -129,6 +129,8 @@ SELECT
     hp.hq_longitude AS lon,
     hp.hq_latitude AS lat,
     cmsq.hospital_overall_rating AS star_rating
+
+-- Get hospital rates of 2025-05-06
 FROM glue.hospital_data.hospital_rates AS hr
 LEFT JOIN glue.hospital_data.hospital_provider AS hp
     ON hr.provider_id = hp.id

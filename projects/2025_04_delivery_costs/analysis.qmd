@@ -41,7 +41,6 @@ options(tigris_use_cache = TRUE)
 # Load data from ingest script
 rates_df <- read_parquet("data/rates_clean.parquet")
 zip_adj_df <- read_parquet("data/zip_adj_matrix.parquet")
-census_regions <- readr::read_csv("data/us_census_regions.csv")
 state_mmr_df <- readr::read_csv("data/state_mmr_2018-2022.csv") %>%
   select(state = State, mmr = `Mortality Rate`) %>%
   filter(state != "US")
@@ -105,6 +104,7 @@ rates_fil_df <- rates_df %>%
       provider_id == "7998" ~ 322,
       provider_id == "8075" ~ 128,
       provider_id == "8037" ~ 17,
+      provider_id == "8176" ~ 124,
       .default = total_beds
     )
   ) %>%
@@ -147,7 +147,7 @@ provider_payer_df <- rates_fil_df %>%
       # These variables don't vary within group, so it's fine to just take the
       # first value in order to preserve them when summarising
       c(
-        provider_name, provider_npi, parent_payer_name, health_system_name,
+        provider_name, provider_npi, parent_payer_name,
         medicare_rate, hospital_type, total_beds, star_rating, lon, lat,
         state_market_share, cbsa_name, starts_with("geoid_"),
         starts_with("total_"), starts_with("median_hh_"),
@@ -182,10 +182,6 @@ provider_payer_df <- rates_fil_df %>%
     tigris::fips_codes %>%
       distinct(state, state_code),
     by = c("geoid_state" = "state_code")
-  ) %>%
-  left_join(
-    census_regions,
-    by = "state"
   ) %>%
   left_join(
     nchs_urban_rural_df,
@@ -430,6 +426,9 @@ top_n_pop_df <- providers_df %>%
 
 # Add fancy labels for each CBSA and order the top 20 by the median DRG 807 rate
 provider_cbsa_df <- providers_df %>%
+  # Orlando really throws off the densities since nearly all its hospitals have
+  # around the same 807 price
+  filter(geoid_cbsa != "36740") %>%
   group_by(cbsa_name) %>%
   filter(
     cbsa_name %in% top_n_pop_df$cbsa_name,
