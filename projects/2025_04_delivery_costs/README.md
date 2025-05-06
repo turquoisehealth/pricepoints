@@ -4,10 +4,10 @@
 
 This project uses hospital [price transparency](https://www.cms.gov/priorities/key-initiatives/hospital-price-transparency)
 data to analyze the commercial cost of childbirth in the United States.
-It finds clear price patterns based on geography, type of care, payer,
-and other factors. It suggests that national or regional analyses
-using price transparency data are possible but difficult, and highlights
-some relevant data and methodological challenges.
+It finds clear price patterns based on geography and type of care.
+It suggests that national or regional analyses using price transparency data
+are possible but difficult, and highlights some relevant data and
+methodological challenges.
 
 ## Data used
 
@@ -250,7 +250,7 @@ results of running [`ingest.py`](./ingest.py)) are available via the ZIP file
 below. Extract the ZIP file to the `data/` directory, install dependencies, and
 run the [`analysis.qmd`](./analysis.qmd) notebook to reproduce the analysis.
 
-**[Link to replication data](link to s3)**
+#### [Link to replication data](https://drive.google.com/uc?export=download&id=1FKDVQFNHCt6-Y-teji-rgsLVDdre96AC)
 
 ### Dependencies
 
