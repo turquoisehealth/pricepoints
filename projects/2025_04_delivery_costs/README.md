@@ -19,9 +19,10 @@ broadly representative of the cost of delivery in the U.S. (since most births
 
 The following additional data sources are used:
 
-- Policy Reporter data, which is used to weight different payers when
-  aggregating to geographies like states. Included as a column in the main
-  rates data extract.
+- Policy Reporter data, which is used to weight payers when aggregating to
+  geographies like states. Low market share payers are downweighted to make
+  sure rates are representative of what most people will see on their bills.
+  Included as a column in the main rates data extract.
 - Census Bureau [TIGER/Line shapefiles](https://www2.census.gov/geo/tiger/).
   Used for creating maps of states and ZIP codes. Loaded via the `tigris` R
   package.
@@ -67,8 +68,14 @@ The main focus is on MS-DRG 807 - vaginal delivery without sterilization and/or
 dilation and curettage - since it represents the most common type of inpatient
 birth.
 
+> [!NOTE]
+> MS-DRGs only include the facility fee (i.e. the direct cost to the hospital).
+> There may be other fees associated with a delivery that are not captured
+> in this analysis (epidurals, professional consults, etc.).
+
 Some hospitals use exclusively APR-DRGs, rather than MS-DRGs. In such cases,
-APR-DRGs are translated to an equivalent MS-DRG:
+APR-DRGs are translated to an equivalent MS-DRG using
+[a crosswalk](https://cld.turquoise.health/components/transformations/drg_crosswalk/):
 
 - `APR-DRG 560-1` becomes `MS-DRG 807`
 - `APR-DRG 560-4` becomes `MS-DRG 805`
@@ -161,10 +168,14 @@ Data is pulled from the Turquoise Health hospital rates dataset using the
 described above, the following filters are applied:
 
 - Only rates with an `Inpatient` setting are included
-- Rates greater than $3,000 and less than $500,000 are included
+- Rates less than $3,000 and greater than $500,000 are removed. These
+  thresholds roughly correspond to the 1st and 99th percentile of rates
+  across all MS-DRGs, respectively
 - [Turquoise-flagged](https://turquoisehealth.zendesk.com/hc/en-us/articles/31190981752603-Outlier-Management-in-hospital-rates) outliers are removed
-- % of TBC rates with a list price greater than $500K are removed
-- % of TBC rates with a negotiated percentage greater than 110% are removed
+- Percent of total billed charge rates with a list price greater than $500K
+  are removed
+- Percent of total billed charge rates with a negotiated percentage greater
+  than 110% are removed
 - Per diem rates that are less than half the Medicare day rate (Medicare price
   / Average Length of Stay) are removed
 - Rates that exceed the provider's list price are removed, as long as the list
