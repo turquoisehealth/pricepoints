@@ -13,6 +13,7 @@ from tq.utils import get_env_file_path
 trino_conn = get_trino_connection()
 config = dotenv_values(get_env_file_path())
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 # Get OpenTimes DuckDB database
 duckdb_conn = duckdb.connect(database=":memory:")
@@ -144,7 +145,7 @@ rates_fil_df = rates_fil_df.filter(
     )
 )
 
-# Drop rates related to exchange and indemnity plans, per Arian
+# Drop rates related to exchange and indemnity plans
 rates_fil_df = rates_fil_df.filter(
     ~pl.coalesce(
         (pl.col("plan_name").str.contains("(?i).*exchange.*"))
@@ -314,10 +315,7 @@ rates_clean_df = (
         "payer_id",
         "payer_name",
         "parent_payer_name",
-        "plan_name",
         "payer_product_network",
-        "health_system_name",
-        "health_system_id",
         "billing_code_type",
         "billing_code",
         "code_description",

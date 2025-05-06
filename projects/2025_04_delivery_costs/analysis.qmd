@@ -94,7 +94,6 @@ rates_fil_df <- rates_df %>%
       provider_id == "8047" ~ 77,
       provider_id == "8048" ~ 373,
       provider_id == "8049" ~ 102,
-      provider_id == "8049" ~ 102,
       provider_id == "8050" ~ 407,
       provider_id == "8125" ~ 210,
       provider_id == "8158" ~ 13,
