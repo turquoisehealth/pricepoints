@@ -54,7 +54,7 @@ SELECT
             AND hr.negotiated_percentage >= 1
             AND hr.gross_charge IS NOT NULL
             THEN ROUND(CAST(
-                hr.gross_charge * LEAST(hr.negotiated_percentage, 500) AS DOUBLE
+                hr.gross_charge * LEAST(hr.negotiated_percentage, 110) AS DOUBLE
             ) / 100)
         -- Use estimated allowed amount if nothing else is available
         WHEN hr.contract_methodology = 'other'
