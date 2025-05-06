@@ -259,7 +259,7 @@ us_code_price_df <- providers_df %>%
 ```{r state_map_plot, message=FALSE, warning=FALSE, results='hide'}
 #| column: page
 #| out-width: 100%
-#| fig-width: 9
+#| fig-width: 9.5
 #| fig-height: 9
 
 # Grab state-level hexbin geometries from GitHub. Better than a normal
@@ -328,7 +328,7 @@ states_hexbin_gdf %>%
     na.value = "grey30"
   ) +
   scale_fill_brewer(
-    name = "Wtd. median\ndelivery price",
+    name = "Weighted median\ndelivery price",
     palette = "BuPu",
     direction = -1,
     na.translate = FALSE,
@@ -655,8 +655,8 @@ zcta_gdf %>%
   coord_sf(expand = FALSE) +
   guides(fill = guide_legend(override.aes = list(color = "grey20"))) +
   labs(
-    fill = "Wtd. Median\nDelivery Price",
-    color = "Wtd. Median\nDelivery Price",
+    fill = "Weighted median\ndelivery price",
+    color = "Weighted median\ndelivery price",
     title = paste0(
       "New York and California have the most expensive",
       " ZIP codes for delivery"
