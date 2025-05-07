@@ -3,13 +3,14 @@
 *.dat
 *.duckdb
 *.egg-info/
+*.html
 *.ipynb
 *.jar
 *.osm
 *.parquet
 *.pbf
 *.pyc
-*.quarto_ipynb
+*.quarto*
 *.session.sql
 *.tar
 *.tif
@@ -30,12 +31,9 @@ plan
 venv/
 
 # Ignore all R files
-*.R
-*.Rproj
 .Renvignore
-.Renviron
+.Rhistory
 .Rprofile
 .Rproj.user/
 renv.lock
-renv/
 rosm.cache/
