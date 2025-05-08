@@ -3,6 +3,8 @@ title: "How much does it cost to give birth in the United States?"
 subtitle: "By Dan Snow"
 format:
   html:
+    fig-format: retina
+    fig-dpi: 320
     toc: false
     embed-resources: true
     grid:
