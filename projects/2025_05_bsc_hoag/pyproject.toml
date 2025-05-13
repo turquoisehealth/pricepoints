@@ -1,7 +1,7 @@
 [project]
-name = "0000_00_proj_template"
+name = "2025_05_bsc_hoag"
 version = "0.0.1"
-description = "Project template"
+description = "BSC Hoag 2025"
 classifiers = [
   "Intended Audience :: Developers",
   "Intended Audience :: Science/Research",
@@ -12,8 +12,9 @@ dependencies = [
   "ipykernel>=6.29.0",
   "pandas>=2.2.3",
   "pandas-stubs>=2.2.3",
+  "polars>=1.29.0",
   "pyarrow>=19.0.1",
-  "tq @ file:///${PROJECT_ROOT}/../../tq"
+  "tq @ file:///${PROJECT_ROOT}/../../tq",
 ]
 
 [project.optional-dependencies]
