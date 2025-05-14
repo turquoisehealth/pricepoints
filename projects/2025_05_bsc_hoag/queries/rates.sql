@@ -52,11 +52,11 @@ WHERE cbsa_name = 'Los Angeles-Long Beach-Anaheim, CA'
     AND (
         (
             billing_code_type = 'MS-DRG'
-            AND billing_code IN ('807', '470', '216', '871')
+            AND billing_code IN ('807', '788', '871')
         ) OR (
             billing_code_type = 'HCPCS'
             AND billing_code IN (
-                '45378', '27130', '93452', '71045', '74177', '93005'
+                '45378', '27130', '93452', '93005', '42820', '47562'
             )
         )
     )
