@@ -18,5 +18,8 @@ logger.info("Fetching raw data from Trino")
 
 with open("queries/rates.sql", "r") as query:
     rates_df = pl.read_database(query.read(), trino_conn)
+    rates_df.write_parquet("data/rates.parquet")
 
-rates_df.write_parquet("data/rates_clean.parquet")
+with open("queries/claim_counts.sql", "r") as query:
+    claim_counts_df = pl.read_database(query.read(), trino_conn)
+    claim_counts_df.write_parquet("data/claim_counts.parquet")

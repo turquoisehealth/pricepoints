@@ -38,15 +38,6 @@ conflict_prefer_all("dplyr", quiet = TRUE)
 # Necessary for fast/accurate map rendering
 sf_use_s2(FALSE)
 options(tigris_use_cache = TRUE)
-```
-
-```{r load_data, message=FALSE, warning=FALSE}
-# Load the cleaned up rates data from CLD
-rates_df <- read_parquet("data/rates_clean.parquet") |>
-  mutate(
-    med_rate_all = median(canonical_rate),
-    .by = c("billing_code", "billing_code_type")
-  )
 
 # Transform numbers into dollar amounts, but don't truncate small values e.g.
 # 100 becomes $100, 1000 becomes $1K, 1000000 becomes $1M, etc.
@@ -69,30 +60,53 @@ label_dollar_short <- function(x) {
     }
   }, USE.NAMES = FALSE)
 }
+```
 
-# Human-readable labels for billing codes
+```{r load_data, message=FALSE}
+# Load the cleaned up rates data from CLD
+rates_df <- read_parquet("data/rates.parquet") |>
+  mutate(
+    med_rate_all = median(canonical_rate),
+    .by = c("billing_code", "billing_code_type")
+  )
+
+claim_counts_df <- read_parquet("data/claim_counts.parquet")
+
 code_desc_df <- tribble(
   ~"billing_code", ~"code_desc",
   "788", "C-section no MCC",
   "807", "Vag delivery no MCC",
   "871", "Sepsis w MCC",
+  "331", "Bowel proc no MCC",
+  "853", "Infection proc w MCC",
+  "419", "Gall bladder removal",
+  "743", "Uterine proc w CC",
+  "439", "Pancreas disorders",
+  "392", "GI cond no MCC",
+  "897", "Alc/drug abuse no MCC",
   "27130", "Hip/knee replacement",
   "45378", "Colonoscopy",
-  "93005", "ECG",
+  "93005", "Electrocardiogram",
   "93452", "Card cath",
   "42820", "Tonsils removal",
   "47562", "Gall bladder removal",
-  "99213", "Est. patient visit"
+  "99213", "Est. patient visit",
+  "99283", "Emergency visit",
+  "62323", "Epidural injection",
+  "17110", "Skin lesion removal",
+  "74176", "CT abdomen/pelvis"
 )
 ```
 
-```{r provider_comp, message=FALSE}
+```{r provider_comp_plot, message=FALSE}
 #| column: page
 #| out-width: 100%
-#| fig-width: 10
-#| fig-height: 9
+#| fig-width: 11
+#| fig-height: 11
 
-provider_comp_df <- rates_df %>%
+# Get rates for Hoag + competitors in Orange County for the 100
+# most utilized billing codes in the Los Angeles area
+provider_comp_df <- rates_df |>
   filter(
     payer_name == "Blue Shield of California",
     provider_name %in% c(
@@ -101,48 +115,68 @@ provider_comp_df <- rates_df %>%
       "Long Beach Memorial Medical Center",
       "Orange Coast Memorial Medical Center",
       "Saddleback Memorial Medical Center",
-      "Earl & Lorraine Miller Childrens Hospital",
       "St Joseph Hospital - Orange",
       "St Jude Medical Center",
-      "Huntington Beach Hospital"
+      "Providence Mission Hospital - Mission Viejo",
+      "UCI Health Fountain Valley"
     )
+  ) |>
+  filter(
+    # Keep only codes with rates for at least 6 providers and for Hoag
+    n() >= 6,
+    any(provider_name == "Hoag Memorial Hospital"),
+    !is.na(billing_code) | billing_code_type == "MS-DRG",
+    .by = "billing_code"
   ) |>
   left_join(code_desc_df, by = "billing_code") |>
   mutate(
     code = factor(paste0(
-      "**", billing_code_type, " ",
-      billing_code, "**<br><sup>", code_desc, "</sup>"
+      "**", code_desc, "**<br><sup>",
+      billing_code_type, " ", billing_code, "</sup>"
     )),
-    code = fct_rev(fct_reorder(code, med_rate_all)),
-    rate_label = case_when(
-      str_detect(tolower(health_system_name), "hoag") ~ "Hoag",
-      .default = "Other"
-    )
+    code = fct_rev(fct_reorder2(
+      code,
+      billing_code_type,
+      med_rate_all,
+      .na_rm = TRUE
+    ))
   ) |>
-  group_by(code) |>
-  mutate(rank = dense_rank(canonical_rate * -1)) |>
-  ungroup() |>
-  mutate(rel_rank = median(rank), .by = "provider_name") |>
+  mutate(rank = dense_rank(canonical_rate * -1), .by = "code") |>
   mutate(
-    provider_name = fct_rev(fct_reorder(provider_name, rel_rank)),
+    rel_rank = median(rank),
+    .by = c("provider_name", "billing_code_type")
+  ) |>
+  mutate(
     rank = factor(rank),
-    rank = fct_recode(
-      rank,
-      "1 (Highest price)" = "1",
-      "7 (Lowest price)" = "7"
-    ),
-    provider_name = fct_recode(
+    provider_name = case_match(
       provider_name,
       # nolint start
-      "<span style='color:#e59c35;font-size:15px;'>Hoag Hospital<br>Newport Beach</span><br>★★★★★" = "Hoag Memorial Hospital",
-      "UC Irvine<br>Medical Center<br>★★★★☆" = "University of California Irvine Medical Center",
-      "Long Beach<br>Memorial<br>Medical Center<br>★★☆☆☆" = "Long Beach Memorial Medical Center",
-      "Orange Coast<br>Memorial<br>Medical Center<br>★★★★☆" = "Orange Coast Memorial Medical Center",
-      "Saddleback<br>Memorial<br>Medical Center<br>★★★☆☆" = "Saddleback Memorial Medical Center",
-      "St Joseph<br>Hospital<br>(Orange)<br>★★★★☆" = "St Joseph Hospital - Orange",
-      "St Jude<br>Medical Center<br>★★★★☆" = "St Jude Medical Center"
+      "Hoag Memorial Hospital" ~ "<span style='color:#e59c35'>Hoag Hospitals<br>Newport Beach<br>and Irvine</span><br>★★★★★",
+      "University of California Irvine Medical Center" ~ "UC Irvine<br>Medical Center<br>★★★★☆",
+      "Long Beach Memorial Medical Center" ~ "Long Beach<br>Memorial<br>Medical Center<br>★★☆☆☆",
+      "Orange Coast Memorial Medical Center" ~ "Orange Coast<br>Memorial<br>Medical Center<br>★★★★☆",
+      "Saddleback Memorial Medical Center" ~ "Saddleback<br>Memorial<br>Medical Center<br>★★★☆☆",
+      "St Joseph Hospital - Orange" ~ "St Joseph<br>Hospital<br>★★★★☆",
+      "St Jude Medical Center" ~ "St Jude<br>Medical Center<br>★★★★☆",
+      "Providence Mission Hospital - Mission Viejo" ~ "Providence<br>Mission Viejo<br>★★★★☆",
+      "UCI Health Fountain Valley" ~ "UCI Health<br>Fountain Valley<br>★★☆☆☆",
       # nolint end
-    )
+    ),
+    provider_name = ifelse(
+      billing_code_type == "HCPCS",
+      str_sub(provider_name, end = -10),
+      provider_name
+    ),
+    provider_name = fct_reorder(
+      provider_name,
+      rel_rank,
+      .desc = TRUE
+    ),
+    billing_code_type = fct_rev(fct_recode(
+      billing_code_type,
+      "Inpatient procedures" = "MS-DRG",
+      "Outpatient procedures" = "HCPCS"
+    ))
   )
 
 provider_comp_df |>
@@ -157,31 +191,43 @@ provider_comp_df |>
       label = label_dollar_short(canonical_rate),
       color = rank
     ),
-    size = 4
+    size = 3
   ) +
-  annotate(
-    "rect",
-    xmin = 5.5, xmax = 6.5,
-    ymin = -Inf, ymax = Inf,
+  geom_rect(
+    data = tribble(
+      ~"billing_code_type", ~"xmin", ~"xmax",
+      "Inpatient procedures", 6.5, 7.5,
+      "Outpatient procedures", 8.5, 9.475
+    ),
+    aes(
+      xmin = xmin,
+      xmax = xmax,
+    ),
+    ymin = -Inf,
+    ymax = Inf,
     fill = "transparent",
     color = "#e59c35",
     linewidth = 1.8
   ) +
   scale_color_manual(
     values = c(
-      "1 (Highest price)" = "white",
+      "1" = "white",
       "2" = "white",
       "3" = "white",
       "4" = "black",
-      "5" = "black",
+      "5" = "grey10",
       "6" = "grey10",
-      "7 (Lowest price)" = "grey10"
+      "7" = "grey20",
+      "8" = "grey20",
+      "9" = "grey20"
     )
   ) +
-  scale_fill_brewer(
-    name = "Price rank per procedure",
-    palette = "BuPu",
-    direction = -1
+  scale_fill_manual(
+    name = paste0(
+      "← Lowest price", paste0(rep(" ", 100), collapse = ""),
+      "Highest price →\nPrice rank per procedure (row)"
+    ),
+    values = rev(RColorBrewer::brewer.pal(7, "BuPu")[c(rep(1, 2), 1:7)])
   ) +
   scale_x_discrete(expand = c(0, 0), position = "top") +
   scale_y_discrete(expand = c(0, 0)) +
@@ -194,7 +240,7 @@ provider_comp_df |>
       "Across a basket of common procedures, Hoag",
       " prices are consistently higher than those of competitors"
     ),
-    y = "Procedure",
+    y = "",
     x = "",
     caption = paste0(
       "Stars represent CMS quality ratings for each hospital<br>",
@@ -207,31 +253,39 @@ provider_comp_df |>
       position = "bottom",
       title.hjust = 0.5,
       label.position = "bottom",
+      title.position = "bottom",
       nrow = 1,
       reverse = TRUE
     ),
     color = "none"
   ) +
+  facet_wrap(
+    vars(billing_code_type),
+    ncol = 1,
+    scales = "free",
+    strip.position = "left"
+  ) +
   theme(
     plot.title = element_markdown(
       size = 18,
-      margin = margin(b = 6, l = -100),
+      margin = margin(b = 6, l = -110),
       face = "bold"
     ),
     plot.subtitle = element_markdown(
       size = 14,
-      margin = margin(b = 20, l = -100),
+      margin = margin(b = 20, l = -110),
       lineheight = 1.2
     ),
     panel.grid = element_blank(),
     legend.title = element_text(
-      margin = margin(r = 14),
+      lineheight = 0,
       size = 15,
       face = "bold",
       color = "grey30"
     ),
-    legend.text = element_text(size = 13),
-    legend.key.spacing.y = unit(0.2, "cm"),
+    legend.text = element_blank(),
+    legend.key.spacing.x = unit(0, "cm"),
+    legend.key.width = unit(2.42, "cm"),
     plot.margin = margin(r = 16, t = 6, b = 6, l = 6),
     axis.title.x = element_markdown(
       margin = margin(t = 10),
@@ -240,7 +294,11 @@ provider_comp_df |>
       color = "grey60",
       linewidth = 1.2
     ),
-    axis.text.x = element_markdown(size = 10, lineheight = 1.2, face = "bold"),
+    axis.text.x = element_markdown(
+      size = 9,
+      lineheight = 1.2,
+      face = "bold"
+    ),
     axis.ticks.y = element_blank(),
     axis.ticks.x = element_blank(),
     axis.title.y = element_markdown(
@@ -249,9 +307,21 @@ provider_comp_df |>
       margin = margin(r = 10),
       face = "bold"
     ),
-    axis.text.y = element_markdown(size = 11, lineheight = 1.3),
+    axis.text.y = element_markdown(
+      size = 10,
+      lineheight = 1.3,
+      vjust = 0.65
+    ),
     panel.background = element_rect(fill = "grey90"),
-    strip.text = element_markdown(size = 10),
+    strip.text = element_markdown(
+      size = 15,
+      face = "bold",
+      color = "grey50",
+      margin = margin(r = 8)
+    ),
+    strip.background = element_blank(),
+    strip.placement = "outside",
+    panel.spacing.y = unit(0.5, "cm"),
     plot.caption = element_markdown(
       size = 10,
       lineheight = 1.1,
