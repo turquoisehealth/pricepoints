@@ -22,7 +22,6 @@ SELECT
     cld.facility,
     cld.billing_code_type,
     cld.billing_code,
-    cpt.service_group,
     cld.canonical_rate_original_billing_codes,
     cld.canonical_rate_original_billing_code_type,
     cld.service_description,
@@ -43,15 +42,6 @@ SELECT
     cld.canonical_rate_percent_of_list,
     cld.canonical_rate_validation_method
 FROM tq_dev.internal_dev_csong_cld_v1_1.prod_combined_abridged AS cld
-LEFT JOIN (
-    SELECT DISTINCT
-        code AS billing_code,
-        description AS service_group
-    FROM glue.hospital_data.price_transparency_cpthierarchy
-    WHERE level = 1
-        AND REGEXP_LIKE(code, '^[0-9]{5}')
-) AS cpt
-    ON cld.billing_code = cpt.billing_code
 WHERE cld.cbsa_name = 'Los Angeles-Long Beach-Anaheim, CA'
     AND cld.canonical_rate IS NOT NULL
     AND cld.canonical_rate_source IN ('hospital', 'payer')

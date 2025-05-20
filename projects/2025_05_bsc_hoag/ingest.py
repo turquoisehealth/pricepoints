@@ -23,3 +23,7 @@ with open("queries/rates.sql", "r") as query:
 with open("queries/claim_counts.sql", "r") as query:
     claim_counts_df = pl.read_database(query.read(), trino_conn)
     claim_counts_df.write_parquet("data/claim_counts.parquet")
+
+with open("queries/payer_share.sql", "r") as query:
+    payer_share_df = pl.read_database(query.read(), trino_conn)
+    payer_share_df.write_parquet("data/payer_share.parquet")
