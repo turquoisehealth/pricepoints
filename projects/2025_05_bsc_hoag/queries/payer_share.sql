@@ -11,7 +11,8 @@ WITH payer_lives AS (
             'Aetna',
             'Anthem',
             'United Healthcare',
-            'Cigna'
+            'Cigna',
+            'Kaiser Permanente'
         )
     GROUP BY pr.tq_payer_payer_id
 ),
