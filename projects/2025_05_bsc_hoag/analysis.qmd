@@ -238,8 +238,8 @@ ggplot() +
   ) +
   annotate(
     "text",
-    y = 33.783, x = -117.805,
-    label = "Adventist",
+    y = 33.782, x = -117.798,
+    label = "Providence",
     fontface = "bold",
     size = 4,
     hjust = 0.5,
@@ -452,7 +452,7 @@ payer_comp_df |>
         scales::label_comma()(),
       " rates negotiated between providers and major insurers in",
       " Orange County, sourced from Turquoise Health<br>",
-      "Market share percentage is for Orange County, ",
+      "Market share percentage is for all of California, ",
       "data is from Policy Reporter"
     )
   ) +
