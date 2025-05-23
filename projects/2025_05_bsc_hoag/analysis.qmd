@@ -177,7 +177,7 @@ medicare_provider_df <- rates_df |>
   )
 
 medicare_provider_hist <- medicare_provider_df |>
-ggplot() +
+  ggplot() +
   geom_dotplot(
     aes(x = med_rate, fill = prov_fct, color = prov_fct),
     method = "histodot",
@@ -215,7 +215,7 @@ ggplot() +
   )
 
 medicare_provider_df |>
-ggplot() +
+  ggplot() +
   annotation_map_tile(type = "cartolight", zoomin = 0) +
   geom_sf(aes(color = prov_fct), size = 3.5, alpha = 0.8) +
   scale_color_manual(values = provider_colors) +
@@ -334,7 +334,10 @@ payer_comp_df <- rates_df |>
     med_rate = median(canonical_rate),
     med_rate_all = first(med_rate_all),
     num_providers = n(),
-    .by = c("billing_code", "billing_code_type", "proc_type", "payer_name", "payer_id")
+    .by = c(
+      "billing_code", "billing_code_type",
+      "proc_type", "payer_name", "payer_id"
+    )
   ) |>
   left_join(code_desc_df, by = "billing_code") |>
   left_join(payer_share_df, by = "payer_id") |>
@@ -357,7 +360,10 @@ payer_comp_df <- rates_df |>
   ) |>
   mutate(
     rank = factor(rank),
-    payer_market_share = scales::label_percent(accuracy = 0.1, trim = FALSE)(payer_market_share),
+    payer_market_share = scales::label_percent(
+      accuracy = 0.1,
+      trim = FALSE
+    )(payer_market_share),
     payer_name = case_match(
       payer_name,
       # nolint start
@@ -445,7 +451,6 @@ payer_comp_df |>
     y = "",
     x = "",
     caption = paste0(
-
       "Based on ", payer_comp_df |>
         pull(num_providers) |>
         sum() |>
