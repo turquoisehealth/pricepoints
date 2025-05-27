@@ -35,5 +35,4 @@ venv/
 .Rhistory
 .Rprofile
 .Rproj.user/
-renv.lock
 rosm.cache/
