@@ -680,7 +680,7 @@ provider_comp_df |>
   scale_y_discrete(expand = c(0, 0)) +
   labs(
     title = paste0(
-      "<span style='color:#e59c35'>Hoag</span> gets higher rates from",
+      "<span style='color:#e59c35'>Hoag</span> gets higher payments from",
       " <span style='color:#4186d0'>Blue Shield</span> than other hospitals",
       " in Orange County"
     ),
