@@ -1,5 +1,5 @@
 ---
-title: "BSC Hoag 2025"
+title: "Orange County’s Big Healthcare Brawl"
 subtitle: "By Dan Snow"
 format:
   html:
@@ -94,7 +94,6 @@ rates_df <- rates_df |>
 
 # Load miscellaneous supporting data
 payer_share_df <- read_parquet("data/payer_share.parquet")
-claim_counts_df <- read_parquet("data/claim_counts.parquet")
 
 # Add human-readable names for billing codes
 code_desc_df <- tribble(
@@ -183,12 +182,69 @@ medicare_provider_df <- rates_df |>
 # Create a dot histogram for the inset on the map, where each dot is a provider
 medicare_provider_hist <- medicare_provider_df |>
   ggplot() +
+  annotate(
+    "segment",
+    x = 2.175, xend = 2.175,
+    y = -Inf, yend = 0.38,
+    color = "green3",
+    linewidth = 0.8,
+    lty = "11"
+  ) +
+  annotate(
+    "richtext",
+    x = 2.175, y = 0.38,
+    vjust = 0,
+    size = 3.5,
+    fill = "transparent",
+    fontface = "bold",
+    color = "grey30",
+    label = paste0("<span style='color:green3'>Providence</span>"),
+    label.size = 0
+  ) +
+  annotate(
+    "segment",
+    x = 2.671, xend = 2.671,
+    y = -Inf, yend = 0.33,
+    color = "#215fab",
+    linewidth = 0.8,
+    lty = "11"
+  ) +
+  annotate(
+    "richtext",
+    x = 2.671, y = 0.33,
+    vjust = 0,
+    size = 3.5,
+    fill = "transparent",
+    fontface = "bold",
+    color = "grey30",
+    label = paste0("<span style='color:#215fab'>UCI</span>"),
+    label.size = 0
+  ) +
+  annotate(
+    "segment",
+    x = 3.1275, xend = 3.1275,
+    y = -Inf, yend = 0.3,
+    color = "#e59c35",
+    linewidth = 0.8,
+    lty="11"
+  ) +
+  annotate(
+    "richtext",
+    x = 3.1275, y = 0.3,
+    vjust = 0,
+    size = 3.5,
+    fill = "transparent",
+    fontface = "bold",
+    color = "grey30",
+    label = paste0("<span style='color:#e59c35'>Hoag</span>"),
+    label.size = 0
+  ) +
   geom_dotplot(
     aes(x = med_rate, fill = prov_fct, color = prov_fct),
     method = "histodot",
     stackgroups = TRUE,
     dotsize = 0.9,
-    alpha = 0.8
+    alpha = 1
   ) +
   scale_color_manual(values = provider_colors) +
   scale_fill_manual(values = provider_colors) +
@@ -227,50 +283,41 @@ medicare_provider_df |>
   scale_color_manual(values = provider_colors) +
   annotate(
     "text",
-    y = 33.675, x = -118.475,
-    label = "Each dot represents\none hospital",
-    size = 3.5,
-    hjust = 0,
+    y = 33.675, x = -118.37,
+    label = "Each dot is\none hospital",
+    size = 3,
+    hjust = 1,
     color = "grey30"
   ) +
   annotate(
-    "text",
-    y = 33.645, x = -117.805,
-    label = "Hoag",
-    fontface = "bold",
-    size = 5,
-    hjust = 0,
-    color = "#e59c35"
-  ) +
-  annotate(
-    "text",
-    y = 33.782, x = -117.798,
-    label = "Providence",
-    fontface = "bold",
-    size = 4,
-    hjust = 0.5,
-    color = "green3"
-  ) +
-  annotate(
-    "text",
-    y = 33.87, x = -117.862,
-    label = "UCI",
-    fontface = "bold",
-    size = 4,
-    hjust = 0,
-    color = "#215fab"
-  ) +
-  annotate(
-    "segment",
+    "curve",
+    curvature = 0.1,
     y = 33.7, x = -118.37,
-    yend = 33.8025, xend = -118.346,
+    yend = 33.8, xend = -118.344,
     arrow = arrow(length = unit(0.01, "npc")),
     color = "grey30"
   ) +
   annotate(
-    "segment",
-    y = 33.648, x = -118.37,
-    yend = 33.598, xend = -118.335,
+    "curve",
+    curvature = -0.2,
+    y = 33.65, x = -118.37,
+    yend = 33.598, xend = -118.33,
+    arrow = arrow(length = unit(0.01, "npc")),
+    color = "grey30"
+  ) +
+  annotate(
+    "text",
+    y = 33.475, x = -117.95,
+    label = "Dotted lines are the median\nrate for each health system",
+    size = 3,
+    hjust = 0,
+    color = "grey30"
+  ) +
+  annotate(
+    "curve",
+    curvature = 0.2,
+    y = 33.495, x = -117.93,
+    yend = 33.545, xend = -118,
     arrow = arrow(length = unit(0.01, "npc")),
     color = "grey30"
   ) +
@@ -281,7 +328,7 @@ medicare_provider_df |>
   labs(
     title = paste0(
       "<span style='color:#e59c35'>Hoag</span> is one of ",
-      "the most expensive hospitals in the L.A. area"
+      "the most expensive providers in the L.A. area"
     ),
     subtitle = paste0(
       "Across major insurers, Hoag rates are consistently ",
@@ -680,8 +727,8 @@ provider_comp_df |>
   scale_y_discrete(expand = c(0, 0)) +
   labs(
     title = paste0(
-      "<span style='color:#e59c35'>Hoag</span> gets higher payments from",
-      " <span style='color:#4186d0'>Blue Shield</span> than other hospitals",
+      "<span style='color:#4186d0'>Blue Shield</span> pays higher rates to ",
+      "<span style='color:#e59c35'>Hoag</span> than other hospitals",
       " in Orange County"
     ),
     subtitle = paste0(
