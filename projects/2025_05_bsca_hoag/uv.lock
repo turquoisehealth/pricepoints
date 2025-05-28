@@ -3,7 +3,7 @@ revision = 1
 requires-python = "==3.12.8"
 
 [[package]]
-name = "2025-05-bsc-hoag"
+name = "2025-05-bsca-hoag"
 version = "0.0.1"
 source = { virtual = "." }
 dependencies = [

@@ -1,7 +1,7 @@
 [project]
-name = "2025_05_bsc_hoag"
+name = "2025_05_bsca_hoag"
 version = "0.0.1"
-description = "BSC Hoag 2025"
+description = "Orange County’s Big Healthcare Brawl"
 classifiers = [
   "Intended Audience :: Developers",
   "Intended Audience :: Science/Research",
