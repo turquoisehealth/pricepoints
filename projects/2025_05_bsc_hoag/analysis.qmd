@@ -129,6 +129,8 @@ code_desc_df <- tribble(
 #| fig-width: 8
 #| fig-height: 9
 
+# Manually define map limits since the LA CBSA is big and we don't want to see
+# all providers in it
 provider_xlim <- c(-118.471362, -117.610094)
 provider_ylim <- c(33.480906, 34.221141)
 provider_colors <- c(
@@ -138,6 +140,8 @@ provider_colors <- c(
   "Other" = "grey50"
 )
 
+# Grab the median negotiated rates for each provider in the LA area, as a
+# % of Medicare. Drop providers with few payers or outside the map bounds
 medicare_provider_df <- rates_df |>
   filter(!is.na(total_beds)) |>
   summarize(
@@ -176,6 +180,7 @@ medicare_provider_df <- rates_df |>
     crs = 4326
   )
 
+# Create a dot histogram for the inset on the map, where each dot is a provider
 medicare_provider_hist <- medicare_provider_df |>
   ggplot() +
   geom_dotplot(
@@ -214,6 +219,7 @@ medicare_provider_hist <- medicare_provider_df |>
     )
   )
 
+# Create a map + dot histogram plot of the LA area
 medicare_provider_df |>
   ggplot() +
   annotation_map_tile(type = "cartolight", zoomin = 0) +
@@ -282,7 +288,7 @@ medicare_provider_df |>
       "high relative to Medicare"
     ),
     caption = paste0(
-      "Based on ", medicare_comp_df |>
+      "Based on ", medicare_provider_df |>
         pull(num_rates) |>
         sum() |>
         scales::label_comma()(),
@@ -328,6 +334,7 @@ medicare_provider_df |>
 #| fig-width: 11
 #| fig-height: 11
 
+# Get the median rate per payer across all providers in Orange County
 payer_comp_df <- rates_df |>
   filter(!is.na(total_beds), county == "Orange") |>
   summarize(
@@ -387,6 +394,7 @@ payer_comp_df <- rates_df |>
     )
   )
 
+# Create a heatmap/tile plot of payer medians
 payer_comp_df |>
   ggplot() +
   geom_tile(
@@ -548,8 +556,8 @@ payer_comp_df |>
 #| fig-width: 11
 #| fig-height: 11
 
-# Get rates for Hoag + competitors in Orange County for the 100
-# most utilized billing codes in the Los Angeles area
+# Get the median rate for a select group of representative providers in
+# Orange County
 provider_comp_df <- rates_df |>
   filter(
     payer_name == "Blue Shield of California",
