@@ -1,0 +1,827 @@
+---
+title: "Orange County’s Big Healthcare Brawl"
+subtitle: "By Dan Snow"
+format:
+  html:
+    fig-format: retina
+    fig-dpi: 320
+    toc: false
+    embed-resources: true
+    grid:
+      body-width: 900px
+execute:
+  echo: false
+---
+
+```{r setup, message=FALSE}
+library(arrow)
+library(conflicted)
+library(data.table)
+library(dplyr)
+library(emojifont)
+library(forcats)
+library(ggplot2)
+library(ggrepel)
+library(ggridges)
+library(ggspatial)
+library(ggtext)
+library(Hmisc)
+library(patchwork)
+library(prettymapr)
+library(raster)
+library(scales)
+library(sf)
+library(stringr)
+library(tigris)
+library(tidyr)
+
+# Always use dplyr over other packages
+conflict_prefer_all("dplyr", quiet = TRUE)
+
+# Necessary for fast/accurate map rendering
+sf_use_s2(FALSE)
+options(tigris_use_cache = TRUE)
+
+# Transform numbers into dollar amounts, but don't truncate small values e.g.
+# 100 becomes $100, 1000 becomes $1K, 1000000 becomes $1M, etc.
+label_dollar_short <- function(x) {
+  sapply(x, function(val) {
+    if (is.na(val)) {
+      return(NA_character_)
+    }
+
+    abs_val <- abs(val)
+    sign_str <- ifelse(val < 0, "-", "")
+    if (abs_val >= 1e9) {
+      paste0(sign_str, "$", round(abs_val / 1e9, 0), "B")
+    } else if (abs_val >= 1e6) {
+      paste0(sign_str, "$", round(abs_val / 1e6, 0), "M")
+    } else if (abs_val >= 1e3) {
+      paste0(sign_str, "$", round(abs_val / 1e3, 1), "K")
+    } else {
+      paste0(sign_str, "$", formatC(abs_val, format = "f", digits = 0))
+    }
+  }, USE.NAMES = FALSE)
+}
+```
+
+```{r load_data, message=FALSE}
+# Load the cleaned up rates data from CLD
+rates_df <- read_parquet("data/rates.parquet") |>
+  mutate(
+    med_rate_all = median(canonical_rate),
+    .by = c("billing_code", "billing_code_type")
+  ) |>
+  mutate(
+    proc_type = fct_rev(fct_recode(
+      billing_code_type,
+      "Inpatient procedures" = "MS-DRG",
+      "Outpatient procedures" = "HCPCS"
+    ))
+  )
+
+# Add a duplicate set of rates for Hoag Irvine (not yet in CLD)
+rates_df <- rates_df |>
+  bind_rows(
+    rates_df |>
+      filter(provider_name == "Hoag Memorial Hospital") |>
+      mutate(provider_name = "Hoag Hospital Irvine") |>
+      mutate(
+        hq_longitude = -117.772,
+        hq_latitude = 33.66
+      )
+  )
+
+# Load miscellaneous supporting data
+payer_share_df <- read_parquet("data/payer_share.parquet")
+
+# Add human-readable names for billing codes
+code_desc_df <- tribble(
+  ~"billing_code", ~"code_desc",
+  "788", "C-section no MCC",
+  "807", "Vag delivery no MCC",
+  "871", "Sepsis w MCC",
+  "331", "Bowel proc no MCC",
+  "853", "Infection proc w MCC",
+  "419", "Gall bladder removal",
+  "743", "Uterine proc w CC",
+  "439", "Pancreas disorders",
+  "392", "GI cond no MCC",
+  "897", "Alc/drug abuse no MCC",
+  "27130", "Hip/knee replacement",
+  "45378", "Colonoscopy",
+  "93005", "Electrocardiogram",
+  "93452", "Card cath",
+  "42820", "Tonsils removal",
+  "47562", "Gall bladder removal",
+  "99213", "Est. patient visit",
+  "99283", "Emergency visit",
+  "62323", "Epidural injection",
+  "17110", "Skin lesion removal",
+  "74176", "CT abdomen/pelvis"
+)
+```
+
+```{r medicare_provider_map, message=FALSE, warning=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 9
+
+# Manually define map limits since the LA CBSA is big and we don't want to see
+# all providers in it
+provider_xlim <- c(-118.471362, -117.610094)
+provider_ylim <- c(33.480906, 34.221141)
+provider_colors <- c(
+  "Hoag" = "#e59c35",
+  "UCI" = "#215fab",
+  "Providence" = "green3",
+  "Other" = "grey50"
+)
+
+# Grab the median negotiated rates for each provider in the LA area, as a
+# % of Medicare. Drop providers with few payers or outside the map bounds
+medicare_provider_df <- rates_df |>
+  filter(!is.na(total_beds)) |>
+  summarize(
+    med_rate = median(canonical_rate_percent_of_medicare),
+    num_payers = n(),
+    across(c(hq_longitude, hq_latitude), first),
+    .by = c("billing_code", "billing_code_type", "provider_name")
+  ) |>
+  filter(
+    num_payers >= 2,
+    between(hq_longitude, provider_xlim[1], provider_xlim[2]),
+    between(hq_latitude, provider_ylim[1], provider_ylim[2])
+  ) |>
+  filter(n() >= 10, .by = "provider_name") |>
+  summarize(
+    med_rate = median(med_rate),
+    num_rates = sum(num_payers),
+    across(c(hq_longitude, hq_latitude), first),
+    .by = c("provider_name")
+  ) |>
+  mutate(
+    prov_fct = case_when(
+      str_detect(provider_name, "Hoag") ~ "Hoag",
+      provider_name == "University of California Irvine Medical Center" |
+        str_detect(provider_name, "UCI") ~ "UCI",
+      str_detect(provider_name, "St Jude|St Joseph|Providence") ~ "Providence",
+      .default = "Other"
+    ),
+    prov_fct = fct_rev(factor(
+      prov_fct,
+      levels = c("Hoag", "UCI", "Providence", "Other")
+    ))
+  ) |>
+  st_as_sf(
+    coords = c("hq_longitude", "hq_latitude"),
+    crs = 4326
+  )
+
+# Create a dot histogram for the inset on the map, where each dot is a provider
+medicare_provider_hist <- medicare_provider_df |>
+  ggplot() +
+  annotate(
+    "segment",
+    x = 2.175, xend = 2.175,
+    y = -Inf, yend = 0.38,
+    color = "green3",
+    linewidth = 0.8,
+    lty = "11"
+  ) +
+  annotate(
+    "richtext",
+    x = 2.175, y = 0.38,
+    vjust = 0,
+    size = 3.5,
+    fill = "transparent",
+    fontface = "bold",
+    color = "grey30",
+    label = paste0("<span style='color:green3'>Providence</span>"),
+    label.size = 0
+  ) +
+  annotate(
+    "segment",
+    x = 2.671, xend = 2.671,
+    y = -Inf, yend = 0.33,
+    color = "#215fab",
+    linewidth = 0.8,
+    lty = "11"
+  ) +
+  annotate(
+    "richtext",
+    x = 2.671, y = 0.33,
+    vjust = 0,
+    size = 3.5,
+    fill = "transparent",
+    fontface = "bold",
+    color = "grey30",
+    label = paste0("<span style='color:#215fab'>UCI</span>"),
+    label.size = 0
+  ) +
+  annotate(
+    "segment",
+    x = 3.1275, xend = 3.1275,
+    y = -Inf, yend = 0.3,
+    color = "#e59c35",
+    linewidth = 0.8,
+    lty="11"
+  ) +
+  annotate(
+    "richtext",
+    x = 3.1275, y = 0.3,
+    vjust = 0,
+    size = 3.5,
+    fill = "transparent",
+    fontface = "bold",
+    color = "grey30",
+    label = paste0("<span style='color:#e59c35'>Hoag</span>"),
+    label.size = 0
+  ) +
+  geom_dotplot(
+    aes(x = med_rate, fill = prov_fct, color = prov_fct),
+    method = "histodot",
+    stackgroups = TRUE,
+    dotsize = 0.9,
+    alpha = 1
+  ) +
+  scale_color_manual(values = provider_colors) +
+  scale_fill_manual(values = provider_colors) +
+  scale_x_continuous(
+    name = paste0(
+      "**Hospital median negotiated rate**",
+      "<br><sup>(as a percentage of Medicare)</sup>"
+    ),
+    labels = label_percent(accuracy = 1, scale = 100),
+    expand = c(0, 0)
+  ) +
+  guides(
+    fill = "none",
+    color = "none"
+  ) +
+  theme_void() +
+  theme(
+    axis.text.x = element_markdown(size = 12, margin = margin(t = 6)),
+    axis.ticks.x = element_line(
+      color = "grey50",
+      linewidth = 1.6
+    ),
+    axis.title.x = element_markdown(
+      size = 14,
+      color = "grey30",
+      margin = margin(t = 10),
+      lineheight = 1.2
+    )
+  )
+
+# Create a map + dot histogram plot of the LA area
+medicare_provider_df |>
+  ggplot() +
+  annotation_map_tile(type = "cartolight", zoomin = 0) +
+  geom_sf(aes(color = prov_fct), size = 3.5, alpha = 0.8) +
+  scale_color_manual(values = provider_colors) +
+  annotate(
+    "text",
+    y = 33.675, x = -118.37,
+    label = "Each dot is\none hospital",
+    size = 3,
+    hjust = 1,
+    color = "grey30"
+  ) +
+  annotate(
+    "curve",
+    curvature = 0.1,
+    y = 33.7, x = -118.37,
+    yend = 33.8, xend = -118.344,
+    arrow = arrow(length = unit(0.01, "npc")),
+    color = "grey30"
+  ) +
+  annotate(
+    "curve",
+    curvature = -0.2,
+    y = 33.65, x = -118.37,
+    yend = 33.598, xend = -118.33,
+    arrow = arrow(length = unit(0.01, "npc")),
+    color = "grey30"
+  ) +
+  annotate(
+    "text",
+    y = 33.475, x = -117.95,
+    label = "Dotted lines are the median\nrate for each health system",
+    size = 3,
+    hjust = 0,
+    color = "grey30"
+  ) +
+  annotate(
+    "curve",
+    curvature = 0.2,
+    y = 33.495, x = -117.93,
+    yend = 33.545, xend = -118,
+    arrow = arrow(length = unit(0.01, "npc")),
+    color = "grey30"
+  ) +
+  coord_sf(
+    xlim = provider_xlim,
+    ylim = provider_ylim
+  ) +
+  labs(
+    title = paste0(
+      "<span style='color:#e59c35'>Hoag</span> is one of ",
+      "the most expensive providers in the L.A. area"
+    ),
+    subtitle = paste0(
+      "Across major insurers, Hoag rates are consistently ",
+      "high relative to Medicare"
+    ),
+    caption = paste0(
+      "Based on ", medicare_provider_df |>
+        pull(num_rates) |>
+        sum() |>
+        scales::label_comma()(),
+      " rates negotiated between providers and major payers in Los Angeles, ",
+      "sourced from Turquoise Health<br>",
+      "Provider-level medians include rates for 20 commonly utilized ",
+      "codes (HCPCS and MS-DRG codes)"
+    )
+  ) +
+  guides(color = "none") +
+  theme(
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    plot.title = element_markdown(
+      size = 18,
+      margin = margin(b = 6),
+      face = "bold"
+    ),
+    plot.subtitle = element_markdown(
+      size = 14,
+      margin = margin(b = 10),
+      lineheight = 1.2
+    ),
+    plot.caption = element_markdown(
+      size = 10,
+      lineheight = 1.1,
+      margin = margin(t = 10)
+    )
+  ) +
+  inset_element(
+    medicare_provider_hist,
+    left = 0.035,
+    right = 0.6,
+    bottom = 0.02,
+    top = 0.4
+  )
+```
+
+```{r payer_comp_plot, message=FALSE, warning=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 11
+#| fig-height: 11
+
+# Get the median rate per payer across all providers in Orange County
+payer_comp_df <- rates_df |>
+  filter(!is.na(total_beds), county == "Orange") |>
+  summarize(
+    med_rate = median(canonical_rate),
+    med_rate_all = first(med_rate_all),
+    num_providers = n(),
+    .by = c(
+      "billing_code", "billing_code_type",
+      "proc_type", "payer_name", "payer_id"
+    )
+  ) |>
+  left_join(code_desc_df, by = "billing_code") |>
+  left_join(payer_share_df, by = "payer_id") |>
+  mutate(
+    code = factor(paste0(
+      "**", code_desc, "**<br><sup>",
+      billing_code_type, " ", billing_code, "</sup>"
+    )),
+    code = fct_rev(fct_reorder2(
+      code,
+      billing_code_type,
+      med_rate_all,
+      .na_rm = TRUE
+    ))
+  ) |>
+  mutate(rank = dense_rank(med_rate * -1), .by = "code") |>
+  mutate(
+    rel_rank = median(rank),
+    .by = c("payer_name", "billing_code_type")
+  ) |>
+  mutate(
+    rank = factor(rank),
+    payer_market_share = scales::label_percent(
+      accuracy = 0.1,
+      trim = FALSE
+    )(payer_market_share),
+    payer_name = case_match(
+      payer_name,
+      # nolint start
+      "Blue Shield of California" ~ "<span style='color:#4186d0'>Blue Shield<br>of California</span>",
+      "United Healthcare" ~ "United<br>Healthcare",
+      .default = payer_name
+      # nolint end
+    ),
+    payer_name = paste0(
+      "**", payer_name, "**<br>", payer_market_share, " market share"
+    ),
+    payer_name = ifelse(
+      billing_code_type == "HCPCS",
+      str_remove_all(payer_name, "<br>(?!.*<br>)(.*)"),
+      payer_name
+    ),
+    payer_name = fct_reorder(
+      payer_name,
+      rel_rank,
+      .desc = TRUE
+    )
+  )
+
+# Create a heatmap/tile plot of payer medians
+payer_comp_df |>
+  ggplot() +
+  geom_tile(
+    aes(x = payer_name, y = code, fill = rank)
+  ) +
+  geom_text(
+    aes(
+      x = payer_name,
+      y = code,
+      label = label_dollar_short(med_rate),
+      color = rank
+    ),
+    size = 3
+  ) +
+  geom_rect(
+    data = tribble(
+      ~"proc_type", ~"xmin", ~"xmax",
+      "Inpatient procedures", 0.5125, 1.5,
+      "Outpatient procedures", 4.5, 5.4875
+    ),
+    aes(
+      xmin = xmin,
+      xmax = xmax,
+    ),
+    ymin = -Inf,
+    ymax = Inf,
+    fill = "transparent",
+    color = "#4186d0",
+    linewidth = 1.8
+  ) +
+  scale_color_manual(
+    values = c(
+      "1" = "white",
+      "2" = "white",
+      "3" = "white",
+      "4" = "black",
+      "5" = "grey10",
+      "6" = "grey10",
+      "7" = "grey20",
+      "8" = "grey20",
+      "9" = "grey20"
+    )
+  ) +
+  scale_fill_manual(
+    name = paste0(
+      "← Lowest price", paste0(rep(" ", 100), collapse = ""),
+      "Highest price →\nPrice rank per procedure (row)"
+    ),
+    values = rev(RColorBrewer::brewer.pal(5, "BuPu"))
+  ) +
+  scale_x_discrete(expand = c(0, 0), position = "top") +
+  scale_y_discrete(expand = c(0, 0)) +
+  labs(
+    title = paste0(
+      "<span style='color:#4186d0'>Blue Shield</span> has low inpatient rates ",
+      " but high outpatient rates in Orange County"
+    ),
+    subtitle = paste0(
+      "Each tile shows the median negotiated rate for a procedure, aggregated ",
+      "across all providers"
+    ),
+    y = "",
+    x = "",
+    caption = paste0(
+      "Based on ", payer_comp_df |>
+        pull(num_providers) |>
+        sum() |>
+        scales::label_comma()(),
+      " rates negotiated between providers and major insurers in",
+      " Orange County, sourced from Turquoise Health<br>",
+      "Market share percentage is for all of California, ",
+      "data is from Policy Reporter"
+    )
+  ) +
+  guides(
+    fill = guide_legend(
+      position = "bottom",
+      title.hjust = 0.5,
+      label.position = "bottom",
+      title.position = "bottom",
+      nrow = 1,
+      reverse = TRUE
+    ),
+    color = "none"
+  ) +
+  facet_wrap(
+    vars(proc_type),
+    ncol = 1,
+    scales = "free",
+    strip.position = "left"
+  ) +
+  theme(
+    plot.title = element_markdown(
+      size = 18,
+      margin = margin(b = 6, l = -110),
+      face = "bold"
+    ),
+    plot.subtitle = element_markdown(
+      size = 14,
+      margin = margin(b = 20, l = -110),
+      lineheight = 1.2
+    ),
+    panel.grid = element_blank(),
+    legend.title = element_text(
+      lineheight = 0,
+      size = 15,
+      face = "bold",
+      color = "grey30"
+    ),
+    legend.text = element_blank(),
+    legend.key.spacing.x = unit(0, "cm"),
+    legend.key.width = unit(4.3725, "cm"),
+    plot.margin = margin(r = 16, t = 6, b = 6, l = 6),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 20,
+      face = "bold",
+      color = "grey60",
+      linewidth = 1.2
+    ),
+    axis.text.x = element_markdown(
+      size = 10,
+      lineheight = 1.2
+    ),
+    axis.ticks.y = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.y = element_markdown(
+      size = 20,
+      color = "grey60",
+      margin = margin(r = 10),
+      face = "bold"
+    ),
+    axis.text.y = element_markdown(
+      size = 10,
+      lineheight = 1.3,
+      vjust = 0.65
+    ),
+    panel.background = element_rect(fill = "grey90"),
+    strip.text = element_markdown(
+      size = 15,
+      face = "bold",
+      color = "grey30",
+      margin = margin(r = 8)
+    ),
+    strip.background = element_blank(),
+    strip.placement = "outside",
+    panel.spacing.y = unit(0.5, "cm"),
+    plot.caption = element_markdown(
+      size = 10,
+      lineheight = 1.1,
+      margin = margin(t = 16, r = -2)
+    )
+  )
+```
+
+```{r provider_comp_plot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 11
+#| fig-height: 11
+
+# Get the median rate for a select group of representative providers in
+# Orange County
+provider_comp_df <- rates_df |>
+  filter(
+    payer_name == "Blue Shield of California",
+    provider_name %in% c(
+      "Hoag Memorial Hospital",
+      "University of California Irvine Medical Center",
+      "Long Beach Memorial Medical Center",
+      "Orange Coast Memorial Medical Center",
+      "Saddleback Memorial Medical Center",
+      "St Joseph Hospital - Orange",
+      "St Jude Medical Center",
+      "Providence Mission Hospital - Mission Viejo",
+      "UCI Health Fountain Valley"
+    )
+  ) |>
+  filter(
+    # Keep only codes with rates for at least 6 providers and for Hoag
+    n() >= 6,
+    any(provider_name == "Hoag Memorial Hospital"),
+    !is.na(billing_code) | billing_code_type == "MS-DRG",
+    .by = "billing_code"
+  ) |>
+  left_join(code_desc_df, by = "billing_code") |>
+  mutate(
+    code = factor(paste0(
+      "**", code_desc, "**<br><sup>",
+      billing_code_type, " ", billing_code, "</sup>"
+    )),
+    code = fct_rev(fct_reorder2(
+      code,
+      billing_code_type,
+      med_rate_all,
+      .na_rm = TRUE
+    ))
+  ) |>
+  mutate(rank = dense_rank(canonical_rate * -1), .by = "code") |>
+  mutate(
+    rel_rank = median(rank),
+    .by = c("provider_name", "billing_code_type")
+  ) |>
+  mutate(
+    rank = factor(rank),
+    provider_name = case_match(
+      provider_name,
+      # nolint start
+      "Hoag Memorial Hospital" ~ "<span style='color:#e59c35'>Hoag Hospitals<br>Newport Beach<br>and Irvine</span><br>★★★★★",
+      "University of California Irvine Medical Center" ~ "UC Irvine<br>Medical Center<br>★★★★☆",
+      "Long Beach Memorial Medical Center" ~ "Long Beach<br>Memorial<br>Medical Center<br>★★☆☆☆",
+      "Orange Coast Memorial Medical Center" ~ "Orange Coast<br>Memorial<br>Medical Center<br>★★★★☆",
+      "Saddleback Memorial Medical Center" ~ "Saddleback<br>Memorial<br>Medical Center<br>★★★☆☆",
+      "St Joseph Hospital - Orange" ~ "St Joseph<br>Hospital<br>★★★★☆",
+      "St Jude Medical Center" ~ "St Jude<br>Medical Center<br>★★★★☆",
+      "Providence Mission Hospital - Mission Viejo" ~ "Providence<br>Mission Viejo<br>★★★★☆",
+      "UCI Health Fountain Valley" ~ "UCI Health<br>Fountain Valley<br>★★☆☆☆",
+      # nolint end
+    ),
+    provider_name = ifelse(
+      billing_code_type == "HCPCS",
+      str_sub(provider_name, end = -10),
+      provider_name
+    ),
+    provider_name = fct_reorder(
+      provider_name,
+      rel_rank,
+      .desc = TRUE
+    )
+  )
+
+provider_comp_df |>
+  ggplot() +
+  geom_tile(
+    aes(x = provider_name, y = code, fill = rank)
+  ) +
+  geom_text(
+    aes(
+      x = provider_name,
+      y = code,
+      label = label_dollar_short(canonical_rate),
+      color = rank
+    ),
+    size = 3
+  ) +
+  geom_rect(
+    data = tribble(
+      ~"proc_type", ~"xmin", ~"xmax",
+      "Inpatient procedures", 6.5, 7.5,
+      "Outpatient procedures", 8.5, 9.475
+    ),
+    aes(
+      xmin = xmin,
+      xmax = xmax,
+    ),
+    ymin = -Inf,
+    ymax = Inf,
+    fill = "transparent",
+    color = "#e59c35",
+    linewidth = 1.8
+  ) +
+  scale_color_manual(
+    values = c(
+      "1" = "white",
+      "2" = "white",
+      "3" = "white",
+      "4" = "black",
+      "5" = "grey10",
+      "6" = "grey10",
+      "7" = "grey20",
+      "8" = "grey20",
+      "9" = "grey20"
+    )
+  ) +
+  scale_fill_manual(
+    name = paste0(
+      "← Lowest price", paste0(rep(" ", 100), collapse = ""),
+      "Highest price →\nPrice rank per procedure (row)"
+    ),
+    values = rev(RColorBrewer::brewer.pal(7, "BuPu")[c(rep(1, 2), 1:7)])
+  ) +
+  scale_x_discrete(expand = c(0, 0), position = "top") +
+  scale_y_discrete(expand = c(0, 0)) +
+  labs(
+    title = paste0(
+      "<span style='color:#4186d0'>Blue Shield</span> pays higher rates to ",
+      "<span style='color:#e59c35'>Hoag</span> than other hospitals",
+      " in Orange County"
+    ),
+    subtitle = paste0(
+      "Each tile shows an individual rate negotiated between a ",
+      "provider and Blue Shield"
+    ),
+    y = "",
+    x = "",
+    caption = paste0(
+      "Based on ", nrow(provider_comp_df),
+      " rates negotiated between providers and Blue Shield of California, ",
+      "sourced from Turquoise Health<br>",
+      "Stars represent CMS quality ratings for each hospital"
+    )
+  ) +
+  guides(
+    fill = guide_legend(
+      position = "bottom",
+      title.hjust = 0.5,
+      label.position = "bottom",
+      title.position = "bottom",
+      nrow = 1,
+      reverse = TRUE
+    ),
+    color = "none"
+  ) +
+  facet_wrap(
+    vars(proc_type),
+    ncol = 1,
+    scales = "free",
+    strip.position = "left"
+  ) +
+  theme(
+    plot.title = element_markdown(
+      size = 18,
+      margin = margin(b = 6, l = -110),
+      face = "bold"
+    ),
+    plot.subtitle = element_markdown(
+      size = 14,
+      margin = margin(b = 20, l = -110),
+      lineheight = 1.2
+    ),
+    panel.grid = element_blank(),
+    legend.title = element_text(
+      lineheight = 0,
+      size = 15,
+      face = "bold",
+      color = "grey30"
+    ),
+    legend.text = element_blank(),
+    legend.key.spacing.x = unit(0, "cm"),
+    legend.key.width = unit(2.42, "cm"),
+    plot.margin = margin(r = 16, t = 6, b = 6, l = 6),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 20,
+      face = "bold",
+      color = "grey60",
+      linewidth = 1.2
+    ),
+    axis.text.x = element_markdown(
+      size = 9,
+      lineheight = 1.2,
+      face = "bold"
+    ),
+    axis.ticks.y = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.y = element_markdown(
+      size = 20,
+      color = "grey60",
+      margin = margin(r = 10),
+      face = "bold"
+    ),
+    axis.text.y = element_markdown(
+      size = 10,
+      lineheight = 1.3,
+      vjust = 0.65
+    ),
+    panel.background = element_rect(fill = "grey90"),
+    strip.text = element_markdown(
+      size = 15,
+      face = "bold",
+      color = "grey30",
+      margin = margin(r = 8)
+    ),
+    strip.background = element_blank(),
+    strip.placement = "outside",
+    panel.spacing.y = unit(0.5, "cm"),
+    plot.caption = element_markdown(
+      size = 10,
+      lineheight = 1.1,
+      margin = margin(t = 16, r = -2)
+    )
+  )
+```
