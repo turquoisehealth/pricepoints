@@ -10,9 +10,11 @@ classifiers = [
 requires-python = "==3.12.8"
 dependencies = [
   "ipykernel>=6.29.0",
+  "openpyxl>=3.1.5",
   "polars>=1.30.0",
   "python-dotenv>=1.1.0",
   "tq @ file:///${PROJECT_ROOT}/../../tq",
+  "xlsxwriter>=3.2.3",
 ]
 
 [project.optional-dependencies]
@@ -31,3 +33,10 @@ extend = "../../pyproject.toml"
 
 [tool.setuptools.packages.find]
 include = ["src*"]
+
+[tool.sqlfluff.core]
+exclude_rules = "AM06"
+templater = "jinja"
+
+[tool.sqlfluff.templater.jinja.context]
+codes_table = ""
