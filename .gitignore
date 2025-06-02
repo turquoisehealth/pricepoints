@@ -16,6 +16,8 @@
 *.tif
 *.tiff
 *.wal
+*.xls
+*.xlsx
 *.zip
 *.zst
 .DS_Store
@@ -35,5 +37,4 @@ venv/
 .Rhistory
 .Rprofile
 .Rproj.user/
-renv.lock
 rosm.cache/
