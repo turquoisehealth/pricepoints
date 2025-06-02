@@ -16,6 +16,8 @@
 *.tif
 *.tiff
 *.wal
+*.xls
+*.xlsx
 *.zip
 *.zst
 .DS_Store
