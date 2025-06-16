@@ -40,3 +40,5 @@ templater = "jinja"
 
 [tool.sqlfluff.templater.jinja.context]
 codes_table = ""
+min_n_payers = ""
+min_rate_score = ""

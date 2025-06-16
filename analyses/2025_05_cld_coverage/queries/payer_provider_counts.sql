@@ -15,8 +15,7 @@ cld AS (
     WHERE canonical_rate IS NOT NULL
         AND network_class = 'Commercial'
         AND taxonomy_grouping = 'Hospitals'
-        -- Keep only validated/MRF rates, no outliers or imputed
-        AND canonical_rate_score >= 3
+        AND canonical_rate_score >= ( {{ min_rate_score }} )
 )
 
 SELECT
