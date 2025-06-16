@@ -24,8 +24,3 @@ FROM glue.hospital_data.hospital_provider AS hp
 LEFT JOIN cld
     ON hp.id = cld.provider_id
 WHERE hp.state = 'IL'
-    AND hp.hospital_type IN (
-        'Short Term Acute Care Hospital',
-        'Critical Access Hospital',
-        'Childrens Hospital'
-    )

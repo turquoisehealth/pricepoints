@@ -1,0 +1,95 @@
+---
+title: "Illinois 340B"
+subtitle: "By Dan Snow"
+format:
+  html:
+    fig-format: retina
+    fig-dpi: 320
+    toc: false
+    embed-resources: true
+    grid:
+      body-width: 900px
+execute:
+  echo: false
+---
+
+```{r setup, message=FALSE}
+library(arrow)
+library(conflicted)
+library(data.table)
+library(dplyr)
+library(emojifont)
+library(forcats)
+library(ggplot2)
+library(ggrepel)
+library(ggridges)
+library(ggspatial)
+library(ggtext)
+library(Hmisc)
+library(patchwork)
+library(prettymapr)
+library(raster)
+library(scales)
+library(sf)
+library(stringr)
+library(tigris)
+library(tidyr)
+
+# Always use dplyr over other packages
+conflict_prefer_all("dplyr", quiet = TRUE)
+
+# Necessary for fast/accurate map rendering
+sf_use_s2(FALSE)
+options(tigris_use_cache = TRUE)
+```
+
+```{r load_data}
+il_hospitals_df <- read_parquet("data/output/il_hospitals.parquet")
+  # mutate(`340b_entity_type` = replace_na(`340b_entity_type`, "Not 340B"))
+```
+
+```{r}
+# il_hospitals_df |>
+#   count(`340b_entity_type`) |>
+
+il_hospitals_df |>
+  group_by(`340b_entity_type`) |>
+  summarize(n = sum(mcr_net_patient_revenue, na.rm = TRUE)) |>
+  ggplot(aes(x = "", y = n, fill = `340b_entity_type`)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0)
+```
+
+```{r}
+il_hospitals_df |>
+  filter(
+    `340b_entity_type` %in% c("DSH", "RRC", "SCH") |
+      is.na(`340b_entity_type`)
+  ) |>
+  mutate(
+    cons = case_when(
+      `340b_entity_type` == "DSH" ~ "DSH",
+      `340b_entity_type` %in% c("RRC", "SCH") ~ "RRC/SCH",
+      TRUE ~ "Not 340B"
+    ),
+    cons = fct_relevel(
+      cons,
+      "DSH",
+      "RRC/SCH",
+      "Not 340B"
+    )
+  ) |>
+  ggplot() +
+  geom_histogram(aes(x = mcr_dsh_pct, fill = `340b_entity_type`), binwidth = 0.0075) +
+  geom_vline(
+    data = 
+  )
+  coord_cartesian(xlim = c(0, 0.3)) +
+  scale_x_continuous(
+    name = "DSH Percentage",
+    labels = scales::percent_format(accuracy = 1),
+  ) +
+  scale_y_continuous(name = "Count", expand = expansion(add = c(0, 1))) +
+  guides(fill = guide_legend(title = "340B Entity Type")) +
+  facet_wrap(vars(cons), ncol = 1)
+```
