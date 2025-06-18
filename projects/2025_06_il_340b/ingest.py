@@ -133,86 +133,43 @@ il_hospitals_merged_df = il_hospitals_df.join(
 )
 
 # %% Grab OPAIS child sites for all parent hospitals left in the merged data
-opais_ce_child_df = (
-    opais_ce_df.filter(
-        pl.col("parent_340b_id").is_in(set(il_hospitals_merged_df["340b_id"]))
-    )
-    .select(
+opais_ce_child_df = opais_ce_df.filter(
+    pl.col("parent_340b_id").is_in(set(il_hospitals_merged_df["340b_id"]))
+).with_columns(
+    pl.concat_str(
         [
-            "340b_id",
-            "ce_id",
-            "medicare_provider_number",
-            "parent_340b_id",
-            "entity_type",
-            "participating",
-            "participating_start_date",
-            "termination_date",
-            "street_address_1",
-            "street_address_2",
-            "street_address_3",
-            "street_city",
-            "street_state",
-            "street_zip",
-        ]
-    )
-    .with_columns(
-        pl.concat_str(
-            [
-                pl.col("street_address_1"),
-                pl.col("street_address_2"),
-                pl.col("street_address_3"),
-                pl.lit(","),
-                pl.col("street_city"),
-                pl.col("street_state"),
-                pl.lit(","),
-                pl.col("street_zip"),
-            ],
-            separator=" ",
-            ignore_nulls=True,
-        ).alias("street_address_full"),
-    )
+            pl.col("street_address_1"),
+            pl.col("street_address_2"),
+            pl.col("street_address_3"),
+            pl.lit(","),
+            pl.col("street_city"),
+            pl.col("street_state"),
+            pl.lit(","),
+            pl.col("street_zip"),
+        ],
+        separator=" ",
+        ignore_nulls=True,
+    ).alias("street_address_full"),
 )
 
-# Same for contract pharmacies, keeping only active CEs and active
-# contract pharmacies
-opais_cp_fil_df = (
-    opais_cp_df.filter(
-        pl.col("340b_id").is_in(set(il_hospitals_merged_df["340b_id"]))
-        & pl.col("participating")
-        & pl.col("contract_termination_date").is_null()
-    )
-    .select(
+# Same for contract pharmacies, keepin
+opais_cp_fil_df = opais_cp_df.filter(
+    pl.col("340b_id").is_in(set(il_hospitals_merged_df["340b_id"]))
+).with_columns(
+    pl.concat_str(
         [
-            "340b_id",
-            "pharmacy_id",
-            "pharmacy_name",
-            "contract_id",
-            "contract_begin_date",
-            "contract_termination_date",
-            "pharmacy_address_1",
-            "pharmacy_address_2",
-            "pharmacy_address_3",
-            "pharmacy_city",
-            "pharmacy_state",
-            "pharmacy_zip",
-        ]
-    )
-    .with_columns(
-        pl.concat_str(
-            [
-                pl.col("pharmacy_address_1"),
-                pl.col("pharmacy_address_2"),
-                pl.col("pharmacy_address_3"),
-                pl.lit(","),
-                pl.col("pharmacy_city"),
-                pl.col("pharmacy_state"),
-                pl.lit(","),
-                pl.col("pharmacy_zip"),
-            ],
-            separator=" ",
-            ignore_nulls=True,
-        ).alias("street_address_full"),
-    )
+            pl.col("pharmacy_address_1"),
+            pl.col("pharmacy_address_2"),
+            pl.col("pharmacy_address_3"),
+            pl.lit(","),
+            pl.col("pharmacy_city"),
+            pl.col("pharmacy_state"),
+            pl.lit(","),
+            pl.col("pharmacy_zip"),
+        ],
+        separator=" ",
+        ignore_nulls=True,
+    ).alias("street_address_full"),
 )
 
 # %% Add 340b child CE count and contract pharmacy count to the merged dataframe
