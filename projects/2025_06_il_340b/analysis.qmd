@@ -74,11 +74,34 @@ il_hospitals_df <- read_parquet("data/output/il_hospitals.parquet") |>
     )
   )
 
-# Load HRSA child entity and contract pharmacy data
-opais_ce_df <- read_parquet("data/output/opais_ce_child_geocoded.parquet")
+# Load HRSA child entity and contract pharmacy data and create an interval
+# for each entity's participation in the 340B program
+opais_ce_df <- read_parquet("data/output/opais_ce_child_geocoded.parquet") |>
+  mutate(
+    termination_date = as.Date(
+      ifelse(is.na(termination_date), today(), termination_date)
+    ),
+    year = purrr::map2(
+      participating_start_date,
+      termination_date,
+      \(x, y) seq(lubridate::year(x), lubridate::year(y))
+    )
+  )
 opais_cp_df <- read_parquet(
   "data/output/opais_contract_pharmacies_geocoded.parquet"
-)
+) |>
+  mutate(
+    contract_termination_date = as.Date(ifelse(
+        is.na(contract_termination_date),
+        today(),
+        contract_termination_date
+    )),
+    year = purrr::map2(
+      contract_begin_date,
+      contract_termination_date,
+      \(x, y) seq(lubridate::year(x), lubridate::year(y))
+    )
+  )
 
 # Load manually collected state legislative data
 state_leg_df <- readr::read_csv("data/output/state_legislation.csv")
@@ -104,9 +127,18 @@ state_il_df <- tigris::states(cb = TRUE, year = 2020) |>
 #| column: page
 #| out-width: 100%
 #| fig-width: 9
-#| fig-height: 7
+#| fig-height: 9
 
-il_hospitals_df |>
+il_inset_bbox <- c(
+  xmin = -88.311966,
+  xmax = -87.485044,
+  ymin = 41.553204,
+  ymax = 42.096486
+) |>
+  st_bbox(crs = 4326) |>
+  st_as_sfc()
+
+il_hospital_map_inset <- il_hospitals_df |>
   ggplot() +
   geom_sf(
     data = state_il_df |>
@@ -115,11 +147,115 @@ il_hospitals_df |>
     color = "grey30"
   ) +
   geom_point(
-    aes(x = hq_longitude, y = hq_latitude, color = `340b_entity_type`)
+    aes(x = hq_longitude, y = hq_latitude, color = `340b_entity_type`),
+    size = 1.2
+  ) +
+  geom_sf(
+    data = il_inset_bbox,
+    fill = "transparent",
+    color = "darkred",
+    linewidth = 1.1
+  ) +
+  annotate(
+    "richtext",
+    x = -87.9, y = 41.4,
+    label = "Inset area",
+    size = 4,
+    color = "darkred",
+    fontface = "bold",
+    label.color = "transparent",
+    fill = "transparent"
+  ) +
+  scale_color_manual(values = entity_color_values) +
+  guides(color = "none") +
+  theme_void() +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    panel.border = element_rect(
+      color = "black",
+      linewidth = 1.1,
+      fill = "transparent"
+    ),
+    plot.margin = margin(r = -20)
+  )
+
+il_hospitals_df |>
+  st_as_sf(coords = c("hq_longitude", "hq_latitude"), crs = 4326, remove = FALSE) |>
+  filter(as.logical(st_within(geometry, il_inset_bbox))) |>
+  ggplot() +
+  geom_sf(
+    data = il_inset_bbox,
+    fill = "transparent",
+    color = "transparent"
+  ) +
+  annotation_map_tile("cartolight", zoomin = 0) +
+  annotate(
+    "rect",
+    xmin = -Inf, xmax = Inf,
+    ymin = -Inf, ymax = Inf,
+    fill = "white",
+    alpha = 0.5
+  ) +
+  geom_point(
+    aes(x = hq_longitude, y = hq_latitude, color = `340b_entity_type`),
+    show.legend = TRUE,
+    size = 3
   ) +
   scale_color_manual(
-    name = "340B Entity Type",
-    values = entity_color_values
+    name = "340B entity type",
+    values = entity_color_values,
+    drop = FALSE
+  ) +
+  guides(color = guide_legend(
+    override.aes = list(size = 6),
+  )) +
+  labs(
+    title = paste0(
+      "Most 340B-qualified hospitals are in less ",
+      "affluent or rural areas"
+    ),
+    subtitle = paste0(
+      "Downstate Illinois is mostly CAH, while the Chicago area is mainly DSH",
+      " and RRC"
+    ),
+    caption = paste0(
+      "340B status from the HRSA OPAIS database, as of 2025-06-13\n",
+      "Hospital locations are the headquarters of the 340B parent entity"
+    )
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(
+      size = 20,
+      face = "bold",
+      margin = margin(b = 8)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 8)
+    ),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 12, b = 6)
+    ),
+    legend.position = "inside",
+    legend.title.position = "top",
+    legend.position.inside = c(0.87, 0.81),
+    legend.direction = "vertical",
+    legend.key.spacing.y = unit(0.15, "cm"),
+    legend.title = element_text(
+      size = 16,
+      face = "bold",
+      hjust = 1,
+      margin = margin(b = 16)
+    ),
+    legend.key.size = unit(0.75, "cm"),
+    legend.text = element_text(size = 12),
+  ) +
+  inset_element(
+    il_hospital_map_inset,
+    left = 0.0, right = 0.3, top = 1, bottom = -0.33
   )
 ```
 
@@ -183,7 +319,7 @@ ggplot() +
     aes(x = lon, y = lat),
     shape = 22,
     size = 10,
-    color = "grey30",
+    color = "grey20",
     fill = "#9fbbd1",
     stroke = 0.9
   ) +
@@ -249,7 +385,7 @@ ggplot() +
     plot.caption = element_text(
       size = 11,
       lineheight = 1.1,
-      margin = margin(r = -80, t = 14)
+      margin = margin(r = -72, t = 14)
     )
   )
 ```
@@ -267,7 +403,6 @@ ggplot(aes(x = entity_type_desc, y = n, fill = `340b_entity_type`)) +
   geom_bar(stat = "identity") +
   geom_text(
     aes(label = n),
-    color = "grey10",
     size = 5,
     nudge_y = 3
   ) +
@@ -284,6 +419,7 @@ ggplot(aes(x = entity_type_desc, y = n, fill = `340b_entity_type`)) +
     title = "More than half of Illinois hospitals are 340B covered entities",
     caption = "340B status from the HRSA OPAIS database, as of 2025-06-13"
   ) +
+  theme_minimal() +
   theme(
     plot.title = element_text(
       size = 20,
@@ -297,8 +433,7 @@ ggplot(aes(x = entity_type_desc, y = n, fill = `340b_entity_type`)) +
     axis.title.y = element_text(
       margin = margin(r = 6),
       size = 15,
-      face = "bold",
-      color = "grey30"
+      face = "bold"
     ),
     axis.text.y = element_markdown(
       size = 13,
@@ -307,15 +442,12 @@ ggplot(aes(x = entity_type_desc, y = n, fill = `340b_entity_type`)) +
     axis.title.x = element_text(
       margin = margin(t = 10),
       size = 15,
-      face = "bold",
-      color = "grey30"
+      face = "bold"
     ),
     axis.text.x = element_markdown(size = 12, lineheight = 1.1),
     axis.ticks.x = element_blank(),
     panel.grid.major.x = element_blank(),
     panel.grid.minor.x = element_blank(),
-    panel.background = element_rect(fill = "#e0ebea"),
-    strip.background = element_rect(fill = "grey80"),
     plot.caption = element_text(
       size = 11,
       lineheight = 1.1,
@@ -339,17 +471,16 @@ ggplot(aes(x = entity_type_desc, y = n, fill = `340b_entity_type`)) +
   # Northwestern
   annotate(
     "rect",
-    xmin = 2.55, xmax = 3.45,
+    xmin = 2.56, xmax = 3.44,
     ymin = 5917118958 - 2596869646, ymax = 5917118958,
-    color = "grey30",
-    fill = "transparent",
+    fill = "#506caf",
     linewidth = 1
   ) +
   annotate(
     "richtext",
     x = 3.5,
-    y = 5.4e9,
-    color = "grey30",
+    y = 5.2e9,
+    color = "#506caf",
     label = "**Northwestern Memorial** ($2.60B)",
     hjust = 0, vjust = 1,
     fill = "transparent",
@@ -358,17 +489,16 @@ ggplot(aes(x = entity_type_desc, y = n, fill = `340b_entity_type`)) +
   # UChicago
   annotate(
     "rect",
-    xmin = 0.55, xmax = 1.45,
+    xmin = 0.56, xmax = 1.44,
     ymin = 25559534782 - 2593234710, ymax = 25559534782,
-    color = "grey30",
-    fill = "transparent",
+    fill = "#2c6d5a",
     linewidth = 1
   ) +
   annotate(
     "richtext",
     x = 1.5,
     y = 2.5e10,
-    color = "grey30",
+    color = "#2c6d5a",
     label = "**UChicago Medicine** ($2.59B)",
     hjust = 0, vjust = 1,
     fill = "transparent",
@@ -377,18 +507,17 @@ ggplot(aes(x = entity_type_desc, y = n, fill = `340b_entity_type`)) +
   # Rush
   annotate(
     "rect",
-    xmin = 0.55, xmax = 1.45,
+    xmin = 0.56, xmax = 1.44,
     ymin = 25559534782 - 2593234710 - 2447251520,
     ymax = 25559534782 - 2593234710,
-    color = "grey30",
-    fill = "transparent",
+    fill = "#3e987d",
     linewidth = 1
   ) +
   annotate(
     "richtext",
     x = 1.5,
     y = 2.25e10,
-    color = "grey30",
+    color = "#3e987d",
     label = "**Rush University Medical Center** ($2.45B)",
     hjust = 0, vjust = 1,
     fill = "transparent",
@@ -401,7 +530,6 @@ ggplot(aes(x = entity_type_desc, y = n, fill = `340b_entity_type`)) +
       prefix = "$",
       suffix = "B"
     ))),
-    color = "grey10",
     size = 5,
     nudge_y = 7.5e8
   ) +
@@ -436,6 +564,7 @@ ggplot(aes(x = entity_type_desc, y = n, fill = `340b_entity_type`)) +
       "Some net patient revenue values for non-340B entities are omitted"
     )
   ) +
+  theme_minimal() +
   theme(
     plot.title = element_text(
       size = 20,
@@ -466,8 +595,6 @@ ggplot(aes(x = entity_type_desc, y = n, fill = `340b_entity_type`)) +
     axis.ticks.x = element_blank(),
     panel.grid.major.x = element_blank(),
     panel.grid.minor.x = element_blank(),
-    panel.background = element_rect(fill = "#e0ebea"),
-    strip.background = element_rect(fill = "grey80"),
     plot.caption = element_text(
       size = 11,
       lineheight = 1.1,
@@ -476,13 +603,13 @@ ggplot(aes(x = entity_type_desc, y = n, fill = `340b_entity_type`)) +
   )
 ```
 
-
 ```{r entity_timeline_plot, message=FALSE}
 #| column: page
 #| out-width: 100%
 #| fig-width: 9
 #| fig-height: 7
 
+# Timeline of 340B expansion by entity type
 il_hospitals_df |>
   mutate(year = lubridate::year(as.Date(`340b_start_date`))) |>
   count(`340b_entity_type`, entity_type_desc, year) |>
@@ -495,6 +622,14 @@ ggplot() +
     xintercept = 2009.5,
     linetype = "dashed",
     color = "grey20"
+  ) +
+  annotate(
+    "text",
+    x = 2009.25, y = 10.5,
+    label = "ACA passed",
+    color = "grey20",
+    size = 4,
+    hjust = 1
   ) +
   scale_x_continuous(
     name = "Year hospital joined 340B",
@@ -512,7 +647,7 @@ ggplot() +
     values = entity_color_values[1:5],
   ) +
   labs(
-    title = "Most 340B hospitals in Illinois joined after 2010",
+    title = "Most 340B hospitals in Illinois enrolled after 2010",
     subtitle = paste0(
       "The ACA expanded 340B elibility to CAHs, RRCs, SCHs, and ",
       "other hospital types"
@@ -522,7 +657,137 @@ ggplot() +
       "database, as of 2025-06-13"
     )
   ) +
- theme(
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 20,
+      face = "bold",
+      margin = margin(b = 8)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 16)
+    ),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 20, r = -130)
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 15,
+      face = "bold",
+      color = "grey30"
+    ),
+    axis.text.y = element_markdown(
+      size = 13,
+      margin = margin(r = 4)
+    ),
+    axis.title.x = element_text(
+      margin = margin(t = 10),
+      size = 15,
+      face = "bold",
+      color = "grey30"
+    ),
+    axis.text.x = element_markdown(size = 12, lineheight = 1.1),
+    axis.ticks.x = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    legend.key.spacing.y = unit(0.15, "cm"),
+    legend.background = element_blank(),
+    legend.title = element_text(
+      size = 15,
+      face = "bold"
+    ),
+    legend.key.size = unit(0.75, "cm"),
+    legend.text = element_text(size = 12),
+  )
+```
+
+```{r dsh_histogram, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 7
+
+thresholds_df <- tibble(
+  cons = c("340B", "340B"),
+  threshold = c(0.1175, 0.08),
+  text = c("**DSH<br>threshold**<br>(11.75%)", "**RRC/SCH<br>threshold**<br>(8.00%)")
+)
+
+il_hospitals_df |>
+  mutate(
+    cons = fct_recode(
+      `340b_entity_type`,
+      "340B" = "RRC",
+      "340B" = "SCH",
+      "340B" = "DSH"
+    ),
+    cons = fct_relevel(cons, "340B", "Not 340B")
+  ) |>
+  filter(!`340b_entity_type` %in% c("CAH", "PED")) |>
+  ggplot() +
+  geom_histogram(
+    aes(x = mcr_dsh_pct, fill = `340b_entity_type`),
+    binwidth = 0.0075,
+    boundary = 0.1175
+  ) +
+  geom_vline(
+    data = thresholds_df,
+    aes(xintercept = threshold, color = factor(threshold)),
+    linetype = "dashed"
+  ) +
+  geom_richtext(
+    data = thresholds_df,
+    aes(
+      x = threshold,
+      y = c(6.25, 9.25),
+      label = text,
+      color = factor(threshold)
+    ),
+    size = 3.5,
+    hjust = 1,
+    fill = "transparent",
+    label.color = "transparent",
+    nudge_x = -0.001
+  ) +
+  scale_x_continuous(
+    name = "Disproportionate share percentage",
+    labels = scales::percent_format(accuracy = 1),
+    n.breaks = 8
+  ) +
+  scale_y_continuous(
+    name = "Count of providers",
+    expand = expansion(add = c(0, 1))
+  ) +
+  scale_fill_manual(
+    name = "340B entity type",
+    values = entity_color_values
+  ) +
+  scale_color_manual(
+    values = c(
+      "0.1175" = "darkred",
+      "0.08" = "grey20"
+    )
+  ) +
+  guides(color = "none") +
+  labs(
+    title = "Many Illinois hospitals are just above the 340B threshold",
+    subtitle = paste0(
+      "Most RRCs and SCHs are below the standard DSH threshold"
+    ),
+    caption = paste0(
+      "340B status from the HRSA OPAIS ",
+      "database, as of 2025-06-13\n",
+      "Not all hospitals are shown (CAH and non-340B hospitals sometimes ",
+      "do not report DSH percentages)"
+    )
+  ) +
+  coord_cartesian(xlim = c(0.03, 0.3)) +
+  facet_wrap(vars(cons), ncol = 1) +
+  theme_minimal() +
+  theme(
     plot.title = element_text(
       size = 20,
       face = "bold",
@@ -549,95 +814,557 @@ ggplot() +
       color = "grey30"
     ),
     axis.text.x = element_markdown(size = 12, lineheight = 1.1),
-    axis.ticks.x = element_blank(),
     panel.grid.major.x = element_blank(),
     panel.grid.minor.x = element_blank(),
-    panel.background = element_rect(fill = "#e0ebea"),
-    strip.background = element_rect(fill = "grey80"),
+    strip.text = element_text(
+      size = 15,
+      face = "bold"
+    ),
     plot.caption = element_text(
       size = 11,
       lineheight = 1.1,
-      margin = margin(t = 20)
+      margin = margin(t = 20, r = -130)
     ),
-    legend.position = "inside",
-    legend.title.position = "top",
-    legend.position.inside = c(0.74, 0.92),
-    legend.direction = "horizontal",
+    strip.background = element_rect(fill = "#e0ebea"),
+    panel.background = element_rect(color = "black"),
     legend.key.spacing.y = unit(0.15, "cm"),
-    legend.background = element_rect(fill = "#e0ebea"),
     legend.title = element_text(
       size = 15,
-      face = "bold",
-      margin = margin(t = 8, b = 8),
-      hjust = 1
+      face = "bold"
     ),
-    legend.margin = margin(t = -6, r = 10, l = 16),
     legend.key.size = unit(0.75, "cm"),
     legend.text = element_text(size = 12),
   )
 ```
 
+```{r ce_counts_plot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 7
 
-```{r}
-thresholds_df <- tribble(
-  ~cons, ~mcr_dsh_pct,
-  "DSH", 0.1175,
-  "RRC/SCH", 0.08,
-  "Not 340B", NA
-) |>
-  mutate(cons = factor(cons, levels = c("DSH", "RRC/SCH", "Not 340B")))
-
-il_hospitals_df |>
-  filter(!`340b_entity_type` %in% c("PED")) |>
-  mutate(
-    cons = fct_recode(
-      `340b_entity_type`,
-      "RRC/SCH" = "RRC",
-      "RRC/SCH" = "SCH"
-    ),
-    cons = fct_relevel(cons, "DSH", "RRC/SCH", "Not 340B")
-  ) |>
-  filter(!`340b_entity_type` %in% c("CAH", "PED")) |>
-  ggplot() +
-  geom_histogram(aes(x = mcr_dsh_pct, fill = `340b_entity_type`), binwidth = 0.0075) +
+opais_ce_df |>
+  unnest(year) |>
+  count(year, entity_type) |>
+ggplot() +
+  geom_bar(aes(x = year, y = n, fill = entity_type), stat = "identity") +
   geom_vline(
-    data = thresholds_df,
-    aes(xintercept = mcr_dsh_pct),
-    color = "darkred",
-    linetype = "dashed"
+    xintercept = 2009.5,
+    linetype = "dashed",
+    color = "grey20"
   ) +
-  geom_text(
-    data = thresholds_df,
-    aes(
-      x = mcr_dsh_pct, y = 6.85,
-      label = scales::percent(mcr_dsh_pct, accuracy = 0.01)
-    ),
-    hjust = 1,
-    size = 3,
-    nudge_x = -0.005,
+  annotate(
+    "text",
+    x = 2009.25, y = 1060,
+    label = "ACA passed",
+    color = "grey20",
+    size = 4,
+    hjust = 1
   ) +
   scale_x_continuous(
-    name = "DSH Percentage",
-    labels = scales::percent_format(accuracy = 1),
+    name = "Year",
+    limits = c(2003, 2026),
+    expand = c(0, 0),
+    n.breaks = 8
   ) +
   scale_y_continuous(
-    name = "Count of Providers",
-    expand = expansion(add = c(0, 1))
+    name = "Count of 340B child covered entities",
+    labels = scales::comma_format(),
+    expand = c(0, 0),
+    n.breaks = 6
   ) +
   scale_fill_manual(
-    name = "340B Entity Type",
+    name = "340B entity type",
     values = entity_color_values
   ) +
-  coord_cartesian(xlim = c(0.03, 0.3)) +
-  facet_wrap(vars(cons), ncol = 1)
+  labs(
+    title = "The number of 340B child entities in Illinois has exploded",
+    subtitle = paste0(
+      "Child entities include outpatient clinics, ",
+      "infusion centers, urgent care, ASCs, etc."
+    ),
+    caption = paste0(
+      "340B active child entities pulled from the HRSA OPAIS database, ",
+      "as of 2025-06-13\n",
+      "A child entity's 340B type is determined by the parent ",
+      "entity's type"
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 20,
+      face = "bold",
+      margin = margin(b = 8)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 16)
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 15,
+      face = "bold",
+      color = "grey30"
+    ),
+    axis.text.y = element_markdown(
+      size = 13,
+      margin = margin(r = 4)
+    ),
+    axis.title.x = element_text(
+      margin = margin(t = 10),
+      size = 15,
+      face = "bold",
+      color = "grey30"
+    ),
+    axis.text.x = element_markdown(size = 12, lineheight = 1.1),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    strip.text = element_text(
+      size = 15,
+      face = "bold"
+    ),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 20, r = -130)
+    ),
+    legend.key.spacing.y = unit(0.15, "cm"),
+    legend.title = element_text(
+      size = 15,
+      face = "bold"
+    ),
+    legend.key.size = unit(0.75, "cm"),
+    legend.text = element_text(size = 12)
+  )
+```
+
+```{r cp_counts_plot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 7
+
+opais_cp_df |>
+  unnest(year) |>
+  count(year, entity_type) |>
+ggplot() +
+  geom_bar(aes(x = year, y = n, fill = entity_type), stat = "identity") +
+  geom_vline(
+    xintercept = 2009.5,
+    linetype = "dashed",
+    color = "grey20"
+  ) +
+  annotate(
+    "text",
+    x = 2009.25, y = 1250,
+    label = "ACA passed",
+    color = "grey20",
+    size = 4,
+    hjust = 1
+  ) +
+  geom_vline(
+    xintercept = 2019.5,
+    linetype = "dashed",
+    color = "darkred"
+  ) +
+  annotate(
+    "text",
+    x = 2019.25, y = 3250,
+    label = "Lilly creates first contract\npharmacy restriction",
+    color = "darkred",
+    size = 4,
+    hjust = 1
+  ) +
+  scale_x_continuous(
+    name = "Year",
+    limits = c(2003, 2026),
+    expand = c(0, 0),
+    n.breaks = 8
+  ) +
+  scale_y_continuous(
+    name = "Count of 340B contract pharmacy /\n covered entity relationships",
+    labels = scales::comma_format(),
+    expand = c(0, 0),
+    n.breaks = 6
+  ) +
+  scale_fill_manual(
+    name = "340B entity type",
+    values = entity_color_values
+  ) +
+  labs(
+    title = paste0(
+      "Contract pharmacies in Illinois grew rapidly after 2010"
+    ),
+    subtitle = paste0(
+      "Pre-ACA, only 1 contract pharmacy was allowed per entity, ",
+      "now there's no limit*"
+    ),
+    caption = paste0(
+      "340B active contract pharmacies pulled from the HRSA OPAIS database, ",
+      "as of 2025-06-13\n",
+      "A contract pharmacy's 340B type is determined by the parent ",
+      "entity's type\n",
+      "*The restriction on contract pharmacies stemmed from HRSA guidance, ",
+      "which was changed shortly after the ACA was passed"
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 8)
+    ),
+    plot.subtitle = element_text(
+      size = 15,
+      margin = margin(b = 16)
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 15,
+      face = "bold",
+      color = "grey30"
+    ),
+    axis.text.y = element_markdown(
+      size = 13,
+      margin = margin(r = 4)
+    ),
+    axis.title.x = element_text(
+      margin = margin(t = 10),
+      size = 15,
+      face = "bold",
+      color = "grey30"
+    ),
+    axis.text.x = element_markdown(size = 12, lineheight = 1.1),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    strip.text = element_text(
+      size = 15,
+      face = "bold"
+    ),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 20, r = -130)
+    ),
+    legend.key.spacing.y = unit(0.15, "cm"),
+    legend.title = element_text(
+      size = 15,
+      face = "bold"
+    ),
+    legend.key.size = unit(0.75, "cm"),
+    legend.text = element_text(size = 12)
+  )
+```
+
+```{r cp_counts_by_owner, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 8
+
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 7
+
+opais_cp_df |>
+  mutate(
+    pnl = tolower(pharmacy_name),
+    pfs = tolower(street_address_full),
+    pharmacy_owner = case_when(
+      str_detect(pnl, "cvs|caremark") |
+        str_detect(pfs, "cvs|caremark") ~
+        "CVS Health",
+      str_detect(pnl, "walgreen|wal-green") |
+        str_detect(pfs, "walgreen|wal-green") ~ "Walgreens",
+      str_detect(pnl, "walmart|wal-mart") |
+        str_detect(pfs, "walmart|wal-mart") ~
+        "Walmart",
+      str_detect(pnl, "optum") |
+        str_detect(pfs, "optum") ~
+        "Optum Rx",
+      str_detect(pnl, "osco") |
+        str_detect(pfs, "osco") ~
+        "Jewel-Osco",
+      TRUE ~ "Other"
+    ),
+    pharmacy_owner = fct_relevel(
+      pharmacy_owner,
+      "CVS Health", "Walgreens", "Walmart",
+      "Jewel-Osco", "Optum Rx", "Other"
+    )
+  ) |>
+  unnest(year) |>
+  count(year, pharmacy_owner) |>
+ggplot() +
+  geom_bar(aes(x = year, y = n, fill = pharmacy_owner), stat = "identity") +
+  geom_vline(
+    xintercept = 2009.5,
+    linetype = "dashed",
+    color = "grey20"
+  ) +
+  annotate(
+    "text",
+    x = 2009.25, y = 1250,
+    label = "ACA passed",
+    color = "grey20",
+    size = 4,
+    hjust = 1
+  ) +
+  geom_vline(
+    xintercept = 2019.5,
+    linetype = "dashed",
+    color = "darkred"
+  ) +
+  annotate(
+    "text",
+    x = 2019.25, y = 3250,
+    label = "Lilly creates first contract\npharmacy restriction",
+    color = "darkred",
+    size = 4,
+    hjust = 1
+  ) +
+  scale_x_continuous(
+    name = "Year",
+    limits = c(2003, 2026),
+    expand = c(0, 0),
+    n.breaks = 8
+  ) +
+  scale_y_continuous(
+    name = "Count of 340B contract pharmacy /\n covered entity relationships",
+    labels = scales::comma_format(),
+    expand = c(0, 0),
+    n.breaks = 6
+  ) +
+  scale_fill_manual(
+    name = "Company",
+    values = c(
+      "CVS Health" = "#b81414",
+      "Walgreens" = "#8FC73E",
+      "Walmart" = "#ffc220",
+      "Optum Rx" = "#1E3D6A",
+      "Jewel-Osco" = "#d66f3f",
+      "Other" = "grey60"
+    )
+  ) +
+  labs(
+    title = paste0(
+      "Illinois' contract pharmacy market is dominated\n",
+      "by a few major companies"
+    ),
+    caption = paste0(
+      "340B active contract pharmacies pulled from the HRSA OPAIS database, ",
+      "as of 2025-06-13\n",
+      "Company names are derived from the business name and address listed ",
+      "in the database"
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 20,
+      face = "bold",
+      margin = margin(b = 6)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 16)
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 15,
+      face = "bold",
+      color = "grey30"
+    ),
+    axis.text.y = element_markdown(
+      size = 13,
+      margin = margin(r = 4)
+    ),
+    axis.title.x = element_text(
+      margin = margin(t = 10),
+      size = 15,
+      face = "bold",
+      color = "grey30"
+    ),
+    axis.text.x = element_markdown(size = 12, lineheight = 1.1),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    strip.text = element_text(
+      size = 15,
+      face = "bold"
+    ),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 20, r = -104)
+    ),
+    legend.key.spacing.y = unit(0.15, "cm"),
+    legend.title = element_text(
+      size = 15,
+      face = "bold"
+    ),
+    legend.key.size = unit(0.75, "cm"),
+    legend.text = element_text(size = 12)
+  )
+```
+
+```{r ce_map, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 6
+
+il_fil_years <- c(2009, 2025)
+il_fil_providers <- c(
+  "Loyola University Medical Center" = "#4E2A84",
+  "Rush University Medical Center" = "#48641c",
+  "University Of Chicago Hospitals" = "#800000"
+)
+
+il_fil_df <- il_hospitals_df |>
+  filter(provider_name %in% names(il_fil_providers)) |>
+  select(
+    provider_name, `340b_id`, `340b_entity_type`,
+    hq_latitude, hq_longitude
+  ) |>
+  left_join(
+    opais_ce_df |>
+      select(
+        `parent_340b_id`, latitude, longitude,
+        participating_start_date, termination_date, year
+      ),
+    by = c("340b_id" = "parent_340b_id"),
+    relationship = "many-to-many"
+  ) |>
+  unnest(cols = year) |>
+  filter(year %in% il_fil_years) |>
+  st_as_sf(
+    coords = c("hq_longitude", "hq_latitude"),
+    crs = 4326,
+    remove = FALSE
+  )
+
+il_fil_plot_lst <- list()
+
+for (yr in il_fil_years) {
+  il_fil_plot_lst[[paste0(yr)]] <- il_fil_df |>
+    filter(year == yr) |>
+  ggplot() +
+    annotation_map_tile("cartolight", zoomin = 0) +
+    annotate(
+      "rect",
+      xmin = -Inf, xmax = Inf,
+      ymin = -Inf, ymax = Inf,
+      fill = "white",
+      alpha = 0.6
+    ) +
+    annotate(
+      "label",
+      x = -88.35, y = 42.28,
+      label = yr,
+      size = 5,
+      color = "grey20",
+      fontface = "bold"
+    ) +
+    geom_segment(
+      aes(
+        x = hq_longitude, y = hq_latitude,
+        xend = longitude, yend = latitude,
+        color = provider_name
+      ),
+      alpha = 0.5
+    ) +
+    geom_point(
+      data = il_hospitals_df |>
+        filter(provider_name %in% names(il_fil_providers)),
+      aes(x = hq_longitude, y = hq_latitude, color = provider_name),
+      show.legend = TRUE,
+      size = 2.5
+    ) +
+    geom_jitter(
+      aes(
+        x = longitude, y = latitude,
+        color = provider_name
+      ),
+      size = 1.5
+    ) +
+    scale_color_manual(
+      name = "340B entity type",
+      values = il_fil_providers
+    ) +
+    guides(
+      color = if (yr == 2025) {
+        guide_legend(
+          override.aes = list(size = 6),
+        )
+      } else {
+        "none"
+      }
+    ) +
+    coord_sf(
+      xlim = c(-88.3891, -87.3834),
+      ylim = c(41.5003, 42.2844),
+    ) +
+    theme_void() +
+    theme(
+      plot.title = element_text(
+        size = 20,
+        face = "bold",
+        margin = margin(b = 8)
+      ),
+      plot.subtitle = element_markdown(
+        size = 15,
+        margin = margin(b = 8)
+      ),
+      plot.caption = element_text(
+        size = 11,
+        lineheight = 1.1,
+        margin = margin(t = 12, b = 6)
+      ),
+      legend.position = "inside",
+      legend.title.position = "top",
+      legend.position.inside = c(0.78, 0.85),
+      legend.direction = "vertical",
+      legend.key.spacing.y = unit(0.15, "cm"),
+      legend.title = element_text(
+        size = 16,
+        face = "bold",
+        hjust = 0.8,
+        margin = margin(b = 16)
+      ),
+      legend.key.size = unit(0.75, "cm"),
+      legend.text = element_text(size = 12),
+    )
+}
+
+il_fil_plot_lst[[1]] +
+  labs(
+    title = "340B child entities have proliferated across Chicago",
+    subtitle = paste0(
+      "Other areas with large child entity networks include Rockford ",
+      "and Urbana-Champaign"
+    )
+  ) +
+  il_fil_plot_lst[[2]] +
+  labs(
+    caption = paste0(
+      "340B active child entities pulled from the HRSA OPAIS database, ",
+      "as of 2025-06-13\n",
+      "Entity locations were geocoded from the child entity street address" 
+    )
+  )
 ```
 
 ```{r}
+#| column: page
 #| out-width: 100%
-#| fig-width: 11
-#| fig-height: 15
+#| fig-width: 9
+#| fig-height: 7
 
 il_hospitals_df |>
+  filter(`340b_entity_type` != "Not 340B") |>
   mutate(
     mcr_drug_cost = case_when(
       is.na(mcr_drug_cost) ~ 0.25 * mcr_drug_charged,
@@ -651,6 +1378,10 @@ il_hospitals_df |>
   ) |>
   filter(!is.na(net_drug_profit_lower)) |>
   mutate(
+    provider_name = fct_collapse(
+      provider_name,
+      "All CAH/SCH" = provider_name[`340b_entity_type` %in% c("CAH", "SCH")],
+    ),
     provider_name = fct_reorder(provider_name, net_drug_profit_upper)
   ) |>
   ggplot() +
@@ -659,7 +1390,8 @@ il_hospitals_df |>
       x = net_drug_profit_lower, xend = net_drug_profit_upper,
       y = provider_name,
       color = `340b_entity_type`
-    )
+    ),
+    linewidth = 1.5
   ) +
   scale_color_manual(
     name = "340B Entity Type",
@@ -673,47 +1405,13 @@ il_hospitals_df |>
       prefix = "$",
       suffix = "M"
     ),
-    expand = expansion(mult = c(0, 0.05))
-  )
-```
-
-
-```{r}
-il_fil_df <- il_hospitals_df |>
-  filter(
-    provider_name == "Loyola University Medical Center"
-    # health_system_name %in% c(
-    #   "Northwestern Medicine"
-    # )
-  ) |>
-  select(
-    provider_name, `340b_id`, `340b_entity_type`,
-    hq_latitude, hq_longitude
-  ) |>
-  left_join(
-    opais_ce_df |>
-      select(`parent_340b_id`, latitude, longitude),
-    by = c("340b_id" = "parent_340b_id")
-  )
-
-il_fil_df |>
-  st_as_sf(coords = c("hq_longitude", "hq_latitude"), crs = 4326) |>
-ggplot() +
-  annotation_map_tile("cartolight", zoomin = -1) +
-  geom_sf(aes(color = `340b_entity_type`), size = 2) +
-  geom_sf(
-    data = il_fil_df |>
-      filter(!is.na(`340b_id`)) |>
-      st_as_sf(coords = c("longitude", "latitude"), crs = 4326),
-    aes(color = "Child Entity")
+    expand = expansion(mult = c(0, 0.05)),
   ) +
-  geom_segment(
-    data = il_fil_df,
-    aes(
-      x = hq_longitude, y = hq_latitude,
-      xend = longitude, yend = latitude
-    ),
-    color = "grey40"
-  )
+  coord_cartesian(xlim = c(-5e7, 4e8)) +
+  theme_minimal()
 ```
+
+
+
+
 
