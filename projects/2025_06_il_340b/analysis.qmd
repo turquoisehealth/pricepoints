@@ -125,250 +125,115 @@ state_il_df <- tigris::states(cb = TRUE, year = 2020) |>
   select(name = NAME)
 ```
 
-```{r price_example, message=FALSE}
+```{r price_example_basic, message=FALSE}
 #| column: page
 #| out-width: 100%
 #| fig-width: 9
 #| fig-height: 7
 
-price_example_df |>
-  mutate(across(where(is.numeric), \(x) round(x, 2) * 200)) |>
-  pivot_longer(
-    cols = avg_comm_rate:wac,
-    names_to = "rate_type",
-    values_to = "rate_amount"
-  ) |>
-  filter(rate_type %in% c(
-    "asp", "gross_rate", "avg_comm_rate"
-  )) |>
-  mutate(
-    rate_type = factor(
-      rate_type,
-      levels = c(
-        "asp", "gross_rate",
-        "avg_comm_rate"
-      )
-    ),
-    rate_type = fct_recode(
-      rate_type,
-      "Drug cost" = "asp",
-      "Hospital list price" = "gross_rate",
-      "Reimbursement price" = "avg_comm_rate"
-    )
-  ) |>
 ggplot() +
-  geom_bar(
-    aes(x = rate_type, y = rate_amount, fill = rate_type),
-    stat = "identity",
-    width = 0.5
+  geom_hline(
+    yintercept = 0
   ) +
   annotate(
-    "bar",
-    x = 2.75, y = 18520,
-    width = 0.2,
-    fill = "#9e9bca"
+    "text",
+    x = 0.87, y = -13000,
+    label = "Hospital or clinic\nadministers drug",
+    hjust = 1,
+    lineheight = 0.9
+  ) +
+  annotate(
+    "segment",
+    x = 0.9, xend = 1,
+    y = -13000, yend = -13000
+  ) +
+  annotate(
+    "segment",
+    x = 1, xend = 1,
+    y = -13000, yend = -11198,
+    arrow = arrow(length = unit(0.2, "cm"), type = "closed")
+  ) +
+  annotate(
+    "segment",
+    x = 0.5, xend = 1.5,
+    y = -11198, yend = -11198,
+    linetype = "dashed"
+  ) +
+  annotate(
+    "segment",
+    x = 1.5, xend = 2.5,
+    y = 18520 - 11198, yend = 18520 - 11198,
+    linetype = "dashed"
   ) +
   annotate(
     "rect",
-    xmin = 2.65, xmax = 2.85,
-    ymin = 11100, ymax = 18520,
-    fill = "#7470b3"
+    xmin = 0.2, xmax = 0.8,
+    ymin = -11198, ymax = 0,
+    fill = "#ec9993",
+    color = "black"
   ) +
   annotate(
-    "bar",
-    x = 3.15, y = 11870,
-    width = 0.2,
-    fill = "#c29bca"
+    "richtext",
+    x = 0.5, y = -6000,
+    label = paste0(
+      "**<span style='font-size:20px'>-$11,198</span>**<br><br>",
+      "Provider buys<br>drug at ASP"
+    ),
+    size = 4,
+    fill = "transparent",
+    label.color = "transparent"
   ) +
   annotate(
     "rect",
-    xmin = 3.05, xmax = 3.25,
-    ymin = 11100, ymax = 11870,
-    fill = "#a770b3"
-  ) +
-  annotate(
-    "segment",
-    x = 0.85, xend = 3.25,
-    y = 11100, yend = 11100,
-    linetype = "dashed",
-    color = "#fd9a4e"
-  ) +
-  annotate(
-    "bar",
-    x = 0.85, y = 11198,
-    width = 0.2,
-    fill = "#fd9a4e"
-  ) +
-  annotate(
-    "text",
-    x = 0.85, y = 11198 + 750,
-    label = "$11,198 (ASP)",
-    size = 4,
-    color = "#e36402"
-  ) +
-  annotate(
-    "segment",
-    x = 1.25, xend = 3.25,
-    y = 8575, yend = 8575,
-    linetype = "dashed",
-    color = "#e3ba02"
-  ) +
-  annotate(
-    "bar",
-    x = 1.25, y = 8612,
-    width = 0.2,
-    fill = "#fdd41c"
+    xmin = 1.2, xmax = 1.8,
+    ymin = -11198, ymax = 31328 - 11198,
+    fill = "#bee7f4",
+    color = "black"
   ) +
   annotate(
     "richtext",
-    x = 1.30, y = 8612 + 750,
-    label = "$8,612 (340B)<sup>1</sup>",
+    x = 1.5, y = 15000,
+    label = paste0(
+      "Hospital sets list<br>price",
+      " at **$31,328<br>**<span style='font-size:12px'>",
+      "(but doesn't get it)</span>"
+    ),
     size = 4,
-    color = "#caa502",
     fill = "transparent",
     label.color = "transparent"
   ) +
   annotate(
-    "bar",
-    x = 2, y = 31328,
-    width = 0.3,
-    fill = "green4"
-  ) +
-  annotate(
-    "text",
-    x = 2, y = 31328 + 750,
-    label = "$31,328",
-    size = 4,
-    color = "green4"
-  ) +
-  annotate(
-    "text",
-    x = 2.75, y = 18520 + 1500,
-    label = "$18,520\n(Commercial)",
-    size = 4,
-    color = "#544f96"
-  ) +
-  annotate(
-    "text",
-    x = 3.15, y = 11870 + 1500,
-    label = "$11,870\n(Medicare)",
-    size = 4,
-    color = "#894f96"
-  ) +
-  annotate(
-    "segment",
-    x = 0.85, xend = 0.85,
-    y = 12750, yend = 17500,
-    color = "grey20"
-  ) +
-  annotate(
-    "segment",
-    x = 0.85, xend = 1.25,
-    y = 17500, yend = 17500,
-    color = "grey20"
-  ) +
-  annotate(
-    "segment",
-    x = 1.25, xend = 1.25,
-    y = 10000, yend = 31275 + 750,
-    color = "grey20"
-  ) +
-  annotate(
-    "segment",
-    x = 1.25, xend = 1.82,
-    y = 31275 + 750, yend = 31275 + 750,
-    color = "grey20",
-    arrow = arrow(length = unit(0.2, "cm"), type = "closed")
-  ) +
-  annotate(
-    "text",
-    x = 1.20, y = 22500,
-    label = "Hospital mark up is ~3x\n the acquisition price",
-    size = 4,
-    color = "grey20",
-    hjust = 1
-  ) +
-  annotate(
-    "segment",
-    x = 2.18, xend = 2.75,
-    y = 31275 + 750, yend = 31275 + 750,
-    color = "grey20"
-  ) +
-  annotate(
-    "segment",
-    x = 2.75, xend = 2.75,
-    y = 31275 + 750, yend = 21500,
-    color = "grey20",
-    arrow = arrow(length = unit(0.2, "cm"), type = "closed")
-  ) +
-  annotate(
-    "text",
-    x = 2.8, y = 27500,
-    label = paste0(
-      "Actual reimbursement\nfrom insurers is much\n",
-      "lower than list price"
-    ),
-    size = 4,
-    color = "grey20",
-    hjust = 0
+    "rect",
+    xmin = 1.205, xmax = 1.795,
+    ymin = -11150, ymax = 18520 - 11198,
+    fill = "#7ccfe9"
   ) +
   annotate(
     "richtext",
-    x = 3.1, y = 22000,
+    x = 1.5, y = -2000,
     label = paste0(
-      "Medicare reimburses drugs<br>at a fixed rate ",
-      "(<span style='color:#e36402'>ASP</span> + 6%)"
+      "**<span style='font-size:20px'>+$18,520</span>**<br><br>",
+      "Insurer/payer<br>reimburses at<br>negotiated rate"
     ),
     size = 4,
-    color = "grey20",
-    hjust = 0,
     fill = "transparent",
     label.color = "transparent"
   ) +
   annotate(
-    "segment",
-    x = 3.15, xend = 3.15,
-    y = 20500, yend = 14750,
-    color = "grey20",
-    arrow = arrow(length = unit(0.2, "cm"), type = "closed")
+    "rect",
+    xmin = 2.2, xmax = 2.8,
+    ymin = 0, ymax = 18520 - 11198,
+    fill = "#91caab",
+    color = "black"
   ) +
   annotate(
     "richtext",
-    x = 3.45, y = 12500,
+    x = 2.5, y = 3600,
     label = paste0(
-      "The **darker** area shows the<br>provider's profit from a standard",
-      "<br>(non-340B) drug transaction<sup>2</sup>"
+      "**<span style='font-size:20px'>= $7,322</span>**<br><br>",
+      "Hospital keeps<br>net cost recovery<br>(profit) from payer"
     ),
-    size = 4,
-    color = "grey20",
-    hjust = 0,
-    fill = "transparent",
-    label.color = "transparent"
-  ) +
-  annotate(
-    "richtext",
-    x = 3.45, y = 7500,
-    label = paste0(
-      "The area between the <span style='color:#fd9a4e'>**orange**</span>",
-      "<br> and <span style='color:#caa502'>**yellow**</span> lines represents",
-      "<br> the additional profit from 340B"
-    ),
-    size = 4,
-    color = "grey20",
-    hjust = 0,
-    fill = "transparent",
-    label.color = "transparent"
-  ) +
-  annotate(
-    "richtext",
-    x = 3.45, y = 2500,
-    label = paste0(
-      "In this case, each 200 mg dose<br>of Keytruda nets the provider",
-      "<br>**$2,586** in additional 340B profit"
-    ),
-    size = 4,
-    color = "grey20",
-    hjust = 0,
+    size = 3.6,
     fill = "transparent",
     label.color = "transparent"
   ) +
@@ -380,29 +245,204 @@ ggplot() +
       prefix = "$",
       suffix = "K"
     ),
+    n.breaks = 7,
     expand = expansion(mult = c(0, 0.05))
   ) +
-  scale_fill_manual(
-    values = c(
-      "Drug cost" = "transparent",
-      "Hospital list price" = "transparent",
-      "Reimbursement price" = "transparent"
-    )
-  ) +
+  coord_cartesian(clip = "off", xlim = c(0, 3), ylim = c(-11000, 22000)) +
   labs(
     title = paste0(
-      "340B lets providers save on drug acquisition costs"
+      "Buy-and-bill is the most common method for\nreimbursement ",
+      "of outpatient drugs"
     ),
     subtitle = paste0(
-      "In this case, each 200 mg dose of Keytruda nets covered under 340B<br>",
-      "nets Javon Bea **$2,586** in additional profit"
+      "Below is the price of Keytruda at Javon Bea Hospital in Rockford, IL"
     ),
     caption = paste0(
-      "test test"
+      "Commercial price data sourced from Turquoise Health\n",
+      "Reimbursement rate is the average of 4 payer rates for Keytruda\n",
+      "ASP is the average sales price for Keytruda in April 2025, ",
+      "sourced from CMS pricing files"
     )
   ) +
-  coord_cartesian(clip = "off", xlim = c(1, 4.1), ylim = c(0, 3e4)) +
-  guides(fill = "none") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 21,
+      face = "bold",
+      margin = margin(b = 8)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 16)
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 15,
+      face = "bold",
+      color = "grey30"
+    ),
+    axis.text.y = element_markdown(
+      size = 13,
+      margin = margin(r = 4)
+    ),
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 20)
+    )
+  )
+```
+
+```{r price_example_340b, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 7
+
+ggplot() +
+  geom_hline(
+    yintercept = 0
+  ) +
+  annotate(
+    "text",
+    x = 0.87, y = -11500,
+    label = "Hospital or clinic\nadministers drug",
+    hjust = 1,
+    lineheight = 0.9
+  ) +
+  annotate(
+    "segment",
+    x = 0.9, xend = 1,
+    y = -11500, yend = -11500
+  ) +
+  annotate(
+    "segment",
+    x = 1, xend = 1,
+    y = -11500, yend = -8612,
+    arrow = arrow(length = unit(0.2, "cm"), type = "closed")
+  ) +
+  annotate(
+    "segment",
+    x = 0.5, xend = 1.5,
+    y = -8612, yend = -8612,
+    linetype = "dashed"
+  ) +
+  annotate(
+    "segment",
+    x = 1.5, xend = 2.205,
+    y = 18520 - 8612, yend = 18520 - 8612,
+    linetype = "dashed"
+  ) +
+  annotate(
+    "rect",
+    xmin = 0.2, xmax = 0.8,
+    ymin = -8612, ymax = 0,
+    fill = "#ec9993",
+    color = "black"
+  ) +
+  annotate(
+    "richtext",
+    x = 0.5, y = -4500,
+    label = paste0(
+      "**<span style='font-size:20px'>-$8,612</span>**<br><br>",
+      "Provider buys<br>drug at 340B<br>discount price<sup>1</sup>"
+    ),
+    size = 4,
+    fill = "transparent",
+    label.color = "transparent"
+  ) +
+  annotate(
+    "rect",
+    xmin = 1.2, xmax = 1.8,
+    ymin = -8612, ymax = 31328 - 8612,
+    fill = "#bee7f4",
+    color = "black"
+  ) +
+  annotate(
+    "richtext",
+    x = 1.5, y = 17000,
+    label = paste0(
+      "Hospital sets list<br>price",
+      " at **$31,328<br>**<span style='font-size:12px'>",
+      "(but doesn't get it)</span>"
+    ),
+    size = 4,
+    fill = "transparent",
+    label.color = "transparent"
+  ) +
+  annotate(
+    "rect",
+    xmin = 1.205, xmax = 1.795,
+    ymin = -8550, ymax = 18520 - 8612,
+    fill = "#7ccfe9"
+  ) +
+  annotate(
+    "richtext",
+    x = 1.5, y = 500,
+    label = paste0(
+      "**<span style='font-size:20px'>+$18,520</span>**<br><br>",
+      "Insurer/payer<br>reimburses at<br>negotiated rate"
+    ),
+    size = 4,
+    fill = "transparent",
+    label.color = "transparent"
+  ) +
+  annotate(
+    "rect",
+    xmin = 2.2, xmax = 2.8,
+    ymin = 0, ymax = 18520 - 8612,
+    fill = "#91caab",
+    color = "black"
+  ) +
+  annotate(
+    "rect",
+    xmin = 2.205, xmax = 2.795,
+    ymin = 18520 - 11198, ymax = 18520 - 8612 - 50,
+    fill = "#428a62"
+  ) +
+  annotate(
+    "richtext",
+    x = 2.5, y = 5850,
+    label = paste0(
+      "**<span style='font-size:20px;color:white;'>= $9,908</span>**<br><br>",
+      "<br>Dark green is extra<br>profit from 340B<br>compared to ASP"
+    ),
+    size = 3.5,
+    fill = "transparent",
+    label.color = "transparent"
+  ) +
+  scale_y_continuous(
+    name = "Price per 200 mg dose of Keytruda",
+    labels = scales::dollar_format(
+      accuracy = 1,
+      scale = 1 / 1e3,
+      prefix = "$",
+      suffix = "K"
+    ),
+    n.breaks = 7,
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  coord_cartesian(clip = "off", xlim = c(0, 3.1), ylim = c(-11000, 22000)) +
+  labs(
+    title = paste0(
+      "340B lowers the drug acquisition cost for providers"
+    ),
+    subtitle = paste0(
+      "Providers pay less, charge insurers the same price, ",
+      "then keep the difference"
+    ),
+    caption = paste0(
+      "Commercial price data sourced from Turquoise Health<br>",
+      "Reimbursement rate is the average of 4 payer rates for Keytruda<br>",
+      "<sup>1</sup>The 340B discount price for drugs is not available publicly",
+      " and is instead estimated as ASP - 23.1%"
+    )
+  ) +
   theme_minimal() +
   theme(
     plot.title = element_text(
@@ -412,28 +452,203 @@ ggplot() +
     ),
     plot.subtitle = element_markdown(
       size = 15,
-      margin = margin(b = 36)
+      margin = margin(b = 16)
     ),
     axis.title.y = element_text(
-      margin = margin(r = 6),
+      margin = margin(r = 10),
       size = 15,
-      face = "bold"
+      face = "bold",
+      color = "grey30"
     ),
-    axis.text.y = element_text(
+    axis.text.y = element_markdown(
       size = 13,
       margin = margin(r = 4)
     ),
     axis.title.x = element_blank(),
-    axis.text.x = element_text(size = 12, margin = margin(t = 4)),
+    axis.text.x = element_blank(),
     axis.ticks.x = element_blank(),
-    strip.text = element_text(
-      size = 15,
-      face = "bold"
-    ),
-    strip.background = element_rect(fill = "#e0ebea"),
     panel.grid.major.x = element_blank(),
     panel.grid.minor.x = element_blank(),
-    plot.caption = element_text(
+    plot.caption = element_markdown(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 20)
+    )
+  )
+```
+
+```{r price_example_medicare, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 7
+
+ggplot() +
+  geom_hline(
+    yintercept = 0
+  ) +
+  annotate(
+    "text",
+    x = 0.87, y = -11500,
+    label = "Hospital or clinic\nadministers drug",
+    hjust = 1,
+    lineheight = 0.9
+  ) +
+  annotate(
+    "segment",
+    x = 0.9, xend = 1,
+    y = -11500, yend = -11500
+  ) +
+  annotate(
+    "segment",
+    x = 1, xend = 1,
+    y = -11500, yend = -8612,
+    arrow = arrow(length = unit(0.2, "cm"), type = "closed")
+  ) +
+  annotate(
+    "segment",
+    x = 0.5, xend = 1.5,
+    y = -8612, yend = -8612,
+    linetype = "dashed"
+  ) +
+  annotate(
+    "segment",
+    x = 1.5, xend = 2.205,
+    y = 11870 - 8612, yend = 11870 - 8612,
+    linetype = "dashed"
+  ) +
+  annotate(
+    "rect",
+    xmin = 0.2, xmax = 0.8,
+    ymin = -8612, ymax = 0,
+    fill = "#ec9993",
+    color = "black"
+  ) +
+  annotate(
+    "richtext",
+    x = 0.5, y = -4500,
+    label = paste0(
+      "**<span style='font-size:20px'>-$8,612</span>**<br><br>",
+      "Provider buys<br>drug at 340B<br>discount price<sup>1</sup>"
+    ),
+    size = 4,
+    fill = "transparent",
+    label.color = "transparent"
+  ) +
+  annotate(
+    "rect",
+    xmin = 1.2, xmax = 1.8,
+    ymin = -8612, ymax = 31328 - 8612,
+    fill = "#bee7f4",
+    color = "black"
+  ) +
+  annotate(
+    "richtext",
+    x = 1.5, y = 17000,
+    label = paste0(
+      "Hospital sets list<br>price",
+      " at **$31,328<br>**<span style='font-size:12px'>",
+      "(but doesn't get it)</span>"
+    ),
+    size = 4,
+    fill = "transparent",
+    label.color = "transparent"
+  ) +
+  annotate(
+    "rect",
+    xmin = 1.205, xmax = 1.795,
+    ymin = -8550, ymax = 11870 - 8612,
+    fill = "#7ccfe9"
+  ) +
+  annotate(
+    "richtext",
+    x = 1.5, y = -2700,
+    label = paste0(
+      "**<span style='font-size:20px'>+$11,870</span>**<br><br>",
+      "Medicare<br>reimburses at<br>ASP + 6%"
+    ),
+    size = 4,
+    fill = "transparent",
+    label.color = "transparent"
+  ) +
+  annotate(
+    "rect",
+    xmin = 2.2, xmax = 2.8,
+    ymin = 0, ymax = 11870 - 8612,
+    fill = "#91caab",
+    color = "black"
+  ) +
+  annotate(
+    "rect",
+    xmin = 2.205, xmax = 2.795,
+    ymin = 11870 - 11198, ymax = 11870 - 8612 - 50,
+    fill = "#428a62"
+  ) +
+  annotate(
+    "richtext",
+    x = 2.5, y = -2500,
+    label = paste0(
+      "**<span style='font-size:20px;color:white'>= $3,258</span>**<br><br>",
+      "<br>Dark green is extra<br>profit from 340B<br>compared to ASP<br><br>",
+      "(Original profit was $672)"
+    ),
+    size = 4,
+    fill = "transparent",
+    label.color = "transparent"
+  ) +
+  scale_y_continuous(
+    name = "Price per 200 mg dose of Keytruda",
+    labels = scales::dollar_format(
+      accuracy = 1,
+      scale = 1 / 1e3,
+      prefix = "$",
+      suffix = "K"
+    ),
+    n.breaks = 7,
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  coord_cartesian(clip = "off", xlim = c(0, 3.1), ylim = c(-11000, 22000)) +
+  labs(
+    title = paste0(
+      "340B increases margins from Medicare reimbursement"
+    ),
+    subtitle = paste0(
+      "For hospitals with many Medicare patients, 340B can be a lifeline"
+    ),
+    caption = paste0(
+      "Commercial price data sourced from Turquoise Health<br>",
+      "Reimbursement rate is the average of 4 payer rates for Keytruda<br>",
+      "<sup>1</sup>The 340B discount price for drugs is not available publicly",
+      " and is instead estimated as ASP - 23.1%"
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 20,
+      face = "bold",
+      margin = margin(b = 8)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 16)
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 15,
+      face = "bold",
+      color = "grey30"
+    ),
+    axis.text.y = element_markdown(
+      size = 13,
+      margin = margin(r = 4)
+    ),
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.caption = element_markdown(
       size = 11,
       lineheight = 1.1,
       margin = margin(t = 20)
