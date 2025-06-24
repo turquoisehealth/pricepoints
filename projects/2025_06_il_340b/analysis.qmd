@@ -18,7 +18,6 @@ library(arrow)
 library(conflicted)
 library(data.table)
 library(dplyr)
-library(emojifont)
 library(forcats)
 library(ggplot2)
 library(ggrepel)
@@ -103,6 +102,9 @@ opais_cp_df <- read_parquet(
     )
   )
 
+# Load Keytruda pricing example data from Javon Bea
+price_example_df <- read_parquet("data/output/price_example.parquet")
+
 # Load manually collected state legislative data
 state_leg_df <- readr::read_csv("data/output/state_legislation.csv")
 
@@ -121,6 +123,322 @@ state_geo_df <- tigris::states(cb = TRUE, resolution = "20m", year = 2020) |>
 state_il_df <- tigris::states(cb = TRUE, year = 2020) |>
   filter(GEOID == "17") |>
   select(name = NAME)
+```
+
+```{r price_example, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 7
+
+price_example_df |>
+  mutate(across(where(is.numeric), \(x) round(x, 2) * 200)) |>
+  pivot_longer(
+    cols = avg_comm_rate:wac,
+    names_to = "rate_type",
+    values_to = "rate_amount"
+  ) |>
+  filter(rate_type %in% c(
+    "asp", "gross_rate", "avg_comm_rate"
+  )) |>
+  mutate(
+    rate_type = factor(
+      rate_type,
+      levels = c(
+        "asp", "gross_rate",
+        "avg_comm_rate"
+      )
+    ),
+    rate_type = fct_recode(
+      rate_type,
+      "Drug cost" = "asp",
+      "Hospital list price" = "gross_rate",
+      "Reimbursement price" = "avg_comm_rate"
+    )
+  ) |>
+ggplot() +
+  geom_bar(
+    aes(x = rate_type, y = rate_amount, fill = rate_type),
+    stat = "identity",
+    width = 0.5
+  ) +
+  annotate(
+    "bar",
+    x = 2.75, y = 18520,
+    width = 0.2,
+    fill = "#9e9bca"
+  ) +
+  annotate(
+    "rect",
+    xmin = 2.65, xmax = 2.85,
+    ymin = 11100, ymax = 18520,
+    fill = "#7470b3"
+  ) +
+  annotate(
+    "bar",
+    x = 3.15, y = 11870,
+    width = 0.2,
+    fill = "#c29bca"
+  ) +
+  annotate(
+    "rect",
+    xmin = 3.05, xmax = 3.25,
+    ymin = 11100, ymax = 11870,
+    fill = "#a770b3"
+  ) +
+  annotate(
+    "segment",
+    x = 0.85, xend = 3.25,
+    y = 11100, yend = 11100,
+    linetype = "dashed",
+    color = "#fd9a4e"
+  ) +
+  annotate(
+    "bar",
+    x = 0.85, y = 11198,
+    width = 0.2,
+    fill = "#fd9a4e"
+  ) +
+  annotate(
+    "text",
+    x = 0.85, y = 11198 + 750,
+    label = "$11,198 (ASP)",
+    size = 4,
+    color = "#e36402"
+  ) +
+  annotate(
+    "segment",
+    x = 1.25, xend = 3.25,
+    y = 8575, yend = 8575,
+    linetype = "dashed",
+    color = "#e3ba02"
+  ) +
+  annotate(
+    "bar",
+    x = 1.25, y = 8612,
+    width = 0.2,
+    fill = "#fdd41c"
+  ) +
+  annotate(
+    "richtext",
+    x = 1.30, y = 8612 + 750,
+    label = "$8,612 (340B)<sup>1</sup>",
+    size = 4,
+    color = "#caa502",
+    fill = "transparent",
+    label.color = "transparent"
+  ) +
+  annotate(
+    "bar",
+    x = 2, y = 31328,
+    width = 0.3,
+    fill = "green4"
+  ) +
+  annotate(
+    "text",
+    x = 2, y = 31328 + 750,
+    label = "$31,328",
+    size = 4,
+    color = "green4"
+  ) +
+  annotate(
+    "text",
+    x = 2.75, y = 18520 + 1500,
+    label = "$18,520\n(Commercial)",
+    size = 4,
+    color = "#544f96"
+  ) +
+  annotate(
+    "text",
+    x = 3.15, y = 11870 + 1500,
+    label = "$11,870\n(Medicare)",
+    size = 4,
+    color = "#894f96"
+  ) +
+  annotate(
+    "segment",
+    x = 0.85, xend = 0.85,
+    y = 12750, yend = 17500,
+    color = "grey20"
+  ) +
+  annotate(
+    "segment",
+    x = 0.85, xend = 1.25,
+    y = 17500, yend = 17500,
+    color = "grey20"
+  ) +
+  annotate(
+    "segment",
+    x = 1.25, xend = 1.25,
+    y = 10000, yend = 31275 + 750,
+    color = "grey20"
+  ) +
+  annotate(
+    "segment",
+    x = 1.25, xend = 1.82,
+    y = 31275 + 750, yend = 31275 + 750,
+    color = "grey20",
+    arrow = arrow(length = unit(0.2, "cm"), type = "closed")
+  ) +
+  annotate(
+    "text",
+    x = 1.20, y = 22500,
+    label = "Hospital mark up is ~3x\n the acquisition price",
+    size = 4,
+    color = "grey20",
+    hjust = 1
+  ) +
+  annotate(
+    "segment",
+    x = 2.18, xend = 2.75,
+    y = 31275 + 750, yend = 31275 + 750,
+    color = "grey20"
+  ) +
+  annotate(
+    "segment",
+    x = 2.75, xend = 2.75,
+    y = 31275 + 750, yend = 21500,
+    color = "grey20",
+    arrow = arrow(length = unit(0.2, "cm"), type = "closed")
+  ) +
+  annotate(
+    "text",
+    x = 2.8, y = 27500,
+    label = paste0(
+      "Actual reimbursement\nfrom insurers is much\n",
+      "lower than list price"
+    ),
+    size = 4,
+    color = "grey20",
+    hjust = 0
+  ) +
+  annotate(
+    "richtext",
+    x = 3.1, y = 22000,
+    label = paste0(
+      "Medicare reimburses drugs<br>at a fixed rate ",
+      "(<span style='color:#e36402'>ASP</span> + 6%)"
+    ),
+    size = 4,
+    color = "grey20",
+    hjust = 0,
+    fill = "transparent",
+    label.color = "transparent"
+  ) +
+  annotate(
+    "segment",
+    x = 3.15, xend = 3.15,
+    y = 20500, yend = 14750,
+    color = "grey20",
+    arrow = arrow(length = unit(0.2, "cm"), type = "closed")
+  ) +
+  annotate(
+    "richtext",
+    x = 3.45, y = 12500,
+    label = paste0(
+      "The **darker** area shows the<br>provider's profit from a standard",
+      "<br>(non-340B) drug transaction<sup>2</sup>"
+    ),
+    size = 4,
+    color = "grey20",
+    hjust = 0,
+    fill = "transparent",
+    label.color = "transparent"
+  ) +
+  annotate(
+    "richtext",
+    x = 3.45, y = 7500,
+    label = paste0(
+      "The area between the <span style='color:#fd9a4e'>**orange**</span>",
+      "<br> and <span style='color:#caa502'>**yellow**</span> lines represents",
+      "<br> the additional profit from 340B"
+    ),
+    size = 4,
+    color = "grey20",
+    hjust = 0,
+    fill = "transparent",
+    label.color = "transparent"
+  ) +
+  annotate(
+    "richtext",
+    x = 3.45, y = 2500,
+    label = paste0(
+      "In this case, each 200 mg dose<br>of Keytruda nets the provider",
+      "<br>**$2,586** in additional 340B profit"
+    ),
+    size = 4,
+    color = "grey20",
+    hjust = 0,
+    fill = "transparent",
+    label.color = "transparent"
+  ) +
+  scale_y_continuous(
+    name = "Price per 200 mg dose of Keytruda",
+    labels = scales::dollar_format(
+      accuracy = 1,
+      scale = 1 / 1e3,
+      prefix = "$",
+      suffix = "K"
+    ),
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Drug cost" = "transparent",
+      "Hospital list price" = "transparent",
+      "Reimbursement price" = "transparent"
+    )
+  ) +
+  labs(
+    title = paste0(
+      "340B lets providers save on drug acquisition costs"
+    ),
+    subtitle = paste0(
+      "In this case, each 200 mg dose of Keytruda nets covered under 340B<br>",
+      "nets Javon Bea **$2,586** in additional profit"
+    ),
+    caption = paste0(
+      "test test"
+    )
+  ) +
+  coord_cartesian(clip = "off", xlim = c(1, 4.1), ylim = c(0, 3e4)) +
+  guides(fill = "none") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 20,
+      face = "bold",
+      margin = margin(b = 8)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 36)
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 6),
+      size = 15,
+      face = "bold"
+    ),
+    axis.text.y = element_text(
+      size = 13,
+      margin = margin(r = 4)
+    ),
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(size = 12, margin = margin(t = 4)),
+    axis.ticks.x = element_blank(),
+    strip.text = element_text(
+      size = 15,
+      face = "bold"
+    ),
+    strip.background = element_rect(fill = "#e0ebea"),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 20)
+    )
+  )
 ```
 
 ```{r hospital_map, message=FALSE}
@@ -1062,11 +1380,6 @@ ggplot() +
 #| column: page
 #| out-width: 100%
 #| fig-width: 9
-#| fig-height: 8
-
-#| column: page
-#| out-width: 100%
-#| fig-width: 9
 #| fig-height: 7
 
 opais_cp_df |>
@@ -1410,8 +1723,3 @@ il_hospitals_df |>
   coord_cartesian(xlim = c(-5e7, 4e8)) +
   theme_minimal()
 ```
-
-
-
-
-

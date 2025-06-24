@@ -39,6 +39,10 @@ class UtilDataFrame:
 with open("queries/il_hospitals.sql", "r") as query:
     il_hospitals_df = pl.read_database(query.read(), trino_conn)
 
+# %% Grab Keytruda drug pricing example
+with open("queries/price_example.sql", "r") as query:
+    price_example_df = pl.read_database(query.read(), trino_conn)
+
 # %% Grab Medicare cost report data exported from CMS SAS files. Interpolate
 # CCN values directly into the SQL query to avoid pulling all cost report data
 with open("queries/medicare_cost_reports.sql", "r") as query:
@@ -229,6 +233,7 @@ ahq_merged_df = (
 il_hospitals_merged_df.write_parquet("data/output/il_hospitals.parquet")
 medicare_cost_df.write_parquet("data/output/medicare_cost_reports.parquet")
 ahq_merged_df.write_parquet("data/output/ahq_hospital_stats.parquet")
+price_example_df.write_parquet("data/output/price_example.parquet")
 
 # %% Save OPAIS CE and contract pharma detailed data
 opais_ce_child_df.write_parquet("data/intermediate/opais_ce_child.parquet")
