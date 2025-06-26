@@ -1985,6 +1985,9 @@ ggplot() +
 #| fig-width: 9
 #| fig-height: 9
 
+# Create a bar chart showing the range of outpatient drug profits for
+# 340B hospitals. Collapse CAH, SCH, and small DSH hospitals into single bars
+# to prevent crowding the Y axis
 drug_profits_df |>
   filter(`340b_entity_type` != "Not 340B") |>
   mutate(
@@ -2126,9 +2129,11 @@ drug_profits_df |>
 ```{r drug_profit_circles, message=FALSE}
 #| column: page
 #| out-width: 100%
-#| fig-width: 9
-#| fig-height: 7
+#| fig-width: 8
+#| fig-height: 8
 
+# Create a circle pack graph showing the distribution of outpatient drug profits
+# among Illinois 340B hospitals
 il_graph <- tribble(
   ~"from", ~"to",
   "Illinois", "Illinois.Chicago area",
@@ -2166,6 +2171,8 @@ il_hospitals_graph <- il_hospitals_df |>
     `340b_entity_type` != "Not 340B"
   )
 
+# The nasty code below is to construct and the backfill the graph (aggregate
+# child values to parents) so everything plays nice with igraph
 g <- graph_from_data_frame(
     d = bind_rows(il_graph, il_hospitals_graph),
     vertices = il_hospitals_graph |>
@@ -2176,7 +2183,6 @@ g <- graph_from_data_frame(
           distinct(name = value)
       )
   )
-
 V(g)$net_out_profit <- ifelse(
   is.na(V(g)$net_out_profit),
   sapply(V(g)$name, function(n) {
@@ -2186,7 +2192,7 @@ V(g)$net_out_profit <- ifelse(
   V(g)$net_out_profit
 )
 
-ggraph(g, layout = "circlepack", weight=net_out_profit) + 
+ggraph(g, layout = "circlepack", weight = net_out_profit) + 
   geom_node_circle(
     aes(fill = factor(`340b_entity_type`, levels = names(entity_color_values)))
   ) +
@@ -2201,17 +2207,36 @@ ggraph(g, layout = "circlepack", weight=net_out_profit) +
     fontface = "bold",
     colour = "grey20"
   ) +
+  annotate(
+    "text",
+    x = 6.75e4, y = -3.3e4,
+    label = "Each colored circle\nrepresents one hospital",
+    hjust = 0,
+    lineheight = 1.1
+  ) +
   scale_fill_manual(
     name = "340B entity type",
     values = entity_color_values,
     na.translate = FALSE
   ) +
   labs(
-    title = "Outpatient drug profits aren't concentrated in the Chicago area",
+    title = "Downstate hospitals also have high outpatient drug profits",
     subtitle = paste0(
       "Regional hospitals in cities like Rockford and Urbana are likely ",
-      "the biggest beneficiaries of 340B"
+      "big beneficiaries of 340B"
+    ),
+    caption = paste0(
+      "Circles are scaled based on the upper bound of estimated ",
+      "outpatient drug profit<br>",
+      "Not all hospitals are shown (some are missing data required to ",
+      "estimate drug profits)<br>",
+      "\"Chicago area\" includes Cook, DuPage, Kane, Lake, and McHenry counties"
     )
+  ) +
+  coord_cartesian(
+    xlim = c(-6e4, 6e4),
+    ylim = c(-6e4, 6e4),
+    clip = "off"
   ) +
   theme_void() +
   theme(
@@ -2227,7 +2252,7 @@ ggraph(g, layout = "circlepack", weight=net_out_profit) +
     plot.caption = element_markdown(
       size = 11,
       lineheight = 1.1,
-      margin = margin(t = 20, r = 6)
+      margin = margin(t = 20, r = -130)
     ),
     plot.margin = margin(t = 10, b = 10, l = 10, r = 10),
     legend.key.spacing.y = unit(0.15, "cm"),
