@@ -19,6 +19,7 @@ library(conflicted)
 library(data.table)
 library(dplyr)
 library(forcats)
+library(ggraph)
 library(ggplot2)
 library(ggrepel)
 library(ggridges)
@@ -105,6 +106,9 @@ opais_cp_df <- read_parquet(
 # Load Keytruda pricing example data from Javon Bea
 price_example_df <- read_parquet("data/output/price_example.parquet")
 
+# Load aggregated drug prices for all providers
+drug_rates_df <- read_parquet("data/output/drug_rates.parquet")
+
 # Load manually collected state legislative data
 state_leg_df <- readr::read_csv("data/output/state_legislation.csv")
 
@@ -123,6 +127,80 @@ state_geo_df <- tigris::states(cb = TRUE, resolution = "20m", year = 2020) |>
 state_il_df <- tigris::states(cb = TRUE, year = 2020) |>
   filter(GEOID == "17") |>
   select(name = NAME)
+```
+
+```{r drug_profits}
+# Some hospitals are missing net-to-gross ratios or have very low counts of
+# gross rates. For these, we impute a net-to-gross ratio based on the average
+# of similarly sized hospitals. Note that there's only 5 hospitals imputed
+drug_rates_imp_df <- drug_rates_df |>
+  left_join(
+    il_hospitals_df |>
+      select(provider_id, total_beds),
+    by = "provider_id"
+  )
+drug_rates_imp_df <- drug_rates_imp_df |>
+  rowwise() |>
+  mutate(
+    rate_to_gross_imputed = is.na(rate_to_gross_avg_wtd) | gross_count_wtd < 20,
+    rate_to_gross_avg_wtd = ifelse(
+      rate_to_gross_imputed,
+      mean(drug_rates_imp_df$rate_to_gross_avg_wtd[
+        dplyr::between(
+          drug_rates_imp_df$total_beds,
+          total_beds * 0.5,
+          total_beds * 1.5
+        )
+      ], na.rm = TRUE),
+      rate_to_gross_avg_wtd
+    )
+  )
+
+# Calculate ranges of net drug revenue for each hospital, where the lower bound
+# is based on the hospital's conversion rate from its cost report and the
+# upper bound is based on the average net-to-gross drug reimbursement
+# as estimated from price data
+drug_profits_df <- il_hospitals_df |>
+  inner_join(
+    drug_rates_imp_df |>
+      select(
+        provider_id, gross_poa_avg_wtd, contains("_count_"),
+        rate_to_gross_avg_wtd, rate_to_gross_imputed
+      ),
+    by = c("provider_id")
+  ) |>
+  mutate(
+    # Most small/CAH hospitals don't report their drug costs, so we need to take
+    # a guess at what their charges are compared to WAC/ASP. We can use each
+    # hospital's average gross percent over ASP to back out their rough cost
+    mcr_drug_cost_imputed = is.na(mcr_drug_cost),
+    mcr_drug_cost = ifelse(
+      mcr_drug_cost_imputed,
+      mcr_drug_charged / gross_poa_avg_wtd,
+      mcr_drug_cost
+    ),
+    # Drug profits are calculated as a range, where the lower bound is the
+    # hospitals general conversion rate * charged amount - cost. The upper bound
+    # is the same but substituting the actual net-to-gross ratio from drug
+    # price data
+    net_drug_profit_lower =
+      (mcr_drug_charged * mcr_conv_factor) - mcr_drug_cost,
+    net_drug_profit_upper =
+      (mcr_drug_charged * rate_to_gross_avg_wtd) - mcr_drug_cost,
+    # Calculate profits for only outpatient drugs. This is a good proxy for
+    # 340B profits but isn't perfect since it doesn't factor in reduced costs,
+    # % of patients who are 340B, contract pharmacy fees, etc.
+    net_outpatient_profit_lower =
+      (mcr_drug_charged * mcr_conv_factor * mcr_pct_outpatient) -
+      (mcr_drug_cost * mcr_pct_outpatient),
+    net_outpatient_profit_upper =
+      (mcr_drug_charged * rate_to_gross_avg_wtd * mcr_pct_outpatient) -
+      (mcr_drug_cost * mcr_pct_outpatient)
+  ) |>
+  filter(
+    !is.na(mcr_net_patient_revenue),
+    !is.na(net_drug_profit_lower)
+  )
 ```
 
 ```{r price_example_basic, message=FALSE}
@@ -407,9 +485,9 @@ ggplot() +
   ) +
   annotate(
     "richtext",
-    x = 2.5, y = 5850,
+    x = 2.5, y = 3700,
     label = paste0(
-      "**<span style='font-size:20px;color:white;'>= $9,908</span>**<br><br>",
+      "**<span style='font-size:20px'>= $9,908</span>**<br>",
       "<br>Dark green is extra<br>profit from 340B<br>compared to ASP"
     ),
     size = 3.5,
@@ -586,9 +664,18 @@ ggplot() +
   ) +
   annotate(
     "richtext",
-    x = 2.5, y = -2500,
+    x = 2.5, y = 4200,
     label = paste0(
-      "**<span style='font-size:20px;color:white'>= $3,258</span>**<br><br>",
+      "**<span style='font-size:20px'>= $3,258</span>**"
+    ),
+    size = 4,
+    fill = "transparent",
+    label.color = "transparent"
+  ) +
+  annotate(
+    "richtext",
+    x = 2.5, y = -3800,
+    label = paste0(
       "<br>Dark green is extra<br>profit from 340B<br>compared to ASP<br><br>",
       "(Original profit was $672)"
     ),
@@ -1738,203 +1825,418 @@ ggplot() +
   )
 ```
 
-```{r ce_map, message=FALSE}
-#| column: page
-#| out-width: 100%
-#| fig-width: 9
-#| fig-height: 6
-
-il_fil_years <- c(2009, 2025)
-il_fil_providers <- c(
-  "Loyola University Medical Center" = "#4E2A84",
-  "Rush University Medical Center" = "#48641c",
-  "University Of Chicago Hospitals" = "#800000"
-)
-
-il_fil_df <- il_hospitals_df |>
-  filter(provider_name %in% names(il_fil_providers)) |>
-  select(
-    provider_name, `340b_id`, `340b_entity_type`,
-    hq_latitude, hq_longitude
-  ) |>
-  left_join(
-    opais_ce_df |>
-      select(
-        `parent_340b_id`, latitude, longitude,
-        participating_start_date, termination_date, year
-      ),
-    by = c("340b_id" = "parent_340b_id"),
-    relationship = "many-to-many"
-  ) |>
-  unnest(cols = year) |>
-  filter(year %in% il_fil_years) |>
-  st_as_sf(
-    coords = c("hq_longitude", "hq_latitude"),
-    crs = 4326,
-    remove = FALSE
-  )
-
-il_fil_plot_lst <- list()
-
-for (yr in il_fil_years) {
-  il_fil_plot_lst[[paste0(yr)]] <- il_fil_df |>
-    filter(year == yr) |>
-  ggplot() +
-    annotation_map_tile("cartolight", zoomin = 0) +
-    annotate(
-      "rect",
-      xmin = -Inf, xmax = Inf,
-      ymin = -Inf, ymax = Inf,
-      fill = "white",
-      alpha = 0.6
-    ) +
-    annotate(
-      "label",
-      x = -88.35, y = 42.28,
-      label = yr,
-      size = 5,
-      color = "grey20",
-      fontface = "bold"
-    ) +
-    geom_segment(
-      aes(
-        x = hq_longitude, y = hq_latitude,
-        xend = longitude, yend = latitude,
-        color = provider_name
-      ),
-      alpha = 0.5
-    ) +
-    geom_point(
-      data = il_hospitals_df |>
-        filter(provider_name %in% names(il_fil_providers)),
-      aes(x = hq_longitude, y = hq_latitude, color = provider_name),
-      show.legend = TRUE,
-      size = 2.5
-    ) +
-    geom_jitter(
-      aes(
-        x = longitude, y = latitude,
-        color = provider_name
-      ),
-      size = 1.5
-    ) +
-    scale_color_manual(
-      name = "340B entity type",
-      values = il_fil_providers
-    ) +
-    guides(
-      color = if (yr == 2025) {
-        guide_legend(
-          override.aes = list(size = 6),
-        )
-      } else {
-        "none"
-      }
-    ) +
-    coord_sf(
-      xlim = c(-88.3891, -87.3834),
-      ylim = c(41.5003, 42.2844),
-    ) +
-    theme_void() +
-    theme(
-      plot.title = element_text(
-        size = 20,
-        face = "bold",
-        margin = margin(b = 8)
-      ),
-      plot.subtitle = element_markdown(
-        size = 15,
-        margin = margin(b = 8)
-      ),
-      plot.caption = element_text(
-        size = 11,
-        lineheight = 1.1,
-        margin = margin(t = 12, b = 6)
-      ),
-      legend.position = "inside",
-      legend.title.position = "top",
-      legend.position.inside = c(0.78, 0.85),
-      legend.direction = "vertical",
-      legend.key.spacing.y = unit(0.15, "cm"),
-      legend.title = element_text(
-        size = 16,
-        face = "bold",
-        hjust = 0.8,
-        margin = margin(b = 16)
-      ),
-      legend.key.size = unit(0.75, "cm"),
-      legend.text = element_text(size = 12),
-    )
-}
-
-il_fil_plot_lst[[1]] +
-  labs(
-    title = "340B child entities have proliferated across Chicago",
-    subtitle = paste0(
-      "Other areas with large child entity networks include Rockford ",
-      "and Urbana-Champaign"
-    )
-  ) +
-  il_fil_plot_lst[[2]] +
-  labs(
-    caption = paste0(
-      "340B active child entities pulled from the HRSA OPAIS database, ",
-      "as of 2025-06-13\n",
-      "Entity locations were geocoded from the child entity street address" 
-    )
-  )
-```
-
-```{r}
+```{r drug_pct_asp_plot, message=FALSE}
 #| column: page
 #| out-width: 100%
 #| fig-width: 9
 #| fig-height: 7
 
 il_hospitals_df |>
+  select(provider_id, `340b_entity_type`, total_beds) |>
+  inner_join(drug_rates_df, by = c("provider_id")) |>
+  mutate(is_340b = `340b_entity_type` != "Not 340B") |>
+  group_by(is_340b) |>
+  summarize(
+    rate_count_wtd = sum(rate_count_wtd, na.rm = TRUE),
+    gross_count_wtd = sum(gross_count_wtd, na.rm = TRUE),
+    avg_rate_pct_over_asp = weighted.mean(
+      rate_poa_avg_wtd,
+      total_beds,
+      na.rm = TRUE
+    ),
+    avg_gross_pct_over_asp = weighted.mean(
+      gross_poa_avg_wtd,
+      total_beds,
+      na.rm = TRUE
+    )
+  ) |>
+  pivot_longer(
+    cols = c(avg_rate_pct_over_asp, avg_gross_pct_over_asp),
+    names_to = "rate_type",
+    values_to = "rate_value"
+  ) |>
+  mutate(
+    count = case_when(
+      str_detect(rate_type, "gross") ~ gross_count_wtd,
+      TRUE ~ rate_count_wtd
+    ),
+    is_340b = factor(
+      is_340b,
+      levels = c(TRUE, FALSE),
+      labels = c("340B", "Not 340B")
+    ),
+    rate_type = fct_recode(
+      rate_type,
+      "Negotiated rate" = "avg_rate_pct_over_asp",
+      "Gross charge" = "avg_gross_pct_over_asp"
+    ),
+  ) |>
+ggplot() +
+  geom_bar(
+    aes(
+      x = is_340b,
+      y = rate_value,
+      fill = rate_type,
+      group = rate_type
+    ),
+    stat = "identity",
+    width = 0.75,
+    position = position_dodge(width = 0.85)
+  ) +
+  geom_text(
+    aes(
+      x = is_340b,
+      y = rate_value + 0.05,
+      label = scales::percent_format(accuracy = 1)(rate_value),
+      group = rate_type
+    ),
+    position = position_dodge(width = 0.85),
+    size = 5,
+    vjust = 0
+  ) +
+  geom_text(
+    aes(
+      x = is_340b,
+      y = 0.1,
+      label = paste0(
+        "N = ",
+        scales::comma_format(accuracy = 1)(count)
+      ),
+      group = rate_type
+    ),
+    position = position_dodge(width = 0.85),
+    size = 3.5,
+    vjust = 0
+  ) +
+  scale_y_continuous(
+    name = "Weighted average % over ASP",
+    labels = scales::percent_format(accuracy = 1),
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  scale_fill_manual(
+    name = "Rate type",
+    values = c(
+      "Negotiated rate" = "#738abf",
+      "Gross charge" = "#51c0e1"
+    )
+  ) +
+  labs(
+    title = "Drug reimbursement is similar across hospital types",
+    subtitle = paste0(
+      "On average, 340B and non-340B hospitals in Illinois charge/receive ",
+      "similar rates"
+    ),
+    caption = paste0(
+      "340B status from the HRSA OPAIS database, as of 2025-06-13\n",
+      "Bars show each rate's percentage over the average sales price (ASP)\n",
+      "Averages are weighted by payer market share, utilization, and ",
+      "total beds"
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 19,
+      face = "bold",
+      margin = margin(b = 8)
+    ),
+    plot.subtitle = element_text(
+      size = 15,
+      margin = margin(b = 16)
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 15,
+      face = "bold",
+      color = "grey30"
+    ),
+    axis.text.y = element_markdown(
+      size = 13,
+      margin = margin(r = 4)
+    ),
+    axis.text.x = element_markdown(
+      size = 15,
+      face = "bold",
+      color = "grey30",
+      margin = margin(t = 10)
+    ),
+    axis.title.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 20, r = -120)
+    ),
+    legend.key.spacing.y = unit(0.15, "cm"),
+    legend.title = element_text(
+      size = 15,
+      face = "bold"
+    ),
+    legend.key.size = unit(0.75, "cm"),
+    legend.text = element_text(size = 12)
+  )
+```
+
+```{r drug_profits_plot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 9
+
+drug_profits_df |>
   filter(`340b_entity_type` != "Not 340B") |>
   mutate(
-    mcr_drug_cost = case_when(
-      is.na(mcr_drug_cost) ~ 0.25 * mcr_drug_charged,
-      TRUE ~ mcr_drug_cost
+    plot_grp = case_when(
+      `340b_entity_type` == "CAH" ~ paste0(
+        "<span style='color:#fc8d62'>**42 CAH ",
+        "combined**</span>"
+      ),
+      `340b_entity_type` == "SCH" ~ paste0(
+        "<span style='color:#e16bb3'>**5 SCH ",
+        "combined**</span>"
+      ),
+      `340b_entity_type` == "DSH" &
+        (net_outpatient_profit_upper >= -1e7 &
+           net_outpatient_profit_upper <= 1e7) ~ paste0(
+             "<span style='color:#41a485'>**",
+             "33 small DSH combined**</span>"
+           ),
+      `340b_entity_type` != "CAH" ~ provider_name,
+      TRUE ~ "Other"
     ),
-    net_drug_profit_lower =
-      (mcr_drug_charged * mcr_conv_factor) - mcr_drug_cost,
-    net_drug_profit_upper =
-      (mcr_drug_charged * 0.4) - mcr_drug_cost,
-    mcr_net_patient_revenue = replace_na(mcr_net_patient_revenue, 0),
+    net_o_min = pmin(net_outpatient_profit_lower, net_outpatient_profit_upper),
+    net_o_max = pmax(net_outpatient_profit_lower, net_outpatient_profit_upper)
   ) |>
-  filter(!is.na(net_drug_profit_lower)) |>
+  group_by(plot_grp, `340b_entity_type`) |>
+  summarize(
+    net_outpatient_profit_lower = sum(net_o_min, na.rm = TRUE),
+    net_outpatient_profit_upper = sum(net_o_max, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
   mutate(
-    provider_name = fct_collapse(
-      provider_name,
-      "All CAH/SCH" = provider_name[`340b_entity_type` %in% c("CAH", "SCH")],
+    plot_grp = case_match(
+      plot_grp,
+      "Ann & Robert H. Lurie Childrens Hos" ~
+        "Ann & Robert H. Lurie Children's Hospital",
+      "University Of Chicago Hospitals" ~
+        "University of Chicago Medical Center",
+      "Cgh Medical Center" ~
+        "CGH Medical Center",
+      "AMITA Health Adventist Medical Center Bolingbrook" ~
+        "UChicago Medicine AdventHealth Bolingbrook",
+      .default = plot_grp
     ),
-    provider_name = fct_reorder(provider_name, net_drug_profit_upper)
+    plot_grp = fct_reorder(
+      plot_grp,
+      net_outpatient_profit_upper,
+      .desc = FALSE
+    )
   ) |>
   ggplot() +
   geom_segment(
     aes(
-      x = net_drug_profit_lower, xend = net_drug_profit_upper,
-      y = provider_name,
+      x = net_outpatient_profit_lower, xend = net_outpatient_profit_upper,
+      y = plot_grp,
       color = `340b_entity_type`
     ),
-    linewidth = 1.5
+    linewidth = 2.5
+  ) +
+  annotate(
+    "text",
+    y = 42, x = 3.55e8,
+    label = "$550M →",
+    color = "#41a485",
+    size = 3.5
   ) +
   scale_color_manual(
-    name = "340B Entity Type",
+    name = "340B entity type",
     values = entity_color_values
   ) +
   scale_x_continuous(
-    name = "Net Drug Profit",
+    name = "Estimated outpatient drug profit range",
     labels = scales::dollar_format(
       accuracy = 1,
       scale = 1 / 1000000,
       prefix = "$",
       suffix = "M"
     ),
-    expand = expansion(mult = c(0, 0.05)),
+    expand = expansion(mult = c(0, 0.02)),
   ) +
-  coord_cartesian(xlim = c(-5e7, 4e8)) +
-  theme_minimal()
+  coord_cartesian(xlim = c(NA, 3.7e8), clip = "off") +
+  labs(
+    title = "DSH outpatient drug profits dwarf CAH and SCH profits*",
+    subtitle = paste0(
+      "Some large hospitals have higher outpatient drug profits ",
+      "than all CAH combined"
+    ),
+    caption = paste0(
+      "Graph shows estimated _outpatient_ drug profits, **_not_** 340B ",
+      "profits (which are much harder to estimate)<br>",
+      "Drug profit ranges are estimated using data from CMS/HCRIS cost reports",
+      " and Turquoise Health Drug Primary Rates database<br>",
+      "Lower profit bounds are based on each hospital's overall conversion ",
+      "factor (net patient revenue / gross charges)<br>",
+      "Upper profit bounds are based the average net-to-gross ratio for ",
+      "outpatient drugs at each hospital"
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 20,
+      face = "bold",
+      margin = margin(b = 8, l = -200)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 16, l = -200)
+    ),
+    plot.caption = element_markdown(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 20, r = 6)
+    ),
+    axis.title.y = element_blank(),
+    axis.text.y = element_markdown(
+      size = 10,
+      margin = margin(r = 4)
+    ),
+    axis.title.x = element_text(
+      margin = margin(t = 10),
+      size = 15,
+      face = "bold",
+      color = "grey30"
+    ),
+    axis.text.x = element_markdown(size = 12, lineheight = 1.1),
+    legend.key.spacing.y = unit(0.15, "cm"),
+    legend.background = element_rect(fill = "white"),
+    legend.title = element_text(
+      size = 15,
+      face = "bold"
+    ),
+    legend.key.size = unit(0.75, "cm"),
+    legend.text = element_text(size = 12),
+    legend.position = "inside",
+    legend.justification = c(0.98, 0.03),
+  )
+```
+
+```{r drug_profit_circles, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 7
+
+il_graph <- tribble(
+  ~"from", ~"to",
+  "Illinois", "Illinois.Chicago area",
+  "Illinois", "Illinois.Outside Chicago area"
+)
+
+il_hospitals_graph <- il_hospitals_df |>
+  left_join(
+    drug_profits_df |>
+      select(
+        provider_id,
+        net_outpatient_profit_lower, net_outpatient_profit_upper
+      ),
+    by = "provider_id"
+  ) |>
+  mutate(
+    net_out_profit = net_outpatient_profit_upper,
+    geo_path = case_when(
+      county %in% c("Cook", "DuPage", "Kane", "Lake", "McHenry", "Will") ~
+        "Illinois.Chicago area",
+      .default = "Illinois.Outside Chicago area"
+    ),
+    node = paste0(geo_path, ".",
+      str_replace_all(
+        str_to_title(str_replace_all(provider_name, "[^[:alnum:]]", " ")),
+        "\\s+", "_"))
+  ) |>
+  select(
+    from = geo_path, to = node,
+    `340b_entity_type`, net_out_profit
+  ) |>
+  filter(
+    !is.na(net_out_profit),
+    net_out_profit > 0,
+    `340b_entity_type` != "Not 340B"
+  )
+
+g <- graph_from_data_frame(
+    d = bind_rows(il_graph, il_hospitals_graph),
+    vertices = il_hospitals_graph |>
+      select(name = to, `340b_entity_type`, net_out_profit) |>
+      bind_rows(
+        il_graph |>
+          pivot_longer(c(from, to)) |>
+          distinct(name = value)
+      )
+  )
+
+V(g)$net_out_profit <- ifelse(
+  is.na(V(g)$net_out_profit),
+  sapply(V(g)$name, function(n) {
+    children <- neighbors(g, n, mode = "out")$name
+    sum(V(g)[children]$net_out_profit, na.rm = TRUE)
+  }),
+  V(g)$net_out_profit
+)
+
+ggraph(g, layout = "circlepack", weight=net_out_profit) + 
+  geom_node_circle(
+    aes(fill = factor(`340b_entity_type`, levels = names(entity_color_values)))
+  ) +
+  geom_node_label(
+    data = function(df) {
+      df %>%
+        filter(name %in% il_graph$to) %>%
+        mutate(label = sub("^Illinois\\.", "", name))
+    },
+    aes(label = label),
+    size = 5,
+    fontface = "bold",
+    colour = "grey20"
+  ) +
+  scale_fill_manual(
+    name = "340B entity type",
+    values = entity_color_values,
+    na.translate = FALSE
+  ) +
+  labs(
+    title = "Outpatient drug profits aren't concentrated in the Chicago area",
+    subtitle = paste0(
+      "Regional hospitals in cities like Rockford and Urbana are likely ",
+      "the biggest beneficiaries of 340B"
+    )
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(
+      size = 20,
+      face = "bold",
+      margin = margin(b = 8)
+    ),
+    plot.subtitle = element_markdown(
+      size = 14,
+      margin = margin(b = 16)
+    ),
+    plot.caption = element_markdown(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 20, r = 6)
+    ),
+    plot.margin = margin(t = 10, b = 10, l = 10, r = 10),
+    legend.key.spacing.y = unit(0.15, "cm"),
+    legend.title = element_text(
+      size = 15,
+      face = "bold"
+    ),
+    legend.key.size = unit(0.75, "cm"),
+    legend.text = element_text(size = 12),
+    legend.margin = margin(r = 10)
+  )
 ```

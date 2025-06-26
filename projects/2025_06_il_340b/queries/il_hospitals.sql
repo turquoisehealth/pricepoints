@@ -11,6 +11,8 @@ SELECT DISTINCT
     hp.id AS provider_id,
     hp.provider_name,
     hp.medicare_provider_id,
+    hp.county,
+    hp.city,
     hp.npi,
     hp.ein,
     hp.health_system_name,

@@ -8,7 +8,7 @@ from tq.connectors import get_trino_connection
 trino_conn = get_trino_connection()
 
 
-# Mini-class for attaching utility methods to Polars DataFrames
+# Mini-classes for attaching utility methods to Polars DataFrames
 @pl.api.register_dataframe_namespace("util")
 class UtilDataFrame:
     def __init__(self, df: pl.DataFrame) -> None:
@@ -33,6 +33,20 @@ class UtilDataFrame:
         )
 
 
+@pl.api.register_expr_namespace("util")
+class UtilExpr:
+    def __init__(self, expr: pl.Expr) -> None:
+        self._expr = expr
+
+    def wmean(self, weight: str) -> pl.Expr:
+        """
+        Compute the weighted mean for an expression, given a weight column name.
+        Usage: pl.col("value_col").util.weighted_mean("weight_col")
+        """
+        weights = pl.when(self._expr.is_not_null()).then(pl.col(weight))
+        return weights.dot(self._expr).truediv(weights.sum()).fill_nan(None)
+
+
 ###### Data loading ############################################################
 
 # %% Grab Illinois hospital IDs, bed counts, locations from Turquoise
@@ -42,6 +56,10 @@ with open("queries/il_hospitals.sql", "r") as query:
 # %% Grab Keytruda drug pricing example
 with open("queries/price_example.sql", "r") as query:
     price_example_df = pl.read_database(query.read(), trino_conn)
+
+# %% Grab Keytruda drug pricing example
+with open("queries/drug_rates.sql", "r") as query:
+    drug_rates_df = pl.read_database(query.read(), trino_conn)
 
 # %% Grab Medicare cost report data exported from CMS SAS files. Interpolate
 # CCN values directly into the SQL query to avoid pulling all cost report data
@@ -227,6 +245,133 @@ ahq_merged_df = (
     )
 )
 
+# %% Aggregate drug rates to the provider + code level, weighting by payer
+# market share
+drug_rates_agg_df = (
+    drug_rates_df.with_columns(
+        (pl.col("canonical_rate") / pl.col("medicare_rate")).alias(
+            "rate_pct_of_medicare"
+        ),
+        (pl.col("canonical_rate") / pl.col("asp")).alias("rate_pct_of_asp"),
+        (pl.col("gross_charge_std") / pl.col("medicare_rate")).alias(
+            "gross_pct_of_medicare"
+        ),
+        (pl.col("gross_charge_std") / pl.col("asp")).alias("gross_pct_of_asp"),
+        pl.col("state_market_share")
+        .fill_null(0.01)
+        .alias("state_market_share"),
+    )
+    # Drop some remaining outliers that result from whack dose standardization
+    .filter(
+        (
+            (pl.col("gross_pct_of_asp") <= 10)
+            | (pl.col("gross_pct_of_asp").is_null())
+        )
+        & (
+            (pl.col("rate_pct_of_medicare") <= 10)
+            | (pl.col("rate_pct_of_medicare").is_null())
+        )
+    )
+    # Drop super high and low rates since they mess up % over ASP aggregations
+    .filter(
+        (pl.col("canonical_rate") >= 1)
+        & (pl.col("canonical_rate") <= 250_000)
+        & pl.col("count_endc").is_not_null()
+    )
+    .group_by(["provider_id", "provider_name", "billing_code"])
+    .agg(
+        # Unweighted averages of rates, gross charges, rate % of ASP,
+        # gross % of ASP, and rate % of Medicare
+        pl.col("canonical_rate").count().alias("rate_count_uwtd"),
+        pl.col("canonical_gross_charge").count().alias("gross_count_uwtd"),
+        (
+            pl.col("canonical_rate").is_not_null()
+            & pl.col("count_enc").is_not_null()
+        )
+        .sum()
+        .alias("rate_count_wtd"),
+        (
+            pl.col("canonical_gross_charge").is_not_null()
+            & pl.col("count_enc").is_not_null()
+        )
+        .sum()
+        .alias("gross_count_wtd"),
+        pl.col("canonical_rate").mean().alias("rate_avg_uwtd"),
+        pl.col("rate_pct_of_asp").mean().alias("rate_poa_avg_uwtd"),
+        pl.col("rate_pct_of_medicare").mean().alias("rate_pom_avg_uwtd"),
+        pl.col("canonical_gross_charge").mean().alias("gross_avg_uwtd"),
+        pl.col("gross_pct_of_asp").mean().alias("gross_poa_avg_uwtd"),
+        pl.col("gross_pct_of_medicare").mean().alias("gross_pom_avg_uwtd"),
+        # Same as above, but now weighted by state market share (biggest payer)
+        pl.col("canonical_rate")
+        .util.wmean("state_market_share")
+        .alias("rate_avg_wtd"),
+        pl.col("rate_pct_of_asp")
+        .util.wmean("state_market_share")
+        .alias("rate_poa_avg_wtd"),
+        pl.col("rate_pct_of_medicare")
+        .util.wmean("state_market_share")
+        .alias("rate_pom_avg_wtd"),
+        pl.col("canonical_gross_charge")
+        .util.wmean("state_market_share")
+        .alias("gross_avg_wtd"),
+        pl.col("gross_pct_of_asp")
+        .util.wmean("state_market_share")
+        .alias("gross_poa_avg_wtd"),
+        pl.col("gross_pct_of_medicare")
+        .util.wmean("state_market_share")
+        .alias("gross_pom_avg_wtd"),
+        (pl.col("canonical_rate") / pl.col("canonical_gross_charge"))
+        .mean()
+        .alias("rate_to_gross_avg_uwtd"),
+        (pl.col("canonical_rate") / pl.col("canonical_gross_charge"))
+        .util.wmean("state_market_share")
+        .alias("rate_to_gross_avg_wtd"),
+        pl.col("count_enc").first().alias("count_enc"),
+    )
+)
+
+drug_rates_cols = [
+    "rate_avg_uwtd",
+    "rate_poa_avg_uwtd",
+    "rate_pom_avg_uwtd",
+    "gross_avg_uwtd",
+    "gross_poa_avg_uwtd",
+    "gross_pom_avg_uwtd",
+    "rate_avg_wtd",
+    "rate_poa_avg_wtd",
+    "rate_pom_avg_wtd",
+    "gross_avg_wtd",
+    "gross_poa_avg_wtd",
+    "gross_pom_avg_wtd",
+    "rate_to_gross_avg_uwtd",
+    "rate_to_gross_avg_wtd",
+]
+
+# Replace 0 values in aggregates with nulls
+drug_rates_agg_df = drug_rates_agg_df.with_columns(
+    [
+        pl.when(pl.col(c) == 0).then(None).otherwise(pl.col(c)).alias(c)
+        for c in drug_rates_cols
+    ]
+)
+
+# %% Collapse to the provider-level, weighting by state-level code utilization
+drug_rates_provider_df = drug_rates_agg_df.group_by(
+    ["provider_id", "provider_name"]
+).agg(
+    *[
+        pl.col(c).sum().alias(c)
+        for c in [
+            "rate_count_uwtd",
+            "gross_count_uwtd",
+            "rate_count_wtd",
+            "gross_count_wtd",
+        ]
+    ],
+    *[pl.col(c).util.wmean("count_enc").alias(c) for c in drug_rates_cols],
+)
+
 ##### Save data to file ########################################################
 
 # %% Save finished dataframes to Parquet files
@@ -234,6 +379,7 @@ il_hospitals_merged_df.write_parquet("data/output/il_hospitals.parquet")
 medicare_cost_df.write_parquet("data/output/medicare_cost_reports.parquet")
 ahq_merged_df.write_parquet("data/output/ahq_hospital_stats.parquet")
 price_example_df.write_parquet("data/output/price_example.parquet")
+drug_rates_provider_df.write_parquet("data/output/drug_rates.parquet")
 
 # %% Save OPAIS CE and contract pharma detailed data
 opais_ce_child_df.write_parquet("data/intermediate/opais_ce_child.parquet")
