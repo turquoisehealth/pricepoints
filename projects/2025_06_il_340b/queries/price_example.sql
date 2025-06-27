@@ -17,7 +17,7 @@ key_wac AS (
         ks.package_price_clean / CAST(ks.strength AS DOUBLE) AS wac
     FROM keytruda AS ks
     INNER JOIN max_date
-        ON keytruda.price_effective_date = max_date.price_effective_date
+        ON ks.price_effective_date = max_date.price_effective_date
 )
 
 SELECT

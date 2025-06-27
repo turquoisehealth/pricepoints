@@ -212,7 +212,9 @@ il_hospitals_merged_df = il_hospitals_merged_df.join(
 
 # %% Merge Illinois AHQ data and with Turquoise hospital ID
 ahq_merged_df = (
-    il_hospitals_merged_df.select(["provider_id", "provider_name"])
+    il_hospitals_merged_df.select(
+        ["provider_id", "provider_name", "hospital_type"]
+    )
     .join(
         pl.read_csv("data/input/tq_ahq_crosswalk.csv"),
         left_on="provider_name",
@@ -276,7 +278,7 @@ drug_rates_agg_df = (
     .filter(
         (pl.col("canonical_rate") >= 1)
         & (pl.col("canonical_rate") <= 250_000)
-        & pl.col("count_endc").is_not_null()
+        & pl.col("count_enc").is_not_null()
     )
     .group_by(["provider_id", "provider_name", "billing_code"])
     .agg(
