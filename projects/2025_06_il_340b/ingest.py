@@ -136,18 +136,23 @@ opais_ce_parent_df = (
 )
 
 # %% Merge OPAIS and Medicare data to IL hospital dataframe, keep only
-# the latest report for each hospital
+# 2023 (which is the most complete recent year, 2024 is missing lots of data)
 il_hospitals_merged_df = il_hospitals_df.join(
     opais_ce_parent_df,
     on="medicare_provider_id",
     how="left",
 ).join(
     medicare_cost_df.filter(
+        pl.col("mcr_fy_end_date").is_between(
+            pl.date(2023, 1, 1), pl.date(2023, 12, 31)
+        )
+    ).filter(
         (
+            # A few hospitals have multiple reports in the same year, so
+            # take the most recent one when that happens
             pl.col("mcr_fy_end_date")
             == pl.col("mcr_fy_end_date").max().over("mcr_ccn")
         )
-        & (pl.col("mcr_fy_end_date") >= pl.date(2023, 1, 1))
     ),
     left_on="medicare_provider_id",
     right_on="mcr_ccn",
