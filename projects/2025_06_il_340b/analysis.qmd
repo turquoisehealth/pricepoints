@@ -19,6 +19,7 @@ library(conflicted)
 library(data.table)
 library(dplyr)
 library(forcats)
+library(ggh4x)
 library(ggplot2)
 library(ggraph)
 library(ggrepel)
@@ -2606,28 +2607,39 @@ il_hospitals_df |>
       weights = total_beds, probs = 0.9, na.rm = TRUE
     )
   ) |>
+  mutate(
+    is_340b = ifelse(
+      `340b_entity_type` != "Not 340B",
+      "340B", "Not\n340B"
+    ),
+    is_340b = factor(is_340b, levels = c("Not\n340B", "340B")),
+    `340b_entity_type` = factor(
+      `340b_entity_type`,
+      levels = c("Not 340B", "DSH", "CAH", "SCH", "RRC")
+    )
+  ) |>
   ggplot() +
   geom_boxplot(
     aes(
-      y = fct_rev(`340b_entity_type`),
+      y = factor(1),
       xmin = q10,
       xlower = q25,
       xmiddle = q50,
       xupper = q75,
       xmax = q90,
-      fill = `340b_entity_type`
+      fill = fct_rev(`340b_entity_type`)
     ),
-    stat = "identity",
-    width = 0.75
+    stat = "identity"
   ) +
   scale_x_continuous(
-    name = "% of patient encounters that are charity care (2023)",
+    name = "% of charity care patients (2023)",
     labels = scales::percent_format(accuracy = 1)
   ) +
   coord_cartesian(xlim = c(-0.00, 0.072)) +
   scale_fill_manual(
     name = "340B entity\ntype (2023)",
-    values = entity_color_values
+    values = entity_color_values,
+    guide = guide_legend(reverse = TRUE)
   ) +
   labs(
     title = paste0(
@@ -2646,7 +2658,15 @@ il_hospitals_df |>
       "HRSA OPAIS database, as of 2025-06-13"
     )
   ) +
-  facet_wrap(vars(care_type), ncol = 2) +
+  facet_grid(
+    rows = vars(is_340b),
+    cols = vars(care_type),
+    scales = "free",
+    switch = "y"
+  ) +
+  force_panelsizes(
+    rows = c(0.25, 0.75)
+  ) +
   theme_minimal() +
   theme(
     plot.title = element_text(
@@ -2659,10 +2679,7 @@ il_hospitals_df |>
       margin = margin(b = 16, l = -40)
     ),
     axis.title.y = element_blank(),
-    axis.text.y = element_markdown(
-      size = 13,
-      margin = margin(r = 4)
-    ),
+    axis.text.y = element_blank(),
     panel.grid.major.y = element_blank(),
     axis.title.x = element_text(
       margin = margin(t = 10),
@@ -2680,8 +2697,16 @@ il_hospitals_df |>
       lineheight = 1.1,
       margin = margin(t = 20, r = -100)
     ),
-    strip.background = element_rect(fill = "#e0ebea"),
+    strip.background.x = element_rect(fill = "#e0ebea"),
     panel.background = element_rect(color = "black"),
+    strip.text.y.left = element_text(
+      size = 15,
+      face = "bold",
+      margin = margin(r = 10),
+      angle = 0,
+      hjust = 1
+    ),
+    panel.spacing.y = unit(0.0, "cm"),
     legend.key.spacing.y = unit(0.15, "cm"),
     legend.title = element_text(
       size = 15,
