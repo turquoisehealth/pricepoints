@@ -355,24 +355,26 @@ the data ingest step in Python. To do so, first:
 
 ### Articles and papers
 
-- Fein, A. (2024, October 22). *The 340B Program Reached $66 Billion in 2023—Up 23% vs. 2022: Analyzing the Numbers and HRSA’s Curious Actions.* Drug Channels. <https://www.drugchannels.net/2024/10/the-340b-program-reached-66-billion-in.html>
-- Health Resources & Services Administration. *2023 340B Covered Entity Purchases.* <https://www.hrsa.gov/opa/updates/2023-340b-covered-entity-purchases>
-- Gabler, E. (2025, January 15). *How a Company Makes Millions Off a Hospital Program Meant to Help the Poor.* The New York Times. <https://www.nytimes.com/2025/01/15/us/340b-apexus-drugs-middleman.html>
-- Madden, B. (2024, December 5) *340B: Breaking down the most misunderstood healthcare program in history.* Hospitalogy. <https://hospitalogy.com/articles/2024-12-05/340b-breakdown/>
-- Talamonti, J. (2025, May 30). *Industry groups take sides as lawmakers consider discount drug program bill.* Advantage News. <https://www.advantagenews.com/news/local/industry-groups-take-sides-as-lawmakers-consider-discount-drug-program-bill/article_7dbcd8ba-c4f8-4f8c-9194-1cfd21abc5e4.html>
-- Courtemanche, C. Garuccio, J. *What Economists Should Know about the 340B Drug Discounting Program.* IZA Institute of Labor Economics. <https://docs.iza.org/dp17880.pdf>
-- Fein, A. (2025, May 6). *Follow the 340B Dollar: Senator Cassidy Exposes How CVS Health and Walgreens Profit as 340B Contract Pharmacies.* Drug Channels. <https://www.drugchannels.net/2025/05/follow-340b-dollar-senator-cassidy.html>
-- USC Schaeffer Center for Health Policy & Economics. (2024, October). *The 340B Drug Pricing Program: Background, ongoing challenges, and recent developments.* <https://healthpolicy.usc.edu/research/the-340b-drug-pricing-program-background-ongoing-challenges-and-recent-developments/>
-- Stratton, M. (2024, December 6). *Northside Hospital’s (340b) Drug Empire Would Make Marlo Stanfield Jealous.* Health Data Atlas. <https://healthdataatlas.com/2024/12/06/northside-hospitals-340b-drug-empire-would-make-marlo-stanfield-jealous/>
-- Blalock, E. (2024, March). *Rural Referral Center Participation in the 340B Drug Discount Program.* BRG. <https://media.thinkbrg.com/wp-content/uploads/2024/03/22110813/BRG_340B-Rural-Referral-Center-White-Paper_March2024.pdf>
-- Senate Majority Staff Report. (2025, April). *Congress Must Act to Bring Needed Reforms to the 340b Drug Pricing Program.* <https://www.help.senate.gov/imo/media/doc/final_340b_majority_staff_reportpdf1.pdf>
-- Schencker, L. (2023, January 10). *UChicago Medicine finalizes deal to acquire controlling interest in four west suburban hospitals.* The Chicago Tribune. <https://www.chicagotribune.com/2023/01/10/uchicago-medicine-finalizes-deal-to-acquire-controlling-interest-in-four-west-suburban-hospitals/>
+- Apexus. (n.d.). *Understanding the Medicare Cost Report.* <https://www.340bpvp.com/Documents/Public/340B%20Tools/understanding-the-medicare-cost-report.pdf>
 - Asplund, J. (2025, May 23). *Pharmas push back as deadline looms for contentious drug discount bill.* Crain's Chicago Business. <https://www.chicagobusiness.com/health-pulse/drugmakers-push-back-illinois-340b-drug-discount-bill>
+- Blalock, E. (2024, March). *Rural Referral Center Participation in the 340B Drug Discount Program.* BRG. <https://media.thinkbrg.com/wp-content/uploads/2024/03/22110813/BRG_340B-Rural-Referral-Center-White-Paper_March2024.pdf>
+- Courtemanche, C. Garuccio, J. *What Economists Should Know about the 340B Drug Discounting Program.* IZA Institute of Labor Economics. <https://docs.iza.org/dp17880.pdf>
+- Cuban, M. (2025, June 9). *Via Twitter/X.* <https://x.com/mcuban/status/1932250748819316755?t=JYpjue40-2ZQXVnT3CSTCA&s=19>
+- Fein, A. (2024, October 22). *The 340B Program Reached $66 Billion in 2023—Up 23% vs. 2022: Analyzing the Numbers and HRSA’s Curious Actions.* Drug Channels. <https://www.drugchannels.net/2024/10/the-340b-program-reached-66-billion-in.html>
+- Fein, A. (2025, May 6). *Follow the 340B Dollar: Senator Cassidy Exposes How CVS Health and Walgreens Profit as 340B Contract Pharmacies.* Drug Channels. <https://www.drugchannels.net/2025/05/follow-340b-dollar-senator-cassidy.html>
+- Gabler, E. (2025, January 15). *How a Company Makes Millions Off a Hospital Program Meant to Help the Poor.* The New York Times. <https://www.nytimes.com/2025/01/15/us/340b-apexus-drugs-middleman.html>
+- Health Resources & Services Administration. *2023 340B Covered Entity Purchases.* <https://www.hrsa.gov/opa/updates/2023-340b-covered-entity-purchases>
+- Madden, B. (2024, December 5) *340B: Breaking down the most misunderstood healthcare program in history.* Hospitalogy. <https://hospitalogy.com/articles/2024-12-05/340b-breakdown/>
+- Mathews, A. W. Overberg, P. Walker, J. McGinty, T. (2022, December 20). *Many Hospitals Get Big Drug Discounts. That Doesn’t Mean Markdowns for Patients.* The Wall Street Journal. <https://www.wsj.com/articles/340b-drug-discounts-hospitals-low-income-federal-program-11671553899>
 - National Association of Community Health Centers. (2025, June 20). *State-Level Laws to Protect CHCs’ 340B Savings.* <https://www.nachc.org/wp-content/uploads/2025/06/06_20_25_nachc_state-level-340b-laws-and-legislation_tracker.pdf>
 - Newton, William. (2025, May 20). *California Assembly Passes 340B Contract Pharmacy Protections for Grantees, Sends Bills to Senate.* 340B Report. <https://340breport.com/california-assembly-passes-340b-contract-pharmacy-protections-for-grantees-sends-bills-to-senate/>
+- Schencker, L. (2023, January 10). *UChicago Medicine finalizes deal to acquire controlling interest in four west suburban hospitals.* The Chicago Tribune. <https://www.chicagotribune.com/2023/01/10/uchicago-medicine-finalizes-deal-to-acquire-controlling-interest-in-four-west-suburban-hospitals/>
+- Senate Majority Staff Report. (2025, April). *Congress Must Act to Bring Needed Reforms to the 340b Drug Pricing Program.* <https://www.help.senate.gov/imo/media/doc/final_340b_majority_staff_reportpdf1.pdf>
+- Stratton, M. (2024, December 6). *Northside Hospital’s (340b) Drug Empire Would Make Marlo Stanfield Jealous.* Health Data Atlas. <https://healthdataatlas.com/2024/12/06/northside-hospitals-340b-drug-empire-would-make-marlo-stanfield-jealous/>
+- Talamonti, J. (2025, May 30). *Industry groups take sides as lawmakers consider discount drug program bill.* Advantage News. <https://www.advantagenews.com/news/local/industry-groups-take-sides-as-lawmakers-consider-discount-drug-program-bill/article_7dbcd8ba-c4f8-4f8c-9194-1cfd21abc5e4.html>
+- Thomas, K. Silver-Greenberg, J. (2022, September 27). *How a Hospital Chain Used a Poor Neighborhood to Turn Huge Profits.* The New York Times. <https://www.nytimes.com/2022/09/24/health/bon-secours-mercy-health-profit-poor-neighborhood.html>
 - Thomas, S. Schulman, K. (2020, Mar 1). *The unintended consequences of the 340B safety‐net drug discount program.* Health Services Research. <https://doi.org/10.1111/1475-6773.13281>
-- Apexus. (n.d.). *Understanding the Medicare Cost Report.* <https://www.340bpvp.com/Documents/Public/340B%20Tools/understanding-the-medicare-cost-report.pdf>
-- Cuban, M. (2025, June 9). *Via Twitter/X.* <https://x.com/mcuban/status/1932250748819316755?t=JYpjue40-2ZQXVnT3CSTCA&s=19>
+- USC Schaeffer Center for Health Policy & Economics. (2024, October). *The 340B Drug Pricing Program: Background, ongoing challenges, and recent developments.* <https://healthpolicy.usc.edu/research/the-340b-drug-pricing-program-background-ongoing-challenges-and-recent-developments/>
 
 ### Datasets
 
