@@ -1472,7 +1472,7 @@ il_hospitals_df |>
       "Disproportionate share for each hospital is from ",
       "2023 CMS/HCRIS reports ",
       "(Hospital 2552-10 form, Worksheet E, Part A, Line 33)\n",
-      "340B status is from 2023 (to match the CMS data). 4 DSH, 4 SCH, 2 SCH, ",
+      "340B status is from 2023 (to match the CMS data). 4 DSH, 4 CAH, 2 SCH, ",
       "and 1 RRC have joined 340B in Illinois since 2023\n",
       "Not all hospitals are shown (CAH and non-340B hospitals sometimes ",
       "do not report DSH percentages)"
