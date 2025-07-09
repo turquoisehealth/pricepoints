@@ -203,26 +203,26 @@ Health Data Atlas:
   the total net patient revenue (Worksheet G-3, Column 1, Row 3) by the total
   hospital gross charges (Worksheet C, Part I, Columns 6+7, Row 202).
 
-    $$
-    \text{Conversion Factor} = \frac{\text{Total Net Patient Revenue}}{\text{Total Gross Charges}}
-    $$
+  $$
+  \text{Conversion Factor} = \frac{\text{Total Net Patient Revenue}}{\text{Total Gross Charges}}
+  $$
 
 2. Multiply the conversion factor by the total outpatient drug charges
   (Worksheet C, Part I, Column 7, Row 73) to estimate the net revenue from
   outpatient drugs.
 
-    $$
-    \text{Net Revenue from Outpatient Drugs} = \text{Conversion Factor} \times \text{Total Outpatient Drug Charges}
-    $$
+  $$
+  \text{Net Revenue from Outpatient Drugs} = \text{Conversion Factor} \times \text{Total Outpatient Drug Charges}
+  $$
 
 3. Calculate the hospital's outpatient drug *costs* by multiplying the total
   drug cost by the percentage of total *charges* that are outpatient. Total
   costs are from Worksheet C, Part I, Column 5, Row 73. Charges are from
   Worksheet C, Part I, Columns 6 and 7, Row 73.
 
-    $$
-    \text{Outpatient Drug Costs} = \text{Total Drug Costs} \times \left(\frac{\text{Total Outpatient Drug Charges}}{\text{Total Drug Charges}}\right)
-    $$
+  $$
+  \text{Outpatient Drug Costs} = \text{Total Drug Costs} \times \left(\frac{\text{Total Outpatient Drug Charges}}{\text{Total Drug Charges}}\right)
+  $$
 
 4. Finally, subtract the costs from the estimated net revenue to get the lower
   bound profit estimate.
