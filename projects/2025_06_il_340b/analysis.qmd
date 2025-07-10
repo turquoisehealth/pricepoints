@@ -332,7 +332,7 @@ ggplot() +
     label.color = "transparent"
   ) +
   scale_y_continuous(
-    name = "Price per 200 mg dose of Keytruda",
+    name = "Hospital cash flows per 200mg dose of Keytruda",
     labels = scales::dollar_format(
       accuracy = 1,
       scale = 1 / 1e3,
@@ -513,7 +513,7 @@ ggplot() +
     label.color = "transparent"
   ) +
   scale_y_continuous(
-    name = "Price per 200 mg dose of Keytruda",
+    name = "Hospital cash flows per 200mg dose of Keytruda",
     labels = scales::dollar_format(
       accuracy = 1,
       scale = 1 / 1e3,
@@ -703,7 +703,7 @@ ggplot() +
     label.color = "transparent"
   ) +
   scale_y_continuous(
-    name = "Price per 200 mg dose of Keytruda",
+    name = "Hospital cash flows per 200mg dose of Keytruda",
     labels = scales::dollar_format(
       accuracy = 1,
       scale = 1 / 1e3,
