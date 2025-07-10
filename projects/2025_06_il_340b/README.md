@@ -247,9 +247,9 @@ using the following steps:
   weighted average across all drug codes for each hospital. The weights are
   based on the number of claims for each drug code.
 
-    $$
-    \text{Gross-to-Net Ratio} = \frac{\sum_{i} (\text{Claim Count}_i \times \frac{\text{Negotiated Rate}_i}{\text{Gross Charge}_i})}{\sum_{i} \text{Claim Count}_i}
-    $$
+  $$
+  \text{Gross-to-Net Ratio} = \frac{\sum_i (\text{Claim Count}_i \times \frac{\text{Negotiated Rate}_i}{\text{Gross Charge}_i})}{\sum_i \text{Claim Count}_i}
+  $$
 
 2. Follow the same steps as the lower bound to estimate the net revenue from
   outpatient drugs, but use the hospital's average gross-to-net ratio instead
