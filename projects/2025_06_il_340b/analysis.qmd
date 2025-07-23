@@ -2877,9 +2877,9 @@ ggplot() +
   ) +
   guides(color = "none", alpha = "none") +
   labs(
-    title = "The OBBB will disqualify hundreds of 340B hospitals",
+    title = "The OBBB may disqualify hundreds of 340B hospitals",
     subtitle = paste0(
-      "Medicaid cuts will drop many hospitals below the 340B DSH ",
+      "Medicaid cuts could drop many hospitals below the 340B DSH ",
       "qualification threshold"
     ),
     caption = paste0(
@@ -2988,7 +2988,7 @@ ggplot() +
     subtitle = paste0(
       "States with large OBBB Medicaid cuts and many ",
       "marginally qualified 340B hospitals<br>",
-      "(just above the DSH threshold) see the biggest losses"
+      "(just above the DSH threshold) see the biggest losses in eligibility"
     ),
     caption = paste0(
       "Post-OBBB DSH percentage is estimated using data from the 2023 CMS ",
@@ -3132,7 +3132,7 @@ ggplot() +
   labs(
     title = "The OBBB's impact on 340B-qualified hospitals, by type",
     subtitle = paste0(
-      "Mid-sized DSH hospitals are the most likely to lose 340B qualification"
+      "Mid-sized DSH hospitals are the most likely to lose 340B eligibility"
     ),
     caption = paste0(
       "Table shows the number of hospitals that would lose 340B status ",
