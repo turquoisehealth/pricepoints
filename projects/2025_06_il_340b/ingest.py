@@ -403,7 +403,8 @@ drug_rates_provider_df = drug_rates_agg_df.group_by(
     *[pl.col(c).util.wmean("count_enc").alias(c) for c in drug_rates_cols],
 )
 
-# %% Recalculate DPP and DSH using updated Medicaid numbers from KFF
+# %% Recalculate DPP and DSH using estimated Medicaid spending cuts from the
+# KFF
 obbb_merged_df = (
     obbb_df.join(
         opais_ce_parent_df,
@@ -419,13 +420,16 @@ obbb_merged_df = (
             == pl.col("mcr_fy_end_date").max().over("mcr_ccn")
         )
         & pl.col("mcr_state").is_not_null()
+        # Only take hospitals that were actively 340B at the time of the
+        # 2023 fiscal year
         & (pl.col("340b_start_date") <= pl.col("mcr_fy_end_date"))
     )
     .join(kff_state_df, left_on="mcr_state", right_on="state", how="left")
     .with_columns(
         (
-            # Recalculate the Medicare patient days part of the DPP based on
-            # the KFF 10-year decrease percentage
+            # Recalculate the Medicaid patient days part of the DPP based on
+            # the KFF 10-year decrease percentage. See here for DPP formula:
+            # https://www.cms.gov/medicare/payment/prospective-payment-systems/acute-inpatient-pps/disproportionate-share-hospital-dsh
             (pl.col("mcr_medicaid_days") * (1 - pl.col("pct_decrease")))
             / pl.col("mcr_total_days")
         )
