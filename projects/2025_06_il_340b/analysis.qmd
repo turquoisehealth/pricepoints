@@ -121,6 +121,9 @@ state_leg_df <- readr::read_csv("data/output/state_legislation.csv")
 ahq_stats_df <- read_parquet("data/output/ahq_hospital_stats.parquet") |>
   filter(!is.na(ahq_provider_name))
 
+# Load OBBB KFF data
+obbb_df <- read_parquet("data/output/obbb.parquet")
+
 # Grab state shapes from the Census
 # Bounding box to cut off the Aleutian islands in Alaska
 states_bbox <- c(xmin = -168, xmax = -65, ymin = 18.5, ymax = 72) |>
@@ -129,7 +132,7 @@ states_bbox <- c(xmin = -168, xmax = -65, ymin = 18.5, ymax = 72) |>
   st_transform(4269)
 state_geo_df <- tigris::states(cb = TRUE, resolution = "20m", year = 2020) |>
   filter(GEOID <= "56") |>
-  select(name = NAME) |>
+  select(name = NAME, abbr = STUSPS) |>
   st_intersection(states_bbox) |>
   tigris::shift_geometry() |>
   st_simplify()
@@ -2717,4 +2720,498 @@ il_hospitals_df |>
     legend.key.size = unit(0.75, "cm"),
     legend.text = element_text(size = 12),
   )
+```
+
+```{r obbb_histogram, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 7
+
+obbb_stats_df <- obbb_df |> 
+  mutate(
+    met_old = case_when(
+      `340b_entity_type` %in% c("SCH", "RRC") & mcr_dsh_pct >= 0.08 ~ TRUE,
+      `340b_entity_type` %in% c("DSH", "PED") & mcr_dsh_pct > 0.1175 ~ TRUE,
+      `340b_entity_type` == "CAH" ~ TRUE,
+      .default = FALSE
+    ),
+    met_kff = case_when(
+      `340b_entity_type` %in% c("SCH", "RRC") & mcr_dsh_pct_kff >= 0.08 ~ TRUE,
+      `340b_entity_type` %in% c("DSH", "PED") & mcr_dsh_pct_kff > 0.1175 ~ TRUE,
+      `340b_entity_type` == "CAH" ~ TRUE,
+      .default = FALSE
+    )
+  )
+
+obbb_thresholds_df <- tibble(
+  type = rep("Before OBBB Medicaid cuts (2023)", 2),
+  threshold = c(0.1175, 0.08),
+  text = c(
+    "**DSH<br>threshold**<br>(11.75%)",
+    "**RRC/SCH<br>threshold**<br>(8.00%)"
+  )
+) |>
+  mutate(
+    type = factor(
+      type,
+      levels = c(
+        "Before OBBB Medicaid cuts (2023)",
+        "After OBBB Medicaid cuts (2034)"
+      )
+    )
+  )
+
+obbb_note_df <- tibble(
+  type = rep("After OBBB Medicaid cuts (2034)", 3),
+  note = c(
+    paste0(
+      "<strong><span style='color:indianred'>Dark red</span></strong>",
+      " hospitals ",
+      "fall<br>below their threshold and<br>no longer qualify for 340B"
+    ),
+    paste0("<span style='font-size:40px'>←</span>"),
+    paste0("Medicaid cuts shift the entire<br>distribution to the left")
+  )
+) |>
+  mutate(
+    type = factor(
+      type,
+      levels = c(
+        "Before OBBB Medicaid cuts (2023)",
+        "After OBBB Medicaid cuts (2034)"
+      )
+    )
+  )
+
+obbb_stats_df |>
+  filter(met_old, !is.na(mcr_dsh_pct)) |>
+  select(`340b_entity_type`, mcr_dsh_pct, met = met_old) |>
+  mutate(type = "Before OBBB Medicaid cuts (2023)") |>
+  bind_rows(
+    obbb_stats_df |>
+      filter(met_old, !is.na(mcr_dsh_pct_kff)) |>
+      select(
+        `340b_entity_type`,
+        mcr_dsh_pct = mcr_dsh_pct_kff,
+        met = met_kff
+      ) |>
+      mutate(type = "After OBBB Medicaid cuts (2034)")
+  ) |>
+  filter(`340b_entity_type` != "CAH") |>
+  mutate(
+    type = factor(
+      type,
+      levels = c(
+        "Before OBBB Medicaid cuts (2023)",
+        "After OBBB Medicaid cuts (2034)"
+      )
+    ),
+    entity_type = ifelse(
+      met,
+      `340b_entity_type`,
+      "Disqualified"
+    )
+  ) |>
+ggplot() +
+  geom_histogram(
+    aes(x = mcr_dsh_pct, fill = entity_type),
+    binwidth = 0.0075,
+    boundary = 0.1175
+  ) +
+  geom_vline(
+    xintercept = 0.1175, color = "black",
+    linetype = "dashed"
+  ) +
+  geom_vline(
+    xintercept = 0.08, color = "black",
+    linetype = "dashed"
+  ) +
+  geom_richtext(
+    data = obbb_thresholds_df,
+    aes(
+      x = threshold,
+      y = c(210, 260),
+      label = text,
+      color = factor(threshold)
+    ),
+    size = 3.5,
+    hjust = 1,
+    fill = "transparent",
+    label.color = "transparent",
+    lineheight = 1.2,
+    nudge_x = -0.001
+  ) +
+  geom_richtext(
+    data = obbb_note_df,
+    aes(
+      x = c(0.1, 0.142, 0.16),
+      y = c(136, 200, 200),
+      label = note,
+      hjust = c(1, 0, 0)
+    ),
+    size = 3.5,
+    label.color = "transparent",
+    lineheight = 1.3
+  ) +
+  scale_x_continuous(
+    name = "Disproportionate share percentage",
+    labels = scales::percent_format(accuracy = 1),
+    n.breaks = 8
+  ) +
+  scale_y_continuous(
+    name = "Count of providers",
+    expand = expansion(mult = c(0, 0.05)),
+    n.breaks = 6
+  ) +
+  scale_fill_manual(
+    name = "340B entity\ntype (2023)",
+    values = entity_color_values,
+    na.value = "indianred"
+  ) +
+  scale_color_manual(
+    values = c(
+      "0.1175" = "black",
+      "0.08" = "black"
+    )
+  ) +
+  guides(color = "none", alpha = "none") +
+  labs(
+    title = "The OBBB will disqualify hundreds of 340B hospitals",
+    subtitle = paste0(
+      "Medicaid cuts will drop many hospitals below the 340B DSH ",
+      "qualification threshold"
+    ),
+    caption = paste0(
+      "Disproportionate share for each hospital is from ",
+      "2023 CMS/HCRIS reports ",
+      "(Hospital 2552-10 form, Worksheet E, Part A, Line 33)\n",
+      "Post-OBBB DSH percentage is estimated using data from the 2023 CMS ",
+      "reports and state Medicaid cut estimates from the KFF"
+    )
+  ) +
+  coord_cartesian(xlim = c(0.03, 0.25)) +
+  facet_wrap(vars(type), ncol = 1) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 20,
+      face = "bold",
+      margin = margin(b = 8, l = -20)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 16, l = -20)
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 15,
+      face = "bold"
+    ),
+    axis.text.y = element_markdown(
+      size = 13,
+      margin = margin(r = 4)
+    ),
+    axis.title.x = element_text(
+      margin = margin(t = 10),
+      size = 15,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(size = 12, lineheight = 1.1),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    strip.text = element_text(
+      size = 15,
+      face = "bold"
+    ),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 20, r = -100)
+    ),
+    strip.background = element_rect(fill = "#e0ebea"),
+    panel.background = element_rect(color = "black"),
+    legend.key.spacing.y = unit(0.15, "cm"),
+    legend.title = element_text(
+      size = 15,
+      face = "bold",
+      lineheight = 1.1,
+      margin = margin(b = 12)
+    ),
+    legend.key.size = unit(0.75, "cm"),
+    legend.text = element_text(size = 12)
+  )
+```
+
+```{r obbb_map, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 6.5
+
+obbb_stats_df |>
+  filter(met_old) |>
+  group_by(mcr_state, met_kff) |>
+  summarize(
+    n = n(),
+    count_state = first(`340b_hospital_count_state`),
+    .groups = "drop"
+  ) |>
+  pivot_wider(names_from = met_kff, values_from = n) |>
+  rename(
+    "unchanged" = `TRUE`,
+    "lost_340b" = `FALSE`
+  ) |>
+  mutate(
+    lost_340b = replace_na(lost_340b, 0),
+    pct_lost = lost_340b / count_state
+  ) |>
+  left_join(state_geo_df, by = c("mcr_state" = "abbr")) |>
+  st_set_geometry("geometry") |>
+  mutate(
+    pct_fct = cut(
+      pct_lost,
+      breaks = c(-Inf, 0.05, 0.1, 0.2, 0.3, Inf),
+      labels = c(
+        "< 5%", "5-10%", "10-20%", "20-30%", "> 30%"
+      )
+    )
+  ) |>
+ggplot() +
+  geom_sf(aes(fill = pct_fct), color = "grey30") +
+  scale_fill_brewer(
+    palette = "BuPu",
+    name = "Percent of existing 340B\nhospitals disqualified by\nOBBB Medicaid cuts"
+  ) +
+  labs(
+    title = "The OBBB's impact on 340B-qualified hospitals, by state",
+    subtitle = paste0(
+      "States with large OBBB Medicaid cuts and many ",
+      "marginally qualified 340B hospitals<br>",
+      "(just above the DSH threshold) see the biggest losses"
+    ),
+    caption = paste0(
+      "Post-OBBB DSH percentage is estimated using data from the 2023 CMS ",
+      "reports and state Medicaid cut estimates from the KFF\n",
+      "Initial 340B status is from 2023 (to match CMS data). Sourced from the ",
+      "HRSA OPAIS database, as of 2025-06-13\n"
+    )
+  ) +
+  coord_sf(expand = FALSE, clip = "off") +
+  guides(
+    fill = guide_legend(override.aes = list(color = "grey20"), nrow = 5),
+    color = "none"
+  ) +
+  theme_void() +
+  theme(
+    plot.margin = margin(r = 10),
+    panel.grid = element_blank(),
+    panel.background = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    legend.justification = c(0, 0.45),
+    legend.key.spacing.y = unit(0.15, "cm"),
+    legend.title = element_text(
+      size = 15,
+      face = "bold",
+      margin = margin(b = 10),
+      lineheight = 1.2,
+      hjust = 0
+    ),
+    legend.margin = margin(t = 80, l = -30),
+    legend.key.size = unit(0.75, "cm"),
+    legend.text = element_text(size = 12),
+    plot.title = element_text(
+      size = 22,
+      face = "bold",
+      margin = margin(b = 6, l = 20, t = 10)
+    ),
+    plot.subtitle = element_markdown(
+      size = 14,
+      margin = margin(b = 16, l = 20, t = 2),
+      lineheight = 1.3
+    ),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(r = -160, t = 20)
+    )
+  )
+```
+
+```{r obbb_table, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 7
+
+obbb_type_vec <- c("DSH\n(Urban)", "DSH\n(Rural)", "RRC", "SCH", "CAH", "PED")
+obbb_bed_vec <- c("0-50", "51-100", "101-200", "201-500", ">500")
+obbb_stats_grid <- expand.grid(
+  full_type = obbb_type_vec,
+  bed_fct = obbb_bed_vec
+)
+
+obbb_stats_df |>
+  filter(
+    met_old,
+    `340b_entity_type` %in% c("DSH", "RRC", "SCH")
+  ) |>
+  mutate(
+    bed_fct = cut(
+      mcr_total_beds,
+      breaks = c(0, 50, 100, 200, 500, Inf),
+      labels = obbb_bed_vec
+    ),
+    full_type = case_when(
+      `340b_entity_type` == "DSH" & mcr_urban_rural == 1 ~ "DSH\n(Urban)",
+      `340b_entity_type` == "DSH" & mcr_urban_rural == 2 ~ "DSH\n(Rural)",
+      `340b_entity_type` == "RRC" ~ "RRC",
+      `340b_entity_type` == "SCH" ~ "SCH",
+      TRUE ~ `340b_entity_type`
+    ),
+    full_type = factor(
+      full_type,
+      levels = obbb_type_vec
+    ),
+    lost_340b = !met_kff
+  ) |>
+  group_by(bed_fct, full_type) |>
+  summarize(cnt = sum(lost_340b)) |>
+  mutate(
+    cnt_fct = cut(
+      cnt,
+      breaks = c(-Inf, 0, 10, 20, 30, 40, Inf),
+      labels = c("0", "1-10", "11-20", "21-30", "31-40", "> 40"),
+      ordered = TRUE
+    )
+  ) |>
+  right_join(obbb_stats_grid, by = c("bed_fct", "full_type")) |>
+  mutate(
+    cnt = replace_na(cnt, 0),
+    cnt_fct = replace_na(cnt_fct, "0")
+  ) |>
+ggplot() +
+  geom_tile(
+    aes(x = bed_fct, y = fct_rev(full_type), fill = cnt_fct),
+    show.legend = TRUE
+  ) +
+  geom_text(
+    aes(x = bed_fct, y = fct_rev(full_type), label = cnt, color = cnt_fct),
+    size = 5.5,
+    show.legend = FALSE
+  ) +
+  scale_x_discrete(
+    name = "Total beds",
+    expand = c(0, 0)
+  ) +
+  scale_y_discrete(
+    name = "340B entity type (2023)",
+    expand = expansion(mult = c(0, 0.05)),
+    drop = FALSE
+  ) +
+  scale_fill_manual(
+    values = c("white", RColorBrewer::brewer.pal(5, "Reds")),
+    name = "Count of 340B hospitals\ndisqualified by OBBB\nMedicaid cuts",
+    na.value = "grey80"
+  ) +
+  scale_color_manual(
+    values = c(
+      "0" = "grey30",
+      "1-10" = "grey30",
+      "11-20" = "black",
+      "21-30" = "black",
+      "31-40" = "white",
+      "> 40" = "white"
+    ),
+    guide = "none"
+  ) +
+  guides(fill = guide_legend(
+    override.aes = list(color = "black", linewidth = 0.3)
+  )) +
+  labs(
+    title = "The OBBB's impact on 340B-qualified hospitals, by type",
+    subtitle = paste0(
+      "Mid-sized DSH hospitals are the most likely to lose 340B qualification"
+    ),
+    caption = paste0(
+      "Table shows the number of hospitals that would lose 340B status ",
+      "under the OBBB by 2034<br>",
+      "Hospitals are grouped by 340B entity type, total beds, and their ",
+      "urban/rural status from their 2023 CMS cost report<br>",
+      "340B status is from 2023 (to match CMS data). Sourced from the ",
+      "HRSA OPAIS database, as of 2025-06-13<br>",
+      "Loss of 340B status is estimated using data from ",
+      "2023 CMS cost reports and state Medicaid cut estimates from the KFF"
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 20,
+      face = "bold",
+      margin = margin(b = 8, l = -40)
+    ),
+    plot.subtitle = element_text(
+      size = 15,
+      margin = margin(b = 20, l = -40)
+    ),
+    panel.border = element_rect(
+      color = "black",
+      fill = "transparent",
+      linewidth = 1.1
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 6),
+      size = 18,
+      face = "bold"
+    ),
+    axis.text.y = element_text(
+      size = 15,
+      face = "bold",
+      color = "grey50",
+      margin = margin(r = 4)
+    ),
+    axis.title.x = element_text(
+      size = 18,
+      face = "bold"
+    ),
+    axis.text.x = element_text(
+      size = 15,
+      face = "bold",
+      color = "grey50",
+      margin = margin(b = 10, t = 4)
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.caption = element_markdown(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 20, r = -190)
+    ),
+    panel.background = element_rect(color = "black"),
+    legend.key.spacing.y = unit(0.15, "cm"),
+    legend.title = element_text(
+      size = 15,
+      face = "bold",
+      lineheight = 1.1,
+      margin = margin(b = 12)
+    ),
+    legend.key.size = unit(0.75, "cm"),
+    legend.text = element_text(size = 12)
+  )
+```
+
+```{r obbb_export}
+obbb_stats_df |>
+  filter(met_old, !met_kff) |>
+  select(
+    State = mcr_state,
+    CCN = mcr_ccn,
+    `340B entity type (2023)` = `340b_entity_type`,
+    `DSH % (2023 original)` = mcr_dsh_pct,
+    `DSH % (2034 OBBB)` = mcr_dsh_pct_kff
+  ) |>
+  arrange(State) |>
+  readr::write_csv("data/output/obbb_disqualified_340b_hospitals.csv")
 ```

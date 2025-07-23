@@ -146,6 +146,7 @@ opais_ce_parent_cols = {
     "participating_start_date": "340b_start_date",
     "termination_date": "340b_end_date",
     "entity_type": "340b_entity_type",
+    "street_state": "340b_state",
 }
 opais_ce_parent_df = (
     opais_ce_df.filter(
@@ -418,6 +419,7 @@ obbb_merged_df = (
             == pl.col("mcr_fy_end_date").max().over("mcr_ccn")
         )
         & pl.col("mcr_state").is_not_null()
+        & (pl.col("340b_start_date") <= pl.col("mcr_fy_end_date"))
     )
     .join(kff_state_df, left_on="mcr_state", right_on="state", how="left")
     .with_columns(
@@ -517,6 +519,14 @@ obbb_merged_df = (
         .then(0.12)
         .otherwise(pl.col("raw_adjustment").round(4))
         .alias("mcr_dsh_pct_kff"),
+    )
+    .join(
+        opais_ce_parent_df.group_by("340b_state")
+        .agg(pl.len())
+        .rename({"len": "340b_hospital_count_state"}),
+        left_on="mcr_state",
+        right_on="340b_state",
+        how="left",
     )
 )
 
