@@ -3207,6 +3207,7 @@ obbb_stats_df |>
   filter(met_old, !met_kff) |>
   select(
     State = mcr_state,
+    Provider = provider_name,
     CCN = mcr_ccn,
     `340B entity type (2023)` = `340b_entity_type`,
     `DSH % (2023 original)` = mcr_dsh_pct,

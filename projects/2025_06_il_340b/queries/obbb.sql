@@ -1,5 +1,6 @@
 SELECT
     hp.id AS provider_id,
+    hp.provider_name,
     hp.state AS mcr_state,
     mcr.prvdr_num AS mcr_ccn,
     mcr.fy_end_dt AS mcr_fy_end_date,
