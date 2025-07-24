@@ -61,6 +61,10 @@ with open("queries/price_example.sql", "r") as query:
 with open("queries/drug_rates.sql", "r") as query:
     drug_rates_df = pl.read_database(query.read(), trino_conn)
 
+# %% Grab OBBB analysis data from Medicare cost reports
+with open("queries/obbb.sql", "r") as query:
+    obbb_df = pl.read_database(query.read(), trino_conn)
+
 # %% Grab Medicare cost report data exported from CMS SAS files. Interpolate
 # CCN values directly into the SQL query to avoid pulling all cost report data
 with open("queries/medicare_cost_reports.sql", "r") as query:
@@ -113,6 +117,25 @@ opais_cp_df = (
     .with_columns((pl.col("participating") == "TRUE").alias("participating"))
 )
 
+# %% Grab KFF OBBB data, which contains the estimated impact on Medicaid
+# spending in each state
+kff_state_df = pl.read_csv("data/input/kff_obbb.csv").with_columns(
+    pl.col("10_year_decrease_avg")
+    .cast(pl.Float64)
+    .alias("10_year_decrease_avg"),
+    pl.col("10_year_decrease_low")
+    .cast(pl.Float64)
+    .alias("10_year_decrease_low"),
+    pl.col("10_year_decrease_high")
+    .cast(pl.Float64)
+    .alias("10_year_decrease_high"),
+    pl.col("pct_decrease")
+    .str.replace("%", "")
+    .cast(pl.Float64)
+    .truediv(100)
+    .alias("pct_decrease"),
+)
+
 
 ###### Data cleaning ###########################################################
 
@@ -123,6 +146,7 @@ opais_ce_parent_cols = {
     "participating_start_date": "340b_start_date",
     "termination_date": "340b_end_date",
     "entity_type": "340b_entity_type",
+    "street_state": "340b_state",
 }
 opais_ce_parent_df = (
     opais_ce_df.filter(
@@ -379,6 +403,138 @@ drug_rates_provider_df = drug_rates_agg_df.group_by(
     *[pl.col(c).util.wmean("count_enc").alias(c) for c in drug_rates_cols],
 )
 
+# %% Recalculate DPP and DSH using estimated Medicaid spending cuts from the
+# KFF
+obbb_merged_df = (
+    obbb_df.join(
+        opais_ce_parent_df,
+        left_on="mcr_ccn",
+        right_on="medicare_provider_id",
+        how="inner",
+    )
+    .filter(
+        (
+            # A few hospitals have multiple reports in the same year, so
+            # take the most recent
+            pl.col("mcr_fy_end_date")
+            == pl.col("mcr_fy_end_date").max().over("mcr_ccn")
+        )
+        & pl.col("mcr_state").is_not_null()
+        # Only take hospitals that were actively 340B at the time of the
+        # 2023 fiscal year
+        & (pl.col("340b_start_date") <= pl.col("mcr_fy_end_date"))
+    )
+    .join(kff_state_df, left_on="mcr_state", right_on="state", how="left")
+    .with_columns(
+        (
+            # Recalculate the Medicaid patient days part of the DPP based on
+            # the KFF 10-year decrease percentage. See here for DPP formula:
+            # https://www.cms.gov/medicare/payment/prospective-payment-systems/acute-inpatient-pps/disproportionate-share-hospital-dsh
+            (pl.col("mcr_medicaid_days") * (1 - pl.col("pct_decrease")))
+            / pl.col("mcr_total_days")
+        )
+        .round(4)
+        .alias("mcr_dpp_part2_kff")
+    )
+    .with_columns(
+        (pl.col("mcr_dpp_part1") + pl.col("mcr_dpp_part2_kff")).alias(
+            "mcr_dpp_kff"
+        )
+    )
+    .with_columns(
+        # Direct translation of the DSH formula calculation table from this CMS
+        # PDF: https://www.cms.gov/Outreach-and-Education/Medicare-Learning-Network-MLN/MLNProducts/Downloads/Disproportionate_Share_Hospital.pdf
+        pl.when(
+            (pl.col("mcr_urban_rural") == 1)
+            & (pl.col("mcr_total_beds") < 100)
+            & (pl.col("mcr_dpp_kff") >= 0.15)
+            & (pl.col("mcr_dpp_kff") <= 0.202)
+        )
+        .then(0.025 + 0.65 * (pl.col("mcr_dpp_kff") - 0.15))
+        .when(
+            (pl.col("mcr_urban_rural") == 1)
+            & (pl.col("mcr_total_beds") < 100)
+            & (pl.col("mcr_dpp_kff") > 0.202)
+        )
+        .then(0.0588 + 0.825 * (pl.col("mcr_dpp_kff") - 0.202))
+        .when(
+            (pl.col("mcr_urban_rural") == 1)
+            & (pl.col("mcr_total_beds") >= 100)
+            & (pl.col("mcr_dpp_kff") >= 0.15)
+            & (pl.col("mcr_dpp_kff") <= 0.202)
+        )
+        .then(0.025 + 0.65 * (pl.col("mcr_dpp_kff") - 0.15))
+        .when(
+            (pl.col("mcr_urban_rural") == 1)
+            & (pl.col("mcr_total_beds") >= 100)
+            & (pl.col("mcr_dpp_kff") > 0.202)
+        )
+        .then(0.0588 + 0.825 * (pl.col("mcr_dpp_kff") - 0.202))
+        .when(
+            (pl.col("340b_entity_type") == "RRC")
+            & (pl.col("mcr_dpp_kff") >= 0.15)
+            & (pl.col("mcr_dpp_kff") <= 0.202)
+        )
+        .then(0.025 + 0.65 * (pl.col("mcr_dpp_kff") - 0.15))
+        .when(
+            (pl.col("340b_entity_type") == "RRC")
+            & (pl.col("mcr_dpp_kff") > 0.202)
+        )
+        .then(0.0588 + 0.825 * (pl.col("mcr_dpp_kff") - 0.202))
+        .when(
+            (pl.col("mcr_urban_rural") == 2)
+            & (pl.col("340b_entity_type") != "RRC")
+            & (pl.col("mcr_total_beds") < 500)
+            & (pl.col("mcr_dpp_kff") >= 0.15)
+            & (pl.col("mcr_dpp_kff") <= 0.202)
+        )
+        .then(0.025 + 0.65 * (pl.col("mcr_dpp_kff") - 0.15))
+        .when(
+            (pl.col("mcr_urban_rural") == 2)
+            & (pl.col("340b_entity_type") != "RRC")
+            & (pl.col("mcr_total_beds") < 500)
+            & (pl.col("mcr_dpp_kff") > 0.202)
+        )
+        .then(0.0588 + 0.825 * (pl.col("mcr_dpp_kff") - 0.202))
+        .when(
+            (pl.col("mcr_urban_rural") == 2)
+            & (pl.col("340b_entity_type") != "RRC")
+            & (pl.col("mcr_total_beds") >= 500)
+            & (pl.col("mcr_dpp_kff") >= 0.15)
+            & (pl.col("mcr_dpp_kff") <= 0.202)
+        )
+        .then(0.025 + 0.65 * (pl.col("mcr_dpp_kff") - 0.15))
+        .when(
+            (pl.col("mcr_urban_rural") == 2)
+            & (pl.col("340b_entity_type") != "RRC")
+            & (pl.col("mcr_total_beds") >= 500)
+            & (pl.col("mcr_dpp_kff") > 0.202)
+        )
+        .then(0.0588 + 0.825 * (pl.col("mcr_dpp_kff") - 0.202))
+        .otherwise(0)
+        .alias("raw_adjustment")
+    )
+    .with_columns(
+        pl.when(
+            # Use the existing cap behavior of the old DSH percentage
+            (pl.col("mcr_dsh_pct") == 0.12)
+            & (pl.col("raw_adjustment") >= 0.12)
+        )
+        .then(0.12)
+        .otherwise(pl.col("raw_adjustment").round(4))
+        .alias("mcr_dsh_pct_kff"),
+    )
+    .join(
+        opais_ce_parent_df.group_by("340b_state")
+        .agg(pl.len())
+        .rename({"len": "340b_hospital_count_state"}),
+        left_on="mcr_state",
+        right_on="340b_state",
+        how="left",
+    )
+)
+
+
 ##### Save data to file ########################################################
 
 # %% Save finished dataframes to Parquet files
@@ -387,6 +543,7 @@ medicare_cost_df.write_parquet("data/output/medicare_cost_reports.parquet")
 ahq_merged_df.write_parquet("data/output/ahq_hospital_stats.parquet")
 price_example_df.write_parquet("data/output/price_example.parquet")
 drug_rates_provider_df.write_parquet("data/output/drug_rates.parquet")
+obbb_merged_df.write_parquet("data/output/obbb.parquet")
 
 # %% Save OPAIS CE and contract pharma detailed data
 opais_ce_child_df.write_parquet("data/intermediate/opais_ce_child.parquet")
