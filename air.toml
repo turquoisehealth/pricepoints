@@ -6,4 +6,4 @@ line-ending = "lf"
 persistent-line-breaks = true
 exclude = []
 default-exclude = true
-skip = []
+skip = ["tribble", "case_match", "case_when"]
