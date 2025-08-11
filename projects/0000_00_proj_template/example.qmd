@@ -1,7 +1,6 @@
 ---
 title: "Project template"
-format:
-  html:
+format: html
 jupyter: python3
 ---
 

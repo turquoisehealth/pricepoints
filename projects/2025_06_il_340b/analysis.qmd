@@ -157,13 +157,16 @@ drug_rates_imp_df <- drug_rates_imp_df |>
     rate_to_gross_imputed = is.na(rate_to_gross_avg_wtd) | gross_count_wtd < 20,
     rate_to_gross_avg_wtd = ifelse(
       rate_to_gross_imputed,
-      mean(drug_rates_imp_df$rate_to_gross_avg_wtd[
-        dplyr::between(
-          drug_rates_imp_df$total_beds,
-          total_beds * 0.5,
-          total_beds * 1.5
-        )
-      ], na.rm = TRUE),
+      mean(
+        drug_rates_imp_df$rate_to_gross_avg_wtd[
+          dplyr::between(
+            drug_rates_imp_df$total_beds,
+            total_beds * 0.5,
+            total_beds * 1.5
+          )
+        ],
+        na.rm = TRUE
+      ),
       rate_to_gross_avg_wtd
     )
   )
@@ -179,8 +182,11 @@ drug_profits_df <- il_hospitals_df |>
   inner_join(
     drug_rates_imp_df |>
       select(
-        provider_id, gross_poa_avg_wtd, contains("_count_"),
-        rate_to_gross_avg_wtd, rate_to_gross_imputed
+        provider_id,
+        gross_poa_avg_wtd,
+        contains("_count_"),
+        rate_to_gross_avg_wtd,
+        rate_to_gross_imputed
       ),
     by = c("provider_id")
   ) |>
@@ -198,19 +204,21 @@ drug_profits_df <- il_hospitals_df |>
     # hospitals general conversion rate * charged amount - cost. The upper bound
     # is the same but substituting the actual net-to-gross ratio from drug
     # price data
-    net_drug_profit_lower =
-      (mcr_drug_charged * mcr_conv_factor) - mcr_drug_cost,
-    net_drug_profit_upper =
-      (mcr_drug_charged * rate_to_gross_avg_wtd) - mcr_drug_cost,
+    net_drug_profit_lower = (mcr_drug_charged * mcr_conv_factor) -
+      mcr_drug_cost,
+    net_drug_profit_upper = (mcr_drug_charged * rate_to_gross_avg_wtd) -
+      mcr_drug_cost,
     # Calculate profits for only outpatient drugs. This is a good proxy for
     # 340B profits but isn't perfect since it doesn't factor in reduced costs,
     # % of patients who are 340B, contract pharmacy fees, etc.
-    net_outpatient_profit_lower =
-      (mcr_drug_charged * mcr_conv_factor * mcr_pct_outpatient) -
-        (mcr_drug_cost * mcr_pct_outpatient), # nolint
-    net_outpatient_profit_upper =
-      (mcr_drug_charged * rate_to_gross_avg_wtd * mcr_pct_outpatient) -
-        (mcr_drug_cost * mcr_pct_outpatient) # nolint
+    net_outpatient_profit_lower = (mcr_drug_charged *
+      mcr_conv_factor *
+      mcr_pct_outpatient) -
+      (mcr_drug_cost * mcr_pct_outpatient), # nolint
+    net_outpatient_profit_upper = (mcr_drug_charged *
+      rate_to_gross_avg_wtd *
+      mcr_pct_outpatient) -
+      (mcr_drug_cost * mcr_pct_outpatient) # nolint
   ) |>
   filter(
     !is.na(mcr_net_patient_revenue),
@@ -234,44 +242,56 @@ ggplot() +
   ) +
   annotate(
     "text",
-    x = 0.87, y = -13000,
+    x = 0.87,
+    y = -13000,
     label = "Hospital or clinic\nadministers drug",
     hjust = 1,
     lineheight = 0.9
   ) +
   annotate(
     "segment",
-    x = 0.9, xend = 1,
-    y = -13000, yend = -13000
+    x = 0.9,
+    xend = 1,
+    y = -13000,
+    yend = -13000
   ) +
   annotate(
     "segment",
-    x = 1, xend = 1,
-    y = -13000, yend = -11198,
+    x = 1,
+    xend = 1,
+    y = -13000,
+    yend = -11198,
     arrow = arrow(length = unit(0.2, "cm"), type = "closed")
   ) +
   annotate(
     "segment",
-    x = 0.5, xend = 1.5,
-    y = -11198, yend = -11198,
+    x = 0.5,
+    xend = 1.5,
+    y = -11198,
+    yend = -11198,
     linetype = "dashed"
   ) +
   annotate(
     "segment",
-    x = 1.5, xend = 2.5,
-    y = 18520 - 11198, yend = 18520 - 11198,
+    x = 1.5,
+    xend = 2.5,
+    y = 18520 - 11198,
+    yend = 18520 - 11198,
     linetype = "dashed"
   ) +
   annotate(
     "rect",
-    xmin = 0.2, xmax = 0.8,
-    ymin = -11198, ymax = 0,
+    xmin = 0.2,
+    xmax = 0.8,
+    ymin = -11198,
+    ymax = 0,
     fill = "#ec9993",
     color = "black"
   ) +
   annotate(
     "richtext",
-    x = 0.5, y = -6000,
+    x = 0.5,
+    y = -6000,
     label = paste0(
       "**<span style='font-size:20px'>-$11,198</span>**<br><br>",
       "Provider buys<br>drug at ASP"
@@ -282,14 +302,17 @@ ggplot() +
   ) +
   annotate(
     "rect",
-    xmin = 1.2, xmax = 1.8,
-    ymin = -11198, ymax = 31328 - 11198,
+    xmin = 1.2,
+    xmax = 1.8,
+    ymin = -11198,
+    ymax = 31328 - 11198,
     fill = "#bee7f4",
     color = "black"
   ) +
   annotate(
     "richtext",
-    x = 1.5, y = 15000,
+    x = 1.5,
+    y = 15000,
     label = paste0(
       "Hospital sets list<br>price",
       " at **$31,328<br>**<span style='font-size:12px'>",
@@ -301,13 +324,16 @@ ggplot() +
   ) +
   annotate(
     "rect",
-    xmin = 1.205, xmax = 1.795,
-    ymin = -11150, ymax = 18520 - 11198,
+    xmin = 1.205,
+    xmax = 1.795,
+    ymin = -11150,
+    ymax = 18520 - 11198,
     fill = "#7ccfe9"
   ) +
   annotate(
     "richtext",
-    x = 1.5, y = -2000,
+    x = 1.5,
+    y = -2000,
     label = paste0(
       "**<span style='font-size:20px'>+$18,520</span>**<br><br>",
       "Insurer/payer<br>reimburses at<br>negotiated rate"
@@ -318,14 +344,17 @@ ggplot() +
   ) +
   annotate(
     "rect",
-    xmin = 2.2, xmax = 2.8,
-    ymin = 0, ymax = 18520 - 11198,
+    xmin = 2.2,
+    xmax = 2.8,
+    ymin = 0,
+    ymax = 18520 - 11198,
     fill = "#91caab",
     color = "black"
   ) +
   annotate(
     "richtext",
-    x = 2.5, y = 3600,
+    x = 2.5,
+    y = 3600,
     label = paste0(
       "**<span style='font-size:20px'>= $7,322</span>**<br><br>",
       "Hospital keeps<br>net cost recovery<br>(profit) from payer"
@@ -409,44 +438,56 @@ ggplot() +
   ) +
   annotate(
     "text",
-    x = 0.87, y = -11500,
+    x = 0.87,
+    y = -11500,
     label = "Hospital or clinic\nadministers drug",
     hjust = 1,
     lineheight = 0.9
   ) +
   annotate(
     "segment",
-    x = 0.9, xend = 1,
-    y = -11500, yend = -11500
+    x = 0.9,
+    xend = 1,
+    y = -11500,
+    yend = -11500
   ) +
   annotate(
     "segment",
-    x = 1, xend = 1,
-    y = -11500, yend = -8612,
+    x = 1,
+    xend = 1,
+    y = -11500,
+    yend = -8612,
     arrow = arrow(length = unit(0.2, "cm"), type = "closed")
   ) +
   annotate(
     "segment",
-    x = 0.5, xend = 1.5,
-    y = -8612, yend = -8612,
+    x = 0.5,
+    xend = 1.5,
+    y = -8612,
+    yend = -8612,
     linetype = "dashed"
   ) +
   annotate(
     "segment",
-    x = 1.5, xend = 2.205,
-    y = 18520 - 8612, yend = 18520 - 8612,
+    x = 1.5,
+    xend = 2.205,
+    y = 18520 - 8612,
+    yend = 18520 - 8612,
     linetype = "dashed"
   ) +
   annotate(
     "rect",
-    xmin = 0.2, xmax = 0.8,
-    ymin = -8612, ymax = 0,
+    xmin = 0.2,
+    xmax = 0.8,
+    ymin = -8612,
+    ymax = 0,
     fill = "#ec9993",
     color = "black"
   ) +
   annotate(
     "richtext",
-    x = 0.5, y = -4500,
+    x = 0.5,
+    y = -4500,
     label = paste0(
       "**<span style='font-size:20px'>-$8,612</span>**<br><br>",
       "Provider buys<br>drug at 340B<br>discount price<sup>1</sup>"
@@ -457,14 +498,17 @@ ggplot() +
   ) +
   annotate(
     "rect",
-    xmin = 1.2, xmax = 1.8,
-    ymin = -8612, ymax = 31328 - 8612,
+    xmin = 1.2,
+    xmax = 1.8,
+    ymin = -8612,
+    ymax = 31328 - 8612,
     fill = "#bee7f4",
     color = "black"
   ) +
   annotate(
     "richtext",
-    x = 1.5, y = 17000,
+    x = 1.5,
+    y = 17000,
     label = paste0(
       "Hospital sets list<br>price",
       " at **$31,328<br>**<span style='font-size:12px'>",
@@ -476,13 +520,16 @@ ggplot() +
   ) +
   annotate(
     "rect",
-    xmin = 1.205, xmax = 1.795,
-    ymin = -8550, ymax = 18520 - 8612,
+    xmin = 1.205,
+    xmax = 1.795,
+    ymin = -8550,
+    ymax = 18520 - 8612,
     fill = "#7ccfe9"
   ) +
   annotate(
     "richtext",
-    x = 1.5, y = 500,
+    x = 1.5,
+    y = 500,
     label = paste0(
       "**<span style='font-size:20px'>+$18,520</span>**<br><br>",
       "Insurer/payer<br>reimburses at<br>negotiated rate"
@@ -493,20 +540,25 @@ ggplot() +
   ) +
   annotate(
     "rect",
-    xmin = 2.2, xmax = 2.8,
-    ymin = 0, ymax = 18520 - 8612,
+    xmin = 2.2,
+    xmax = 2.8,
+    ymin = 0,
+    ymax = 18520 - 8612,
     fill = "#91caab",
     color = "black"
   ) +
   annotate(
     "rect",
-    xmin = 2.205, xmax = 2.795,
-    ymin = 18520 - 11198, ymax = 18520 - 8612 - 50,
+    xmin = 2.205,
+    xmax = 2.795,
+    ymin = 18520 - 11198,
+    ymax = 18520 - 8612 - 50,
     fill = "#428a62"
   ) +
   annotate(
     "richtext",
-    x = 2.5, y = 3700,
+    x = 2.5,
+    y = 3700,
     label = paste0(
       "**<span style='font-size:20px'>= $9,908</span>**<br>",
       "<br>Dark green is extra<br>profit from 340B<br>compared to ASP"
@@ -589,44 +641,56 @@ ggplot() +
   ) +
   annotate(
     "text",
-    x = 0.87, y = -11500,
+    x = 0.87,
+    y = -11500,
     label = "Hospital or clinic\nadministers drug",
     hjust = 1,
     lineheight = 0.9
   ) +
   annotate(
     "segment",
-    x = 0.9, xend = 1,
-    y = -11500, yend = -11500
+    x = 0.9,
+    xend = 1,
+    y = -11500,
+    yend = -11500
   ) +
   annotate(
     "segment",
-    x = 1, xend = 1,
-    y = -11500, yend = -8612,
+    x = 1,
+    xend = 1,
+    y = -11500,
+    yend = -8612,
     arrow = arrow(length = unit(0.2, "cm"), type = "closed")
   ) +
   annotate(
     "segment",
-    x = 0.5, xend = 1.5,
-    y = -8612, yend = -8612,
+    x = 0.5,
+    xend = 1.5,
+    y = -8612,
+    yend = -8612,
     linetype = "dashed"
   ) +
   annotate(
     "segment",
-    x = 1.5, xend = 2.205,
-    y = 11870 - 8612, yend = 11870 - 8612,
+    x = 1.5,
+    xend = 2.205,
+    y = 11870 - 8612,
+    yend = 11870 - 8612,
     linetype = "dashed"
   ) +
   annotate(
     "rect",
-    xmin = 0.2, xmax = 0.8,
-    ymin = -8612, ymax = 0,
+    xmin = 0.2,
+    xmax = 0.8,
+    ymin = -8612,
+    ymax = 0,
     fill = "#ec9993",
     color = "black"
   ) +
   annotate(
     "richtext",
-    x = 0.5, y = -4500,
+    x = 0.5,
+    y = -4500,
     label = paste0(
       "**<span style='font-size:20px'>-$8,612</span>**<br><br>",
       "Provider buys<br>drug at 340B<br>discount price<sup>1</sup>"
@@ -637,14 +701,17 @@ ggplot() +
   ) +
   annotate(
     "rect",
-    xmin = 1.2, xmax = 1.8,
-    ymin = -8612, ymax = 31328 - 8612,
+    xmin = 1.2,
+    xmax = 1.8,
+    ymin = -8612,
+    ymax = 31328 - 8612,
     fill = "#bee7f4",
     color = "black"
   ) +
   annotate(
     "richtext",
-    x = 1.5, y = 17000,
+    x = 1.5,
+    y = 17000,
     label = paste0(
       "Hospital sets list<br>price",
       " at **$31,328<br>**<span style='font-size:12px'>",
@@ -656,13 +723,16 @@ ggplot() +
   ) +
   annotate(
     "rect",
-    xmin = 1.205, xmax = 1.795,
-    ymin = -8550, ymax = 11870 - 8612,
+    xmin = 1.205,
+    xmax = 1.795,
+    ymin = -8550,
+    ymax = 11870 - 8612,
     fill = "#7ccfe9"
   ) +
   annotate(
     "richtext",
-    x = 1.5, y = -2700,
+    x = 1.5,
+    y = -2700,
     label = paste0(
       "**<span style='font-size:20px'>+$11,870</span>**<br><br>",
       "Medicare<br>reimburses at<br>ASP + 6%"
@@ -673,20 +743,25 @@ ggplot() +
   ) +
   annotate(
     "rect",
-    xmin = 2.2, xmax = 2.8,
-    ymin = 0, ymax = 11870 - 8612,
+    xmin = 2.2,
+    xmax = 2.8,
+    ymin = 0,
+    ymax = 11870 - 8612,
     fill = "#91caab",
     color = "black"
   ) +
   annotate(
     "rect",
-    xmin = 2.205, xmax = 2.795,
-    ymin = 11870 - 11198, ymax = 11870 - 8612 - 50,
+    xmin = 2.205,
+    xmax = 2.795,
+    ymin = 11870 - 11198,
+    ymax = 11870 - 8612 - 50,
     fill = "#428a62"
   ) +
   annotate(
     "richtext",
-    x = 2.5, y = 4200,
+    x = 2.5,
+    y = 4200,
     label = paste0(
       "**<span style='font-size:20px'>= $3,258</span>**"
     ),
@@ -696,7 +771,8 @@ ggplot() +
   ) +
   annotate(
     "richtext",
-    x = 2.5, y = -3800,
+    x = 2.5,
+    y = -3800,
     label = paste0(
       "<br>Dark green is extra<br>profit from 340B<br>compared to ASP<br><br>",
       "(Original profit was $672)"
@@ -804,7 +880,8 @@ il_hospital_map_inset <- il_hospitals_df |>
   ) +
   annotate(
     "richtext",
-    x = -87.9, y = 41.4,
+    x = -87.9,
+    y = 41.4,
     label = "Inset area",
     size = 4,
     color = "darkred",
@@ -841,8 +918,10 @@ il_hospitals_df |>
   annotation_map_tile("cartolight", zoomin = 0) +
   annotate(
     "rect",
-    xmin = -Inf, xmax = Inf,
-    ymin = -Inf, ymax = Inf,
+    xmin = -Inf,
+    xmax = Inf,
+    ymin = -Inf,
+    ymax = Inf,
     fill = "white",
     alpha = 0.5
   ) +
@@ -856,9 +935,11 @@ il_hospitals_df |>
     values = entity_color_values,
     drop = FALSE
   ) +
-  guides(color = guide_legend(
-    override.aes = list(size = 6),
-  )) +
+  guides(
+    color = guide_legend(
+      override.aes = list(size = 6),
+    )
+  ) +
   labs(
     title = paste0(
       "Most 340B-qualified hospitals are in less ",
@@ -906,7 +987,10 @@ il_hospitals_df |>
   ) +
   inset_element(
     il_hospital_map_inset,
-    left = 0.0, right = 0.3, top = 1, bottom = -0.33
+    left = 0.0,
+    right = 0.3,
+    top = 1,
+    bottom = -0.33
   )
 ```
 
@@ -1146,8 +1230,10 @@ il_hospitals_npr_summ |>
   # Northwestern
   annotate(
     "rect",
-    xmin = 2.55975, xmax = 3.4425,
-    ymin = npr_rrc - npr_northwestern, ymax = npr_rrc,
+    xmin = 2.55975,
+    xmax = 3.4425,
+    ymin = npr_rrc - npr_northwestern,
+    ymax = npr_rrc,
     fill = "#506caf",
     linewidth = 1
   ) +
@@ -1161,15 +1247,18 @@ il_hospitals_npr_summ |>
       scales::dollar(npr_northwestern, accuracy = 0.01, scale = 1 / 1e9),
       "B)"
     ),
-    hjust = 0, vjust = 0.95,
+    hjust = 0,
+    vjust = 0.95,
     fill = "transparent",
     label.color = "transparent"
   ) +
   # UChicago
   annotate(
     "rect",
-    xmin = 0.55975, xmax = 1.4425,
-    ymin = npr_dsh - npr_uchicago, ymax = npr_dsh,
+    xmin = 0.55975,
+    xmax = 1.4425,
+    ymin = npr_dsh - npr_uchicago,
+    ymax = npr_dsh,
     fill = "#2c6d5a"
   ) +
   annotate(
@@ -1182,14 +1271,16 @@ il_hospitals_npr_summ |>
       scales::dollar(npr_uchicago, accuracy = 0.01, scale = 1 / 1e9),
       "B)"
     ),
-    hjust = 0, vjust = 0.95,
+    hjust = 0,
+    vjust = 0.95,
     fill = "transparent",
     label.color = "transparent"
   ) +
   # Rush
   annotate(
     "rect",
-    xmin = 0.55975, xmax = 1.4425,
+    xmin = 0.55975,
+    xmax = 1.4425,
     ymin = npr_dsh - npr_uchicago - npr_rush,
     ymax = npr_dsh - npr_uchicago,
     fill = "#3e987d"
@@ -1204,17 +1295,23 @@ il_hospitals_npr_summ |>
       scales::dollar(npr_rush, accuracy = 0.01, scale = 1 / 1e9),
       "B)"
     ),
-    hjust = 0, vjust = 0.95,
+    hjust = 0,
+    vjust = 0.95,
     fill = "transparent",
     label.color = "transparent"
   ) +
   geom_text(
-    aes(label = purrr::map_chr(n, scales::dollar_format(
-      accuracy = 0.01,
-      scale = 1 / 1e9,
-      prefix = "$",
-      suffix = "B"
-    ))),
+    aes(
+      label = purrr::map_chr(
+        n,
+        scales::dollar_format(
+          accuracy = 0.01,
+          scale = 1 / 1e9,
+          prefix = "$",
+          suffix = "B"
+        )
+      )
+    ),
     size = 5,
     nudge_y = 7.5e8
   ) +
@@ -1310,7 +1407,8 @@ il_hospitals_df |>
   ) +
   annotate(
     "text",
-    x = 2009.25, y = 10.5,
+    x = 2009.25,
+    y = 10.5,
     label = "ACA passed",
     color = "grey20",
     size = 4,
@@ -1553,7 +1651,8 @@ opais_ce_df |>
   ) +
   annotate(
     "text",
-    x = 2009.25, y = 1060,
+    x = 2009.25,
+    y = 1060,
     label = "ACA passed",
     color = "grey20",
     size = 4,
@@ -1656,7 +1755,8 @@ opais_cp_df |>
   ) +
   annotate(
     "text",
-    x = 2009.25, y = 1250,
+    x = 2009.25,
+    y = 1250,
     label = "ACA passed",
     color = "grey20",
     size = 4,
@@ -1669,7 +1769,8 @@ opais_cp_df |>
   ) +
   annotate(
     "text",
-    x = 2019.25, y = 3250,
+    x = 2019.25,
+    y = 3250,
     label = "Lilly creates first contract\npharmacy restriction",
     color = "darkred",
     size = 4,
@@ -1787,8 +1888,12 @@ opais_cp_df |>
     ),
     pharmacy_owner = fct_relevel(
       pharmacy_owner,
-      "CVS Health", "Walgreens", "Walmart",
-      "Jewel-Osco", "Optum Rx", "Other"
+      "CVS Health",
+      "Walgreens",
+      "Walmart",
+      "Jewel-Osco",
+      "Optum Rx",
+      "Other"
     )
   ) |>
   unnest(year) |>
@@ -1802,7 +1907,8 @@ opais_cp_df |>
   ) +
   annotate(
     "text",
-    x = 2009.25, y = 1250,
+    x = 2009.25,
+    y = 1250,
     label = "ACA passed",
     color = "grey20",
     size = 4,
@@ -1815,7 +1921,8 @@ opais_cp_df |>
   ) +
   annotate(
     "text",
-    x = 2019.25, y = 3250,
+    x = 2019.25,
+    y = 3250,
     label = "Lilly creates first contract\npharmacy restriction",
     color = "darkred",
     size = 4,
@@ -2138,7 +2245,8 @@ drug_profits_df |>
   ggplot() +
   geom_segment(
     aes(
-      x = net_outpatient_profit_lower, xend = net_outpatient_profit_upper,
+      x = net_outpatient_profit_lower,
+      xend = net_outpatient_profit_upper,
       y = plot_grp,
       color = `340b_entity_type`
     ),
@@ -2242,30 +2350,35 @@ il_hospitals_graph <- il_hospitals_df |>
     drug_profits_df |>
       select(
         provider_id,
-        net_outpatient_profit_lower, net_outpatient_profit_upper
+        net_outpatient_profit_lower,
+        net_outpatient_profit_upper
       ),
     by = "provider_id"
   ) |>
   mutate(
-    net_out_profit = (
-      net_outpatient_profit_lower + net_outpatient_profit_upper
-    ) / 2,
+    net_out_profit = (net_outpatient_profit_lower +
+      net_outpatient_profit_upper) /
+      2,
     geo_path = case_when(
       county %in% c("Cook", "DuPage", "Kane", "Lake", "McHenry", "Will") ~
         "Illinois.Chicago area",
       .default = "Illinois.Outside Chicago area"
     ),
     node = paste0(
-      geo_path, ".",
+      geo_path,
+      ".",
       str_replace_all(
         str_to_title(str_replace_all(provider_name, "[^[:alnum:]]", " ")),
-        "\\s+", "_"
+        "\\s+",
+        "_"
       )
     )
   ) |>
   select(
-    from = geo_path, to = node,
-    `340b_entity_type`, net_out_profit
+    from = geo_path,
+    to = node,
+    `340b_entity_type`,
+    net_out_profit
   ) |>
   filter(
     !is.na(net_out_profit),
@@ -2311,7 +2424,8 @@ ggraph(g, layout = "circlepack", weight = net_out_profit) +
   ) +
   annotate(
     "text",
-    x = 6.3e4, y = -3.2e4,
+    x = 6.3e4,
+    y = -3.2e4,
     label = "*Each colored circle\nrepresents one hospital",
     hjust = 1,
     lineheight = 1.1
@@ -2383,14 +2497,22 @@ ggraph(g, layout = "circlepack", weight = net_out_profit) +
 # 340B entity type
 drp_timeline_df <- il_hospitals_df |>
   select(
-    provider_id, provider_name, `340b_entity_type`, `340b_start_date`,
-    medicare_provider_id, total_beds
+    provider_id,
+    provider_name,
+    `340b_entity_type`,
+    `340b_start_date`,
+    medicare_provider_id,
+    total_beds
   ) |>
   inner_join(
     medicare_cost_df |>
       select(
-        mcr_ccn, mcr_fy_end_date, mcr_drug_cost, mcr_net_patient_revenue,
-        mcr_outpatient_drug_charged, mcr_conv_factor
+        mcr_ccn,
+        mcr_fy_end_date,
+        mcr_drug_cost,
+        mcr_net_patient_revenue,
+        mcr_outpatient_drug_charged,
+        mcr_conv_factor
       ),
     by = c("medicare_provider_id" = "mcr_ccn"),
     relationship = "many-to-many"
@@ -2409,15 +2531,17 @@ drp_timeline_df <- il_hospitals_df |>
       `340b_entity_type`,
       levels = names(entity_color_values)
     ),
-    net_outpatient_revenue_lower =
-      (mcr_outpatient_drug_charged * mcr_conv_factor),
-    net_outpatient_revenue_upper =
-      (mcr_outpatient_drug_charged * rate_to_gross_avg_wtd),
-    net_outpatient_revenue_midpoint =
-      rowMeans(pick(c(
+    net_outpatient_revenue_lower = (mcr_outpatient_drug_charged *
+      mcr_conv_factor),
+    net_outpatient_revenue_upper = (mcr_outpatient_drug_charged *
+      rate_to_gross_avg_wtd),
+    net_outpatient_revenue_midpoint = rowMeans(
+      pick(c(
         net_outpatient_revenue_lower,
         net_outpatient_revenue_upper
-      )), na.rm = TRUE),
+      )),
+      na.rm = TRUE
+    ),
     year = lubridate::year(mcr_fy_end_date)
   ) |>
   filter(
@@ -2455,14 +2579,16 @@ drp_timeline_df |>
   geom_line(
     data = drp_timeline_df_shim,
     aes(
-      x = year, y = avg_prop
+      x = year,
+      y = avg_prop
     ),
     color = "grey60",
     linewidth = 1
   ) +
   geom_line(
     aes(
-      x = year, y = avg_prop,
+      x = year,
+      y = avg_prop,
       color = `340b_entity_type`,
       group = `340b_entity_type`
     ),
@@ -2561,8 +2687,11 @@ drp_timeline_df |>
 il_hospitals_df |>
   filter(`340b_start_date` <= mcr_fy_end_date | is.na(`340b_start_date`)) |>
   select(
-    provider_id, provider_name, `340b_entity_type`,
-    medicare_provider_id, total_beds
+    provider_id,
+    provider_name,
+    `340b_entity_type`,
+    medicare_provider_id,
+    total_beds
   ) |>
   inner_join(
     ahq_stats_df |>
@@ -2591,29 +2720,40 @@ il_hospitals_df |>
   summarize(
     q10 = wtd.quantile(
       pct_charity_care,
-      weights = total_beds, probs = 0.1, na.rm = TRUE
+      weights = total_beds,
+      probs = 0.1,
+      na.rm = TRUE
     ),
     q25 = wtd.quantile(
       pct_charity_care,
-      weights = total_beds, probs = 0.25, na.rm = TRUE
+      weights = total_beds,
+      probs = 0.25,
+      na.rm = TRUE
     ),
     q50 = wtd.quantile(
       pct_charity_care,
-      weights = total_beds, probs = 0.5, na.rm = TRUE
+      weights = total_beds,
+      probs = 0.5,
+      na.rm = TRUE
     ),
     q75 = wtd.quantile(
       pct_charity_care,
-      weights = total_beds, probs = 0.75, na.rm = TRUE
+      weights = total_beds,
+      probs = 0.75,
+      na.rm = TRUE
     ),
     q90 = wtd.quantile(
       pct_charity_care,
-      weights = total_beds, probs = 0.9, na.rm = TRUE
+      weights = total_beds,
+      probs = 0.9,
+      na.rm = TRUE
     )
   ) |>
   mutate(
     is_340b = ifelse(
       `340b_entity_type` != "Not 340B",
-      "340B", "Not\n340B"
+      "340B",
+      "Not\n340B"
     ),
     is_340b = factor(is_340b, levels = c("Not\n340B", "340B")),
     `340b_entity_type` = factor(
@@ -2728,7 +2868,7 @@ il_hospitals_df |>
 #| fig-width: 9
 #| fig-height: 7
 
-obbb_stats_df <- obbb_df |> 
+obbb_stats_df <- obbb_df |>
   mutate(
     met_old = case_when(
       `340b_entity_type` %in% c("SCH", "RRC") & mcr_dsh_pct >= 0.08 ~ TRUE,
@@ -2813,18 +2953,20 @@ obbb_stats_df |>
       "Disqualified"
     )
   ) |>
-ggplot() +
+  ggplot() +
   geom_histogram(
     aes(x = mcr_dsh_pct, fill = entity_type),
     binwidth = 0.0075,
     boundary = 0.1175
   ) +
   geom_vline(
-    xintercept = 0.1175, color = "black",
+    xintercept = 0.1175,
+    color = "black",
     linetype = "dashed"
   ) +
   geom_vline(
-    xintercept = 0.08, color = "black",
+    xintercept = 0.08,
+    color = "black",
     linetype = "dashed"
   ) +
   geom_richtext(
@@ -2973,11 +3115,15 @@ obbb_stats_df |>
       pct_lost,
       breaks = c(-Inf, 0.05, 0.1, 0.2, 0.3, Inf),
       labels = c(
-        "< 5%", "5-10%", "10-20%", "20-30%", "> 30%"
+        "< 5%",
+        "5-10%",
+        "10-20%",
+        "20-30%",
+        "> 30%"
       )
     )
   ) |>
-ggplot() +
+  ggplot() +
   geom_sf(aes(fill = pct_fct), color = "grey30") +
   scale_fill_brewer(
     palette = "BuPu",
@@ -3091,7 +3237,7 @@ obbb_stats_df |>
     cnt = replace_na(cnt, 0),
     cnt_fct = replace_na(cnt_fct, "0")
   ) |>
-ggplot() +
+  ggplot() +
   geom_tile(
     aes(x = bed_fct, y = fct_rev(full_type), fill = cnt_fct),
     show.legend = TRUE
@@ -3126,9 +3272,11 @@ ggplot() +
     ),
     guide = "none"
   ) +
-  guides(fill = guide_legend(
-    override.aes = list(color = "black", linewidth = 0.3)
-  )) +
+  guides(
+    fill = guide_legend(
+      override.aes = list(color = "black", linewidth = 0.3)
+    )
+  ) +
   labs(
     title = "The OBBB's impact on 340B-qualified hospitals, by type",
     subtitle = paste0(

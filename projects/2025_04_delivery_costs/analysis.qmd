@@ -112,28 +112,44 @@ rates_fil_df <- rates_df %>%
   ) %>%
   filter(
     # These are actually mis/unlabeled ASCs, psych hospitals, and cancer centers
-    !provider_id %in% c(
-      "2354", "7951", "7985", "7986", "7991", "7992", "8052", "8080",
-      "8124", "8166", "8169", "8073", "8079", "8064", "8063", "7914"
-    )
+    !provider_id %in%
+      c(
+        "2354",
+        "7951",
+        "7985",
+        "7986",
+        "7991",
+        "7992",
+        "8052",
+        "8080",
+        "8124",
+        "8166",
+        "8169",
+        "8073",
+        "8079",
+        "8064",
+        "8063",
+        "7914"
+      )
   ) %>%
   # This billing code is different from the other DRGs (no different severity
   # levels) to we're going to drop it for now
   filter(billing_code != "768") %>%
   # Some "other" contract methodologies are actually Medicare and Medicaid rates
-  filter(!coalesce(
-    final_rate_type == "other" & (
-      str_detect(
-        tolower(additional_payer_notes),
-        "medicare|medicaid|tricare"
-      ) |
-        str_detect(
-          tolower(additional_generic_notes),
+  filter(
+    !coalesce(
+      final_rate_type == "other" &
+        (str_detect(
+          tolower(additional_payer_notes),
           "medicare|medicaid|tricare"
-        )
-    ),
-    FALSE
-  ))
+        ) |
+          str_detect(
+            tolower(additional_generic_notes),
+            "medicare|medicaid|tricare"
+          )),
+      FALSE
+    )
+  )
 
 # Collapse plans to the provider-payer-drg level, prioritizing PPO + HMO rates,
 # then PPO only, then HMO only, then any other plan types (we want the highest
@@ -149,10 +165,20 @@ provider_payer_df <- rates_fil_df %>%
       # These variables don't vary within group, so it's fine to just take the
       # first value in order to preserve them when summarising
       c(
-        provider_name, provider_npi, parent_payer_name,
-        medicare_rate, hospital_type, total_beds, star_rating, lon, lat,
-        state_market_share, cbsa_name, starts_with("geoid_"),
-        starts_with("total_"), starts_with("median_hh_"),
+        provider_name,
+        provider_npi,
+        parent_payer_name,
+        medicare_rate,
+        hospital_type,
+        total_beds,
+        star_rating,
+        lon,
+        lat,
+        state_market_share,
+        cbsa_name,
+        starts_with("geoid_"),
+        starts_with("total_"),
+        starts_with("median_hh_"),
         starts_with("pct_ins_")
       ),
       first
@@ -195,28 +221,38 @@ provider_payer_df <- rates_fil_df %>%
 providers_df <- provider_payer_df %>%
   group_by(provider_id, billing_code) %>%
   summarize(
-    across(-all_of(c(
-      "payer_id", "parent_payer_name",
-      "agg_rate_provider_payer_type",
-      "agg_rate_provider_payer_count"
-    )), first),
+    across(
+      -all_of(c(
+        "payer_id",
+        "parent_payer_name",
+        "agg_rate_provider_payer_type",
+        "agg_rate_provider_payer_count"
+      )),
+      first
+    ),
     agg_rate_provider_med = wtd.quantile(
-      agg_rate_provider_payer_med, state_market_share, 0.5
+      agg_rate_provider_payer_med,
+      state_market_share,
+      0.5
     ),
     agg_rate_provider_count = sum(agg_rate_provider_payer_count)
   ) %>%
   mutate(
     # Order codes by their severity and delivery type
-    severity_label = factor(case_when(
+    severity_label = factor(
+      case_when(
       billing_code %in% c("783", "786", "796", "805") ~ "w/ MCC",
       billing_code %in% c("784", "787", "797", "806") ~ "w/ CC",
       billing_code %in% c("785", "788", "798", "807") ~ "no CC/MCC"
-    ), levels = c(
-      "w/ MCC",
-      "w/ CC",
-      "no CC/MCC"
-    )),
-    billing_code_label = factor(case_when(
+    ),
+      levels = c(
+        "w/ MCC",
+        "w/ CC",
+        "no CC/MCC"
+      )
+    ),
+    billing_code_label = factor(
+      case_when(
       billing_code %in% c("783", "784", "785") ~
         "C-Section<br>w/ Steril.",
       billing_code %in% c("786", "787", "788") ~
@@ -225,12 +261,14 @@ providers_df <- provider_payer_df %>%
         "Vaginal Deliv.<br>w/ Steril./D&C",
       billing_code %in% c("805", "806", "807") ~
         "Vaginal Deliv.<br>no Steril./D&C"
-    ), levels = c(
-      "Vaginal Deliv.<br>no Steril./D&C",
-      "Vaginal Deliv.<br>w/ Steril./D&C",
-      "C-Section<br>no Steril.",
-      "C-Section<br>w/ Steril."
-    ))
+    ),
+      levels = c(
+        "Vaginal Deliv.<br>no Steril./D&C",
+        "Vaginal Deliv.<br>w/ Steril./D&C",
+        "C-Section<br>no Steril.",
+        "C-Section<br>w/ Steril."
+      )
+    )
   ) %>%
   ungroup()
 
@@ -294,8 +332,11 @@ states_hexbin_gdf %>%
       med_rate,
       breaks = c(0, 7000, 10000, 13000, 16000, Inf),
       labels = c(
-        "< $7K", "$7-10K", "$10-13K",
-        "$13-16K", "> $16K"
+        "< $7K",
+        "$7-10K",
+        "$10-13K",
+        "$13-16K",
+        "> $16K"
       )
     ),
     rate_label = fct_rev(rate_label),
@@ -324,8 +365,11 @@ states_hexbin_gdf %>%
   ) +
   scale_color_manual(
     values = c(
-      "< $7K" = "grey40", "$7-10K" = "grey30", "$10-13K" = "grey10",
-      "$13-16K" = "grey95", "> $16K" = "grey95"
+      "< $7K" = "grey40",
+      "$7-10K" = "grey30",
+      "$10-13K" = "grey10",
+      "$13-16K" = "grey95",
+      "> $16K" = "grey95"
     ),
     na.value = "grey30"
   ) +
@@ -442,13 +486,18 @@ provider_cbsa_df <- providers_df %>%
   mutate(
     cbsa_label = fct_relabel(cbsa_name, \(x) {
       unique(paste0(
-        "**", x, "**<br>",
-        "<sup>Population: ", purrr::map_chr(
+        "**",
+        x,
+        "**<br>",
+        "<sup>Population: ",
+        purrr::map_chr(
           total_pop_cbsa,
           scales::label_number(scale_cut = cut_short_scale())
         ),
         " | ",
-        "Providers: ", n_distinct(provider_id), "</sup>"
+        "Providers: ",
+        n_distinct(provider_id),
+        "</sup>"
       ))
     }),
     billing_code_label = factor(
@@ -615,19 +664,21 @@ zcta_summ_df <- merge(
   by = "provider_id",
   all.x = TRUE,
   allow.cartesian = TRUE
-)[!is.na(agg_rate_provider_med), ][, .(
-  # Aggregate provider-level rates using a modified Huff model:
-  # https://en.wikipedia.org/wiki/Huff_model that replaces the power term
-  # with a (more accurate) logistic decay function
-  med_rate = sum(
-    agg_rate_provider_med * (
-      (total_beds * decay_function(duration_sec, nchs_code)) /
-        sum(total_beds * decay_function(duration_sec, nchs_code))
-    )
+)[!is.na(agg_rate_provider_med), ][,
+  .(
+    # Aggregate provider-level rates using a modified Huff model:
+    # https://en.wikipedia.org/wiki/Huff_model that replaces the power term
+    # with a (more accurate) logistic decay function
+    med_rate = sum(
+      agg_rate_provider_med *
+        ((total_beds * decay_function(duration_sec, nchs_code)) /
+          sum(total_beds * decay_function(duration_sec, nchs_code)))
+    ),
+    med_duration = median(duration_sec),
+    n = .N
   ),
-  med_duration = median(duration_sec),
-  n = .N
-), by = origin_id]
+  by = origin_id
+]
 
 # Plot all ZIP codes with the median rate of providers within 3 hours
 zcta_gdf %>%
@@ -637,8 +688,11 @@ zcta_gdf %>%
       med_rate,
       breaks = c(0, 7000, 10000, 13000, 16000, Inf),
       labels = c(
-        "< $7K", "$7-10K", "$10-13K",
-        "$13-16K", "> $16K"
+        "< $7K",
+        "$7-10K",
+        "$10-13K",
+        "$13-16K",
+        "> $16K"
       )
     ),
     rate_label = fct_rev(rate_label)
@@ -761,8 +815,11 @@ providers_df %>%
   mutate(
     nchs_code = fct_relabel(nchs_code, \(x) {
       unique(paste0(
-        "**", x, "**<br>",
-        "<sup>Providers: ", purrr::map_chr(
+        "**",
+        x,
+        "**<br>",
+        "<sup>Providers: ",
+        purrr::map_chr(
           count,
           scales::label_number(scale_cut = cut_short_scale())
         ),
