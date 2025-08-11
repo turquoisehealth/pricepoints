@@ -4,6 +4,8 @@ on:
     branches: [main, master]
 
 name: air
+permissions:
+  contents: read
 
 jobs:
   run-air:
