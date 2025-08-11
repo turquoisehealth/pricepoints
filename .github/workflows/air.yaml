@@ -1,0 +1,20 @@
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+name: air
+
+jobs:
+  run-air:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install air
+        uses: posit-dev/setup-air@v1
+
+      - name: Run air
+        shell: bash
+        run: air format . --check
