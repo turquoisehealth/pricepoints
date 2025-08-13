@@ -45,23 +45,27 @@ options(tigris_use_cache = TRUE)
 # Transform numbers into dollar amounts, but don't truncate small values e.g.
 # 100 becomes $100, 1000 becomes $1K, 1000000 becomes $1M, etc.
 label_dollar_short <- function(x) {
-  sapply(x, function(val) {
-    if (is.na(val)) {
-      return(NA_character_)
-    }
+  sapply(
+    x,
+    function(val) {
+      if (is.na(val)) {
+        return(NA_character_)
+      }
 
-    abs_val <- abs(val)
-    sign_str <- ifelse(val < 0, "-", "")
-    if (abs_val >= 1e9) {
-      paste0(sign_str, "$", round(abs_val / 1e9, 0), "B")
-    } else if (abs_val >= 1e6) {
-      paste0(sign_str, "$", round(abs_val / 1e6, 0), "M")
-    } else if (abs_val >= 1e3) {
-      paste0(sign_str, "$", round(abs_val / 1e3, 1), "K")
-    } else {
-      paste0(sign_str, "$", formatC(abs_val, format = "f", digits = 0))
-    }
-  }, USE.NAMES = FALSE)
+      abs_val <- abs(val)
+      sign_str <- ifelse(val < 0, "-", "")
+      if (abs_val >= 1e9) {
+        paste0(sign_str, "$", round(abs_val / 1e9, 0), "B")
+      } else if (abs_val >= 1e6) {
+        paste0(sign_str, "$", round(abs_val / 1e6, 0), "M")
+      } else if (abs_val >= 1e3) {
+        paste0(sign_str, "$", round(abs_val / 1e3, 1), "K")
+      } else {
+        paste0(sign_str, "$", formatC(abs_val, format = "f", digits = 0))
+      }
+    },
+    USE.NAMES = FALSE
+  )
 }
 ```
 
@@ -165,7 +169,8 @@ medicare_provider_df <- rates_df |>
     prov_fct = case_when(
       str_detect(provider_name, "Hoag") ~ "Hoag",
       provider_name == "University of California Irvine Medical Center" |
-        str_detect(provider_name, "UCI") ~ "UCI",
+        str_detect(provider_name, "UCI") ~
+        "UCI",
       str_detect(provider_name, "St Jude|St Joseph|Providence") ~ "Providence",
       .default = "Other"
     ),
@@ -184,15 +189,18 @@ medicare_provider_hist <- medicare_provider_df |>
   ggplot() +
   annotate(
     "segment",
-    x = 2.175, xend = 2.175,
-    y = -Inf, yend = 0.38,
+    x = 2.175,
+    xend = 2.175,
+    y = -Inf,
+    yend = 0.38,
     color = "green3",
     linewidth = 0.8,
     lty = "11"
   ) +
   annotate(
     "richtext",
-    x = 2.175, y = 0.38,
+    x = 2.175,
+    y = 0.38,
     vjust = 0,
     size = 3.5,
     fill = "transparent",
@@ -203,15 +211,18 @@ medicare_provider_hist <- medicare_provider_df |>
   ) +
   annotate(
     "segment",
-    x = 2.671, xend = 2.671,
-    y = -Inf, yend = 0.33,
+    x = 2.671,
+    xend = 2.671,
+    y = -Inf,
+    yend = 0.33,
     color = "#215fab",
     linewidth = 0.8,
     lty = "11"
   ) +
   annotate(
     "richtext",
-    x = 2.671, y = 0.33,
+    x = 2.671,
+    y = 0.33,
     vjust = 0,
     size = 3.5,
     fill = "transparent",
@@ -222,15 +233,18 @@ medicare_provider_hist <- medicare_provider_df |>
   ) +
   annotate(
     "segment",
-    x = 3.1275, xend = 3.1275,
-    y = -Inf, yend = 0.3,
+    x = 3.1275,
+    xend = 3.1275,
+    y = -Inf,
+    yend = 0.3,
     color = "#e59c35",
     linewidth = 0.8,
-    lty="11"
+    lty = "11"
   ) +
   annotate(
     "richtext",
-    x = 3.1275, y = 0.3,
+    x = 3.1275,
+    y = 0.3,
     vjust = 0,
     size = 3.5,
     fill = "transparent",
@@ -283,7 +297,8 @@ medicare_provider_df |>
   scale_color_manual(values = provider_colors) +
   annotate(
     "text",
-    y = 33.675, x = -118.37,
+    y = 33.675,
+    x = -118.37,
     label = "Each dot is\none hospital",
     size = 3,
     hjust = 1,
@@ -292,22 +307,27 @@ medicare_provider_df |>
   annotate(
     "curve",
     curvature = 0.1,
-    y = 33.7, x = -118.37,
-    yend = 33.8, xend = -118.344,
+    y = 33.7,
+    x = -118.37,
+    yend = 33.8,
+    xend = -118.344,
     arrow = arrow(length = unit(0.01, "npc")),
     color = "grey30"
   ) +
   annotate(
     "curve",
     curvature = -0.2,
-    y = 33.65, x = -118.37,
-    yend = 33.598, xend = -118.33,
+    y = 33.65,
+    x = -118.37,
+    yend = 33.598,
+    xend = -118.33,
     arrow = arrow(length = unit(0.01, "npc")),
     color = "grey30"
   ) +
   annotate(
     "text",
-    y = 33.475, x = -117.95,
+    y = 33.475,
+    x = -117.95,
     label = "Dotted lines are the median\nrate for each health system",
     size = 3,
     hjust = 0,
@@ -316,8 +336,10 @@ medicare_provider_df |>
   annotate(
     "curve",
     curvature = 0.2,
-    y = 33.495, x = -117.93,
-    yend = 33.545, xend = -118,
+    y = 33.495,
+    x = -117.93,
+    yend = 33.545,
+    xend = -118,
     arrow = arrow(length = unit(0.01, "npc")),
     color = "grey30"
   ) +
@@ -335,7 +357,8 @@ medicare_provider_df |>
       "high relative to Medicare"
     ),
     caption = paste0(
-      "Based on ", medicare_provider_df |>
+      "Based on ",
+      medicare_provider_df |>
         pull(num_rates) |>
         sum() |>
         scales::label_comma()(),
@@ -389,16 +412,24 @@ payer_comp_df <- rates_df |>
     med_rate_all = first(med_rate_all),
     num_providers = n(),
     .by = c(
-      "billing_code", "billing_code_type",
-      "proc_type", "payer_name", "payer_id"
+      "billing_code",
+      "billing_code_type",
+      "proc_type",
+      "payer_name",
+      "payer_id"
     )
   ) |>
   left_join(code_desc_df, by = "billing_code") |>
   left_join(payer_share_df, by = "payer_id") |>
   mutate(
     code = factor(paste0(
-      "**", code_desc, "**<br><sup>",
-      billing_code_type, " ", billing_code, "</sup>"
+      "**",
+      code_desc,
+      "**<br><sup>",
+      billing_code_type,
+      " ",
+      billing_code,
+      "</sup>"
     )),
     code = fct_rev(fct_reorder2(
       code,
@@ -421,13 +452,18 @@ payer_comp_df <- rates_df |>
     payer_name = case_match(
       payer_name,
       # nolint start
-      "Blue Shield of California" ~ "<span style='color:#4186d0'>Blue Shield<br>of California</span>",
+      "Blue Shield of California" ~
+        "<span style='color:#4186d0'>Blue Shield<br>of California</span>",
       "United Healthcare" ~ "United<br>Healthcare",
       .default = payer_name
       # nolint end
     ),
     payer_name = paste0(
-      "**", payer_name, "**<br>", payer_market_share, " market share"
+      "**",
+      payer_name,
+      "**<br>",
+      payer_market_share,
+      " market share"
     ),
     payer_name = ifelse(
       billing_code_type == "HCPCS",
@@ -487,7 +523,8 @@ payer_comp_df |>
   ) +
   scale_fill_manual(
     name = paste0(
-      "← Lowest price", paste0(rep(" ", 100), collapse = ""),
+      "← Lowest price",
+      paste0(rep(" ", 100), collapse = ""),
       "Highest price →\nPrice rank per procedure (row)"
     ),
     values = rev(RColorBrewer::brewer.pal(5, "BuPu"))
@@ -506,7 +543,8 @@ payer_comp_df |>
     y = "",
     x = "",
     caption = paste0(
-      "Based on ", payer_comp_df |>
+      "Based on ",
+      payer_comp_df |>
         pull(num_providers) |>
         sum() |>
         scales::label_comma()(),
@@ -608,17 +646,18 @@ payer_comp_df |>
 provider_comp_df <- rates_df |>
   filter(
     payer_name == "Blue Shield of California",
-    provider_name %in% c(
-      "Hoag Memorial Hospital",
-      "University of California Irvine Medical Center",
-      "Long Beach Memorial Medical Center",
-      "Orange Coast Memorial Medical Center",
-      "Saddleback Memorial Medical Center",
-      "St Joseph Hospital - Orange",
-      "St Jude Medical Center",
-      "Providence Mission Hospital - Mission Viejo",
-      "UCI Health Fountain Valley"
-    )
+    provider_name %in%
+      c(
+        "Hoag Memorial Hospital",
+        "University of California Irvine Medical Center",
+        "Long Beach Memorial Medical Center",
+        "Orange Coast Memorial Medical Center",
+        "Saddleback Memorial Medical Center",
+        "St Joseph Hospital - Orange",
+        "St Jude Medical Center",
+        "Providence Mission Hospital - Mission Viejo",
+        "UCI Health Fountain Valley"
+      )
   ) |>
   filter(
     # Keep only codes with rates for at least 6 providers and for Hoag
@@ -630,8 +669,13 @@ provider_comp_df <- rates_df |>
   left_join(code_desc_df, by = "billing_code") |>
   mutate(
     code = factor(paste0(
-      "**", code_desc, "**<br><sup>",
-      billing_code_type, " ", billing_code, "</sup>"
+      "**",
+      code_desc,
+      "**<br><sup>",
+      billing_code_type,
+      " ",
+      billing_code,
+      "</sup>"
     )),
     code = fct_rev(fct_reorder2(
       code,
@@ -718,7 +762,8 @@ provider_comp_df |>
   ) +
   scale_fill_manual(
     name = paste0(
-      "← Lowest price", paste0(rep(" ", 100), collapse = ""),
+      "← Lowest price",
+      paste0(rep(" ", 100), collapse = ""),
       "Highest price →\nPrice rank per procedure (row)"
     ),
     values = rev(RColorBrewer::brewer.pal(7, "BuPu")[c(rep(1, 2), 1:7)])
@@ -738,7 +783,8 @@ provider_comp_df |>
     y = "",
     x = "",
     caption = paste0(
-      "Based on ", nrow(provider_comp_df),
+      "Based on ",
+      nrow(provider_comp_df),
       " rates negotiated between providers and Blue Shield of California, ",
       "sourced from Turquoise Health<br>",
       "Stars represent CMS quality ratings for each hospital"
