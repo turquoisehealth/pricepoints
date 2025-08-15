@@ -1,7 +1,7 @@
 [project]
 name = "2025_07_blues"
 version = "0.0.1"
-description = "Blue Card Underpayments"
+description = "BlueCard Underpayments"
 classifiers = [
   "Intended Audience :: Developers",
   "Intended Audience :: Science/Research",
@@ -32,3 +32,7 @@ extend = "../../pyproject.toml"
 
 [tool.setuptools.packages.find]
 include = ["src*"]
+
+[tool.sqlfluff.templater.jinja.context]
+blue_payer_ids = ""
+blue_states = ""
