@@ -45,9 +45,28 @@ sf_use_s2(FALSE)
 options(tigris_use_cache = TRUE)
 ```
 
+```{r load_data}
+blue_rates_df <- read_parquet("data/blue_rates.parquet")
+```
+
+```{r}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 7
+
+blue_rates_df |>
+  filter(state %in% c("CA", "WA", "PA")) |>
+  ggplot() +
+  geom_boxplot(aes(x = canonical_rate_diff, y = state), outliers = FALSE)
+```
+
 ## Plots
 
+- Process flow ala Blue manual diagram
 - Single example of underpayment billing, patient centered
+
+
 - state map of median absolute % difference
 - median difference by pair of insurers
 - distribution of absolute differences by practice area by state

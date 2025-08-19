@@ -49,6 +49,12 @@ blue_rates_df_clean = blue_rates_df.join(
     ]
 )
 
+# Drop some outliers not caught by CLD using % of Medicare rules
+blue_rates_df_clean = blue_rates_df_clean.filter(
+    pl.col("canonical_rate_percent_of_medicare") >= 0.7,
+    pl.col("canonical_rate_percent_of_medicare") <= 100.0,
+)
+
 # For each provider-state-code combination, keep the highest scored rate of
 # each payer, then the min and max if any additional rows remain. Finally,
 # keep only rates that have a provider-code pair
@@ -70,17 +76,30 @@ blue_rates_df_clean = (
     .filter(pl.len().over(blue_rates_cols) >= 2)
 ).sort(blue_rates_cols)
 
-
 # For each pair, calculate the absolute difference and absolute percent
-# difference in rate
-temp = (
-    blue_rates_df_clean.group_by(blue_rates_cols)
-    .agg(
-        pl.col("total_beds").first(),
-        pl.col("canonical_rate").min().alias("min_rate"),
-        pl.col("canonical_rate").max().alias("max_rate"),
-    )
-    .with_columns(
-        (pl.col("max_rate") - pl.col("min_rate")).abs().alias("abs_diff"),
-    )
+# difference between the high and low rate
+blue_rates_df_clean = blue_rates_df_clean.with_columns(
+    pl.col("canonical_rate")
+    .min()
+    .over(blue_rates_cols)
+    .alias("canonical_rate_min"),
+    pl.col("canonical_rate")
+    .max()
+    .over(blue_rates_cols)
+    .alias("canonical_rate_max"),
+).with_columns(
+    (pl.col("canonical_rate_min") - pl.col("canonical_rate_max"))
+    .abs()
+    .alias("canonical_rate_diff"),
+    (pl.col("canonical_rate_max") / pl.col("canonical_rate_min"))
+    .abs()
+    .alias("canonical_rate_pct_diff"),
 )
+
+# Drop some outlier pairs with super high percentage diffs
+blue_rates_df_clean = blue_rates_df_clean.filter(
+    pl.col("canonical_rate_pct_diff") <= 10.0
+)
+
+# Save rates to Parquet for plotting in R
+blue_rates_df_clean.write_parquet("data/blue_rates.parquet")
