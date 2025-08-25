@@ -258,7 +258,6 @@ states_gdf <- tigris::states(cb = TRUE, year = 2023) |>
   select(geoid = GEOID, state = STUSPS, geometry, state_name = NAME) |>
   st_intersection(states_bbox) |>
   tigris::shift_geometry() |>
-  st_simplify(dTolerance = 10000) |>
   mutate(
     bcbs_key = case_when(
       state %in% c("CA", "PA", "WA") ~ "Multiple Blues\nMany underpayments",
@@ -276,6 +275,7 @@ states_gdf <- tigris::states(cb = TRUE, year = 2023) |>
   )
 
 states_gdf |>
+  st_simplify(dTolerance = 10000) |>
   ggplot() +
   geom_sf(aes(fill = bcbs_key)) +
   scale_fill_manual(
@@ -424,10 +424,10 @@ ggplot() +
   labs(
     x = "Abs. difference in negotiated Blue rates",
     y = "Service line",
-    title = "BlueCard underpayments are most profitable for high-cost services",
+    title = "BlueCard negotiated rate gaps are largest for high-cost services",
     subtitle = paste0(
-      "The larger the difference between two in-state Blues, the more a vendor",
-      " can make when they rebill"
+      "The larger the gap between Blues, the more profitable underpayment",
+      " rebilling becomes"
     ),
     caption = paste0(
       "Count of negotiated rates for each service line is shown ",
@@ -452,11 +452,11 @@ ggplot() +
     plot.title = element_text(
       size = 18,
       face = "bold",
-      margin = margin(b = 6, l = -100),
+      margin = margin(b = 6, l = -80),
     ),
     plot.subtitle = element_markdown(
       size = 14,
-      margin = margin(b = 16, l = -100)
+      margin = margin(b = 16, l = -80)
     ),
     plot.margin = margin(r = 50, t = 6, b = 6, l = 6),
     legend.position = "none",
@@ -495,55 +495,108 @@ ggplot() +
   )
 ```
 
-```{r diff_dist_provider, message=FALSE}
+```{r blue_providers_map, message=FALSE, warning=FALSE}}
 #| column: page
 #| out-width: 100%
 #| fig-width: 9
 #| fig-height: 7
 
-diff_dist_provider_df <- blue_rates_df |>
-  filter(!is.na(canonical_rate_diff), !is.na(total_beds)) |>
-  mutate(cnt_rates = n(), .by = c(provider_id, provider_name)) |>
-  group_by(provider_id, provider_name, state) |>
-  mutate(
-    q50 = wtd.quantile(canonical_rate_diff, total_beds, 0.50, na.rm = TRUE),
-    cnt_rates = first(cnt_rates)
-  ) |>
-  ungroup() |>
-  left_join(
-    states_gdf |>
-      st_drop_geometry() |>
-      select(state, state_name),
-    by = "state"
-  ) |>
-  filter(cnt_rates >= 200) |>
-  mutate(cnt_providers = n_distinct(provider_id)) |>
-  mutate(provider_name = fct_rev(fct_reorder(provider_name, q50)))
+blue_providers_df <- read_parquet("data/blue_providers.parquet")
+blue_providers_states <- c("CA", "WA", "PA", "NY", "ID", "VA")
 
-diff_dist_provider_df |>
-ggplot() +
-  ggridges::geom_density_ridges(
-    aes(
-      x = canonical_rate_diff,
-      y = provider_name,
-      group = provider_name,
-      weight = total_beds
-    ),
-    position = position_nudge(y = -0.1),
-    quantile_lines = TRUE,
-    quantiles = 2,
-    quantile_fun = Hmisc::wtd.quantile
+for (state_abb in blue_providers_states) {
+  assign(
+    paste0("p_", tolower(state_abb)),
+    blue_providers_df |>
+      filter(state == state_abb) |>
+    ggplot() +
+      geom_sf(
+        data = states_gdf |>
+          filter(state == state_abb) |>
+          st_simplify(dTolerance = 2000) |>
+          st_transform(4326),
+      ) +
+      geom_point(
+        aes(x = hq_longitude, y = hq_latitude, size = total_beds),
+        alpha = 0.5,
+        color = "#0f638a"
+      ) +
+      guides(size = "none") +
+      coord_sf(expand = FALSE) +
+      theme_void()
   )
+}
+
+p_wa +
+  theme(plot.tag.position = c(0.1, 0.90)) +
+  p_id +
+  theme(plot.tag.position = c(0.6, 0.8)) +
+  p_ny +
+  theme(plot.tag.position = c(0.2, 0.8)) +
+  p_ca +
+  theme(plot.tag.position = c(0.6, 0.8)) +
+  p_pa +
+  theme(plot.tag.position = c(0.0, 0.95)) +
+  p_va +
+  theme(plot.tag.position = c(0.3, 0.7)) +
+  guides(size = guide_legend(
+    override.aes = list(alpha = 0.9),
+    label.position = "bottom")
+  ) +
+  scale_size_area(
+    name = "Hospital number of beds",
+    breaks = c(100, 200, 400, 800),
+    labels = c("< 100", "200", "400", "> 800"),
+  ) +
+  plot_layout(
+    ncol = 3,
+    widths = c(0.34, 0.33, 0.33),
+    heights = c(0.5, 0.5),
+    guides = "collect"
+  ) +
+  plot_annotation(
+    title = "BlueCard underpayments happen at providers where Blues overlaps",
+    subtitle = paste0(
+      "Each dot is a hospital with 2+ Blue contracts. ",
+      "Blank areas of each state have just a single Blue"
+    ),
+    caption = paste0(
+      "Contract data sourced from Turquoise Health as of August 2025\n",
+      "In states with multiple Blues, each Blue may control a region of the ",
+      "state, but often those regions overlap\nProviders in the overlapping ",
+      "areas or on the border of regions are most likely to see underpayments"
+    ),
+    tag_levels = list(c("WA", "ID", "NY", "CA", "PA", "VA"))
+  ) &
+  theme(
+    plot.title = element_text(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 6, l = 30),
+    ),
+    plot.subtitle = element_markdown(
+      size = 14,
+      margin = margin(b = 16, l = 30)
+    ),
+    plot.caption = element_text(
+      size = 10,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    ),
+    plot.tag = element_text(
+      size = 24,
+      face = "bold",
+      color = "grey70"
+    ),
+    legend.position = "bottom",
+    legend.title = element_text(
+      size = 15,
+      face = "bold",
+      margin = margin(r = 10)
+    ),
+    legend.key.spacing.x = unit(0.5, "cm"),
+    legend.key.size = unit(0.75, "cm"),
+    legend.text = element_text(size = 12)
+  )
+
 ```
-
-## Plots
-
-x Process flow ala Blue manual diagram with example
-x Map of states where this is allowed, sub-maps of service areas
-
-x state map of median absolute % difference
-x median difference by pair of insurers
-x distribution of absolute differences by practice area by state
-
-- providers with biggest diffs
-- something estimating the volume of the problem

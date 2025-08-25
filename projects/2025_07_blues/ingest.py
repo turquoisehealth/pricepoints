@@ -25,6 +25,12 @@ with open("queries/blue_rates.sql", "r") as query:
     sql = sql.replace("{{ blue_states }}", blues_twos_states)
     blue_rates_df = pl.read_database(sql, trino_conn)
 
+with open("queries/blue_providers.sql", "r") as query:
+    sql_template = query.read()
+    sql = sql_template.replace("{{ blue_payer_ids }}", blues_twos_payer_ids)
+    sql = sql.replace("{{ blue_states }}", blues_twos_states)
+    blue_providers_df = pl.read_database(sql, trino_conn)
+
 
 ###### Data cleaning ###########################################################
 
@@ -103,3 +109,8 @@ blue_rates_df_clean = blue_rates_df_clean.filter(
 
 # Save rates to Parquet for plotting in R
 blue_rates_df_clean.write_parquet("data/blue_rates.parquet")
+
+# Keep only providers with more than one Blue payer
+blue_providers_df.filter(
+    pl.n_unique("payer_id").over("provider_id") >= 2
+).write_parquet("data/blue_providers.parquet")
