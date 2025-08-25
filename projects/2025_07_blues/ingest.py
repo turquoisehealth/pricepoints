@@ -73,7 +73,7 @@ blue_rates_df_clean = (
             pl.col("canonical_rate").is_first_distinct(),
         ).over(blue_rates_cols)
     )
-    .filter(pl.len().over(blue_rates_cols) >= 2)
+    .filter(pl.n_unique("payer_id").over(blue_rates_cols) >= 2)
 ).sort(blue_rates_cols)
 
 # For each pair, calculate the absolute difference and absolute percent

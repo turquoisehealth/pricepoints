@@ -19,6 +19,7 @@ library(conflicted)
 library(data.table)
 library(dplyr)
 library(forcats)
+library(ggimage)
 library(ggplot2)
 library(ggraph)
 library(ggrepel)
@@ -31,6 +32,7 @@ library(lubridate)
 library(patchwork)
 library(prettymapr)
 library(raster)
+library(readr)
 library(scales)
 library(sf)
 library(stringr)
@@ -45,31 +47,503 @@ sf_use_s2(FALSE)
 options(tigris_use_cache = TRUE)
 ```
 
-```{r load_data}
+```{r load_data, message=FALSE}
+blues_df <- read_csv("data/blues.csv", col_types = "cccccc")
 blue_rates_df <- read_parquet("data/blue_rates.parquet")
 ```
 
-```{r}
+```{r state_gap_plot, message=FALSE}
 #| column: page
 #| out-width: 100%
 #| fig-width: 9
 #| fig-height: 7
 
-blue_rates_df |>
-  filter(state %in% c("CA", "WA", "PA")) |>
+txt_adj_factor <- 500
+blue_rates_state_agg_df <- blue_rates_df |>
+  filter(billing_code == "871") |>
+  # Drop third and fourth payers in some states where they basically overlap
+  # with an existing payer when plotted
+  filter(!payer_id %in% c("101", "56")) |>
+  group_by(state, payer_name, payer_id) |>
+  summarize(
+    med_rate = median(canonical_rate),
+    num_rates = n()
+  ) |>
+  ungroup() |>
+  left_join(
+    blues_df |>
+      select(state_name, tq_payer_id, payer_acronym) |>
+      filter(!payer_acronym %in% c("BSNENY", "Highmark BS")),
+    by = c("state" = "state_name", "payer_id" = "tq_payer_id")
+  ) |>
+  mutate(
+    image = case_when(
+      payer_acronym == "Empire BCBS" ~ "images/bcbs.png",
+      str_detect(tolower(payer_name), "cross") &
+        str_detect(tolower(payer_name), "shield") ~ "images/bcbs.png",
+      str_detect(tolower(payer_name), "cross|anthem") ~ "images/bc.png",
+      str_detect(tolower(payer_name), "shield") ~ "images/bs.png"
+    ),
+    hjust = case_when(
+      payer_acronym == "Empire BCBS" ~ 1.4,
+      payer_id == "61" & state == "ID" ~ 0.4,
+      med_rate == min(med_rate) ~ 1,
+      med_rate == max(med_rate) ~ 0,
+      TRUE ~ 0.5
+    ),
+    adjusted_med = case_when(
+      med_rate == min(med_rate) ~ med_rate - txt_adj_factor,
+      med_rate == max(med_rate) ~ med_rate + txt_adj_factor,
+      TRUE ~ med_rate
+    ),
+    state_min = min(med_rate),
+    .by = state
+  ) |>
+  mutate(state = fct_rev(fct_reorder(state, state_min)))
+
+# Make a dedicated dataframe to draw segments between payers
+blues_rates_state_seg <- blue_rates_state_agg_df |>
+  mutate(
+    adjusted_med = case_when(
+      med_rate == min(med_rate) ~ med_rate + txt_adj_factor,
+      med_rate == max(med_rate) ~ med_rate - txt_adj_factor
+    ),
+    payer_idx = paste0("payer_", row_number()),
+    .by = state
+  ) |>
+  pivot_wider(
+    id_cols = c(state),
+    names_from = payer_idx,
+    values_from = c(adjusted_med, med_rate)
+  ) |>
+  mutate(
+    rate_diff = label_dollar(scale = 1, accuracy = 1)(
+      abs(med_rate_payer_2 - med_rate_payer_1)
+    ),
+    rate_mean = rowMeans(across(c(med_rate_payer_1, med_rate_payer_2))),
+    rate_diff_label = ifelse(
+      state == "NY",
+      paste0("Rate difference: ", rate_diff),
+      rate_diff
+    ),
+    across(
+      starts_with("adjusted_med"),
+      \(x) ifelse(state == "PA", NA, x)
+    ),
+    y = as.numeric(state),
+    y = ifelse(y == 4, y - 0.1, y) # Adjust PA to avoid overlap
+  )
+
+blue_rates_state_agg_df |>
   ggplot() +
-  geom_boxplot(aes(x = canonical_rate_diff, y = state), outliers = FALSE)
+  geom_tile(
+    aes(
+      x = med_rate,
+      y = state,
+      fill = state
+    ),
+    width = Inf,
+    alpha = 0.2
+  ) +
+  geom_image(aes(x = med_rate, y = state, image = image)) +
+  geom_segment(
+    data = blues_rates_state_seg,
+    aes(
+      x = adjusted_med_payer_1,
+      xend = adjusted_med_payer_2,
+      y = state,
+      yend = state
+    )
+  ) +
+  geom_text(
+    data = blues_rates_state_seg,
+    aes(
+      x = rate_mean,
+      y = y,
+      label = rate_diff_label
+    ),
+    nudge_y = -0.175,
+    size = 3,
+    color = "grey40",
+  ) +
+  geom_text(
+    aes(x = adjusted_med, y = state, hjust = hjust, label = payer_acronym),
+    size = 4,
+    color = "grey10",
+    nudge_y = 0.25
+  ) +
+  scale_x_continuous(
+    labels = label_dollar(scale = 1 / 1000, suffix = "K"),
+    expand = expansion(mult = c(0.06, 0.01))
+  ) +
+  scale_y_discrete(expand = c(0, 0)) +
+  scale_fill_manual(
+    values = c(
+      "NY" = "grey90",
+      "CA" = "grey75",
+      "WA" = "grey90",
+      "PA" = "grey75",
+      "VA" = "grey90",
+      "ID" = "grey75"
+    )
+  ) +
+  guides(fill = "none") +
+  labs(
+    x = "Median rate per payer",
+    y = "State",
+    title = paste0(
+      "BlueCard underpayments occur due to rate gaps between\nBCBSA-affliated",
+      " payers in the same state"
+    ),
+    subtitle = paste0(
+      "For MS-DRG 871 (sepsis), NY and WA have the largest ",
+      "rate gap between Blue payers"
+    ),
+    caption = paste0(
+      "Median values are unweighted and only include providers with ",
+      "contracts for two or more payers\n",
+      "Based on ",
+      blue_rates_state_agg_df |>
+        summarize(count = sum(num_rates)) |>
+        pull(count),
+      " negotiated commercial rates from Turquoise Health"
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 20,
+      face = "bold",
+      margin = margin(b = 8)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 16)
+    ),
+    axis.title.y = element_blank(),
+    axis.text.y = element_markdown(
+      size = 16,
+      margin = margin(r = 4),
+      face = "bold"
+    ),
+    axis.title.x = element_text(
+      margin = margin(t = 10),
+      size = 15,
+      face = "bold"
+    ),
+    panel.grid.major.y = element_blank(),
+    panel.grid.major.x = element_line(color = "grey80"),
+    panel.grid.minor.x = element_line(color = "grey90"),
+    axis.text.x = element_markdown(size = 13, lineheight = 1.1),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 20)
+    )
+  )
+```
+
+```{r state_map, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 6
+
+states_bbox <- c(xmin = -168, xmax = -65, ymin = 18.5, ymax = 72) |>
+  st_bbox(crs = 4326) |>
+  st_as_sfc() |>
+  st_transform(4269)
+states_gdf <- tigris::states(cb = TRUE, year = 2023) |>
+  filter(str_sub(GEOID) <= "56") |>
+  select(geoid = GEOID, state = STUSPS, geometry, state_name = NAME) |>
+  st_intersection(states_bbox) |>
+  tigris::shift_geometry() |>
+  st_simplify(dTolerance = 10000) |>
+  mutate(
+    bcbs_key = case_when(
+      state %in% c("CA", "PA", "WA") ~ "Multiple Blues\nMany underpayments",
+      state %in% c("NY", "VA", "ID", "MO") ~ "Multiple Blues",
+      TRUE ~ "One Blue"
+    ),
+    bcbs_key = factor(
+      bcbs_key,
+      levels = c(
+        "Multiple Blues\nMany underpayments",
+        "Multiple Blues",
+        "One Blue"
+      )
+    )
+  )
+
+states_gdf |>
+  ggplot() +
+  geom_sf(aes(fill = bcbs_key)) +
+  scale_fill_manual(
+    name = "",
+    values = c(
+      "Multiple Blues\nMany underpayments" = "#0f638a",
+      "Multiple Blues" = "#52b4e2",
+      "One Blue" = "grey90"
+    ),
+    guide = "none"
+  ) +
+  coord_sf(expand = FALSE) +
+  guides(fill = guide_legend(override.aes = list(color = "grey20"))) +
+  labs(
+    title = paste0(
+      "BlueCard underpayments occur mainly in three big states"
+    ),
+    subtitle = paste0(
+      "Other states with multiple Blues are regionally divided*, making ",
+      "underpayments less likely"
+    ),
+    caption = paste0(
+      "* For example, in Missouri, Blue Cross and Blue Shield of Kansas City ",
+      "covers only Kansas City and the\nsurrounding counties, ",
+      "while Anthem Blue Cross and Blue Shield covers the rest of the state"
+    )
+  ) +
+  theme(
+    panel.grid = element_blank(),
+    panel.background = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    legend.key.spacing.y = unit(0.25, "cm"),
+    legend.title = element_text(
+      size = 15,
+      face = "bold",
+      margin = margin(b = 10)
+    ),
+    legend.margin = margin(t = 80, l = -40),
+    legend.key.size = unit(0.75, "cm"),
+    legend.text = element_text(size = 12),
+    plot.title = element_text(
+      size = 20,
+      face = "bold",
+      margin = margin(b = 6)
+    ),
+    plot.subtitle = element_markdown(size = 15, margin = margin(b = 14)),
+    plot.caption = element_text(
+      size = 10,
+      lineheight = 1.1,
+      hjust = 1,
+      margin = margin(t = 10, r = -120)
+    )
+  )
+```
+
+```{r diff_dist_service, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 7
+
+diff_dist_service_df <- blue_rates_df |>
+  filter(state %in% c("CA", "WA", "PA")) |>
+  mutate(cnt_providers = n_distinct(provider_id)) |>
+  mutate(cnt_rates = n(), .by = service_line) |>
+  group_by(service_line, state) |>
+  summarize(
+    q10 = wtd.quantile(canonical_rate_diff, total_beds, 0.10, na.rm = TRUE),
+    q25 = wtd.quantile(canonical_rate_diff, total_beds, 0.25, na.rm = TRUE),
+    q50 = wtd.quantile(canonical_rate_diff, total_beds, 0.50, na.rm = TRUE),
+    q75 = wtd.quantile(canonical_rate_diff, total_beds, 0.75, na.rm = TRUE),
+    q90 = wtd.quantile(canonical_rate_diff, total_beds, 0.90, na.rm = TRUE),
+    cnt_rates = first(cnt_rates),
+    cnt_providers = first(cnt_providers)
+  ) |>
+  ungroup() |>
+  left_join(
+    states_gdf |>
+      st_drop_geometry() |>
+      select(state, state_name),
+    by = "state"
+  ) |>
+  mutate(
+    # Show arrows where plot whiskers go off chart
+    arrow_end = ifelse(q90 > 48000, "→", ""),
+    # Cap p90 at plot bounds
+    q90 = pmin(q90, 48000),
+    service_line = fct_rev(fct_reorder(service_line, q50)),
+    # Show rate count on right side of plot
+    provider_total = scales::label_comma()(cnt_providers),
+    rate_total = scales::label_comma()(sum(cnt_rates) / 3),
+    rate_count = scales::label_comma()(ifelse(state == "PA", cnt_rates, NA)),
+    state_name = factor(
+      state_name,
+      levels = c("California", "Washington", "Pennsylvania")
+    )
+  ) |>
+  filter(
+    !str_detect(service_line, "Consultative|Lab/Path|NA|Rehab"),
+    !is.na(service_line)
+  )
+
+diff_dist_service_df |>
+ggplot() +
+  geom_boxplot(
+    aes(
+      xmin = q10,
+      xlower = q25,
+      xmiddle = q50,
+      xupper = q75,
+      xmax = q90,
+      y = service_line
+    ),
+    stat = "identity",
+    color = "grey10",
+    width = 0.8
+  ) +
+  geom_text(
+    aes(
+      x = 50000,
+      y = service_line,
+      label = rate_count
+    ),
+    hjust = 0,
+    size = 3,
+    color = "grey40"
+  ) +
+  geom_text(
+    aes(
+      x = 48000,
+      y = service_line,
+      label = arrow_end
+    ),
+    hjust = 1,
+    size = 6,
+    color = "grey10",
+    nudge_y = 0.085
+  ) +
+  scale_x_continuous(
+    labels = label_dollar(scale = 1 / 1000, suffix = "K"),
+    breaks = c(0, 20000, 40000)
+  ) +
+  facet_wrap(vars(state_name), nrow = 1) +
+  coord_cartesian(xlim = c(0, 46000), clip = "off") +
+  labs(
+    x = "Abs. difference in negotiated Blue rates",
+    y = "Service line",
+    title = "BlueCard underpayments are most profitable for high-cost services",
+    subtitle = paste0(
+      "The larger the difference between two in-state Blues, the more a vendor",
+      " can make when they rebill"
+    ),
+    caption = paste0(
+      "Count of negotiated rates for each service line is shown ",
+      "to the right of the plot\n",
+      "Boxplots show weighted quantiles of absolute differences in ",
+      "negotiated rates for providers with contracts for 2+ ",
+      "BCBSA-affiliated payers\n",
+            "Based on ",
+      diff_dist_service_df |>
+        pull(rate_total) |>
+        unique(),
+      " negotiated commercial insurance rates from",
+      " Turquoise Health, covering ",
+      diff_dist_service_df |>
+        pull(provider_total) |>
+        unique(),
+      " hospitals"
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 6, l = -100),
+    ),
+    plot.subtitle = element_markdown(
+      size = 14,
+      margin = margin(b = 16, l = -100)
+    ),
+    plot.margin = margin(r = 50, t = 6, b = 6, l = 6),
+    legend.position = "none",
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 15,
+      face = "bold",
+      color = "grey30",
+      linewidth = 1.2
+    ),
+    axis.text.x = element_text(size = 12),
+    axis.ticks.y = element_blank(),
+    axis.title.y = element_markdown(
+      size = 15,
+      face = "bold",
+      color = "grey30",
+      margin = margin(r = 2)
+    ),
+    axis.text.y = element_markdown(size = 11, lineheight = 1.3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.border = element_rect(
+      color = "black",
+      fill = "transparent"
+    ),
+    strip.text = element_markdown(
+      size = 14,
+      face = "bold",
+      margin = margin(b = 6)
+    ),
+    plot.caption = element_text(
+      size = 10,
+      lineheight = 1.1,
+      margin = margin(t = 16, r = -40)
+    )
+  )
+```
+
+```{r diff_dist_provider, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 7
+
+diff_dist_provider_df <- blue_rates_df |>
+  filter(!is.na(canonical_rate_diff), !is.na(total_beds)) |>
+  mutate(cnt_rates = n(), .by = c(provider_id, provider_name)) |>
+  group_by(provider_id, provider_name, state) |>
+  mutate(
+    q50 = wtd.quantile(canonical_rate_diff, total_beds, 0.50, na.rm = TRUE),
+    cnt_rates = first(cnt_rates)
+  ) |>
+  ungroup() |>
+  left_join(
+    states_gdf |>
+      st_drop_geometry() |>
+      select(state, state_name),
+    by = "state"
+  ) |>
+  filter(cnt_rates >= 200) |>
+  mutate(cnt_providers = n_distinct(provider_id)) |>
+  mutate(provider_name = fct_rev(fct_reorder(provider_name, q50)))
+
+diff_dist_provider_df |>
+ggplot() +
+  ggridges::geom_density_ridges(
+    aes(
+      x = canonical_rate_diff,
+      y = provider_name,
+      group = provider_name,
+      weight = total_beds
+    ),
+    position = position_nudge(y = -0.1),
+    quantile_lines = TRUE,
+    quantiles = 2,
+    quantile_fun = Hmisc::wtd.quantile
+  )
 ```
 
 ## Plots
 
-- Process flow ala Blue manual diagram
-- Single example of underpayment billing, patient centered
+x Process flow ala Blue manual diagram with example
+x Map of states where this is allowed, sub-maps of service areas
 
+x state map of median absolute % difference
+x median difference by pair of insurers
+x distribution of absolute differences by practice area by state
 
-- state map of median absolute % difference
-- median difference by pair of insurers
-- distribution of absolute differences by practice area by state
-- Biggest differences by state
-
+- providers with biggest diffs
 - something estimating the volume of the problem
