@@ -42,8 +42,39 @@ options(tigris_use_cache = TRUE)
 ```
 
 ```{r load_data, message=FALSE}
+# Load saved data from ingest.py
 blues_df <- read_csv("data/blues.csv", col_types = "cccccc")
 blue_rates_df <- read_parquet("data/blue_rates.parquet")
+blue_providers_df <- read_parquet("data/blue_providers.parquet")
+employers_df <- read_parquet("data/employers.parquet")
+```
+
+```{r load_state_data, message=FALSE}
+# Bounding box to clip the Aleutian Islands
+states_bbox <- c(xmin = -168, xmax = -65, ymin = 18.5, ymax = 72) |>
+  st_bbox(crs = 4326) |>
+  st_as_sfc() |>
+  st_transform(4269)
+states_gdf <- tigris::states(cb = TRUE, year = 2023) |>
+  filter(str_sub(GEOID) <= "56") |>
+  select(geoid = GEOID, state = STUSPS, geometry, state_name = NAME) |>
+  st_intersection(states_bbox) |>
+  tigris::shift_geometry() |>
+  mutate(
+    bcbs_key = case_when(
+      state %in% c("CA", "PA", "WA") ~ "Multiple Blues\nMany underpayments",
+      state %in% c("NY", "VA", "ID", "MO") ~ "Multiple Blues",
+      TRUE ~ "One Blue"
+    ),
+    bcbs_key = factor(
+      bcbs_key,
+      levels = c(
+        "Multiple Blues\nMany underpayments",
+        "Multiple Blues",
+        "One Blue"
+      )
+    )
+  )
 ```
 
 ```{r state_gap_plot, message=FALSE}
@@ -52,8 +83,10 @@ blue_rates_df <- read_parquet("data/blue_rates.parquet")
 #| fig-width: 9
 #| fig-height: 7
 
+# Fudge factor for buffering the logos of Blues so segment doesn't overlap them
 txt_adj_factor <- 500
 blue_rates_state_agg_df <- blue_rates_df |>
+  # Only look at sepsis
   filter(billing_code == "871") |>
   # Drop third and fourth payers in some states where they basically overlap
   # with an existing payer when plotted
@@ -243,31 +276,6 @@ blue_rates_state_agg_df |>
 #| fig-width: 9
 #| fig-height: 6
 
-states_bbox <- c(xmin = -168, xmax = -65, ymin = 18.5, ymax = 72) |>
-  st_bbox(crs = 4326) |>
-  st_as_sfc() |>
-  st_transform(4269)
-states_gdf <- tigris::states(cb = TRUE, year = 2023) |>
-  filter(str_sub(GEOID) <= "56") |>
-  select(geoid = GEOID, state = STUSPS, geometry, state_name = NAME) |>
-  st_intersection(states_bbox) |>
-  tigris::shift_geometry() |>
-  mutate(
-    bcbs_key = case_when(
-      state %in% c("CA", "PA", "WA") ~ "Multiple Blues\nMany underpayments",
-      state %in% c("NY", "VA", "ID", "MO") ~ "Multiple Blues",
-      TRUE ~ "One Blue"
-    ),
-    bcbs_key = factor(
-      bcbs_key,
-      levels = c(
-        "Multiple Blues\nMany underpayments",
-        "Multiple Blues",
-        "One Blue"
-      )
-    )
-  )
-
 states_gdf |>
   st_simplify(dTolerance = 10000) |>
   ggplot() +
@@ -292,7 +300,7 @@ states_gdf |>
       "underpayments less likely"
     ),
     caption = paste0(
-      "* For example, in Missouri, Blue Cross and Blue Shield of Kansas City ",
+      "*For example, in Missouri, Blue Cross and Blue Shield of Kansas City ",
       "covers only Kansas City and the\nsurrounding counties, ",
       "while Anthem Blue Cross and Blue Shield covers the rest of the state"
     )
@@ -332,6 +340,7 @@ states_gdf |>
 #| fig-width: 9
 #| fig-height: 7
 
+# Get quantiles of absolute differences in rates for each service line
 diff_dist_service_df <- blue_rates_df |>
   filter(state %in% c("CA", "WA", "PA")) |>
   mutate(cnt_providers = n_distinct(provider_id)) |>
@@ -354,7 +363,7 @@ diff_dist_service_df <- blue_rates_df |>
     by = "state"
   ) |>
   mutate(
-    # Cap p90 at plot bounds
+    # Cap p90 at plot bounds and replace with arrows pointing right
     q90 = pmin(q90, 48000),
     service_line = fct_rev(fct_reorder(service_line, q50)),
     # Show rate count on right side of plot
@@ -493,9 +502,9 @@ diff_dist_service_df |>
 #| fig-width: 9
 #| fig-height: 7
 
-blue_providers_df <- read_parquet("data/blue_providers.parquet")
+# Create a sub-plot for each major BlueCard state, then arrange them in
+# a single plot
 blue_providers_states <- c("CA", "WA", "PA", "NY", "ID", "VA")
-
 for (state_abb in blue_providers_states) {
   assign(
     paste0("p_", tolower(state_abb)),
@@ -592,5 +601,107 @@ p_wa +
     legend.key.size = unit(0.75, "cm"),
     legend.text = element_text(size = 12)
   )
+```
 
+```{r employers_plot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 7
+
+employers_df |>
+  mutate(
+    emp_name_short = case_match(
+      employer_name,
+      "TARGET CORPORATION" ~ "Target",
+      "HOME DEPOT USA, INC." ~ "Home Depot",
+      "THE TJX COMPANIES, INC." ~ "TJ Maxx",
+      "BANK OF AMERICA CORPORATION" ~ "Bank of America",
+      "PEPSICO, INC." ~ "Pepsi",
+      "ROSS STORES, INC." ~ "Ross",
+      "GOOGLE LLC" ~ "Google",
+      "MARRIOTT INTERNATIONAL, INC." ~ "Marriott",
+      "BEST BUY CO., INC." ~ "Best Buy",
+      "EXTENSIS GROUP, LLC" ~ "Extensis Group",
+      "LOCKHEED MARTIN CORPORATION" ~ "Lockheed Martin",
+      "CHARTER COMMUNICATIONS, INC." ~ "Charter Comm.",
+      "NORTHROP GRUMMAN CORPORATION" ~ "Northrop Grumman",
+      "ADVANCE STORES COMPANY, INC." ~ "Advance Auto Parts",
+      "SECURITAS SECURITY SERVICES USA INC" ~ "Securitas",
+      "UNITED PARCEL SERVICE OF AMERICA, INC." ~ "UPS",
+      "THE KROGER CO" ~ "Kroger",
+      "OASIS OUTSOURCING HOLDINGS, INC. AND ITS AFFILIATES" ~ "Paychex",
+      "CIRCLE K STORES, INC." ~ "Circle K",
+      "DAVITA INC." ~ "DaVita",
+      "FORD MOTOR COMPANY" ~ "Ford",
+      "ALLEGIS GROUP, INC." ~ "Allegis Group",
+      "INTEL CORPORATION" ~ "Intel",
+      "GUARDIAN INDEPENDENT OPERATOR ASSOCIATION, INC." ~ "GIOA (Chick-fil-A)",
+      "FEDERAL EXPRESS CORPORATION" ~ "FedEx",
+      "RESCARE, INC. D/B/A BRIGHTSPRING HEALTH SERVICES" ~ "BrightSpring",
+      "MEDTRONIC" ~ "Medtronic",
+      "THE PNC FINANCIAL SERVICES GROUP, INC." ~ "PNC",
+      .default = employer_name
+    ),
+    emp_name_short = paste0(
+      "**", emp_name_short, "** <span style='font-family:mono'>(",
+      employer_state, ")</span>"
+    ),
+    emp_name_short = fct_reorder(emp_name_short, tot_active_partcp_cnt)
+  ) |>
+  ggplot() +
+  geom_col(
+    aes(x = tot_active_partcp_cnt, y = emp_name_short)
+  ) +
+  scale_x_continuous(
+    name = "Total number of employee benefit plan participants (2022)",
+    labels = label_comma(scale = 1 / 1000, suffix = "K"),
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  labs(
+    title = "Many large, multi-state employers have Blue insurance plans*",
+    subtitle = paste0(
+      "Employees that live outside the Blue plan state are subject to ",
+      "BlueCard underpayments"
+    ),
+    caption = paste0(
+      "*Employers may offer multiple health insurance options, and not all ",
+      "active employees will choose the Blue plan\n",
+      "The state next to each employer's name is their headquarters ",
+      "location, which usually matches their Blue plan's home location\n",
+      "Based on 2022 data from Form 5500 filings with the ",
+      "DOL/IRS and payer plan data from Turquoise Health"
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 20,
+      face = "bold",
+      margin = margin(b = 8, l = -170)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 16, l = -170)
+    ),
+    axis.title.y = element_blank(),
+    axis.text.y = element_markdown(
+      size = 14,
+      margin = margin(r = 4)
+    ),
+    axis.title.x = element_text(
+      margin = margin(t = 10),
+      size = 15,
+      face = "bold"
+    ),
+    panel.grid.major.y = element_blank(),
+    panel.grid.major.x = element_line(color = "grey80"),
+    panel.grid.minor.x = element_line(color = "grey90"),
+    axis.text.x = element_markdown(size = 13, lineheight = 1.1),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 20)
+    )
+  )
 ```

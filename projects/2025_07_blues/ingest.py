@@ -10,6 +10,10 @@ trino_conn = get_trino_connection()
 blues_df = pl.read_csv(
     "data/blues.csv", schema_overrides={"state_fips": pl.String}
 )
+blues_payer_ids = ",".join(
+    f"'{val}'" for val in blues_df["tq_payer_id"].unique().to_list()
+)
+
 blues_twos_df = blues_df.filter(pl.len().over("state_fips") >= 2)
 blues_twos_payer_ids = ",".join(
     f"'{val}'" for val in blues_twos_df["tq_payer_id"].unique().to_list()
@@ -30,6 +34,16 @@ with open("queries/blue_providers.sql", "r") as query:
     sql = sql_template.replace("{{ blue_payer_ids }}", blues_twos_payer_ids)
     sql = sql.replace("{{ blue_states }}", blues_twos_states)
     blue_providers_df = pl.read_database(sql, trino_conn)
+
+with open("queries/stoploss.sql", "r") as query:
+    sql_template = query.read()
+    sql = sql_template.replace("{{ blue_payer_ids }}", blues_twos_payer_ids)
+    stoploss_df = pl.read_database(sql, trino_conn)
+
+with open("queries/employers.sql", "r") as query:
+    sql_template = query.read()
+    sql = sql_template.replace("{{ blue_payer_ids }}", blues_payer_ids)
+    employers_df = pl.read_database(sql, trino_conn)
 
 
 ###### Data cleaning ###########################################################
@@ -114,3 +128,35 @@ blue_rates_df_clean.write_parquet("data/blue_rates.parquet")
 blue_providers_df.filter(
     pl.n_unique("payer_id").over("provider_id") >= 2
 ).write_parquet("data/blue_providers.parquet")
+
+# Grab the top N employers with PPO plans from a Blue payer
+(
+    employers_df.filter(
+        ~pl.col("plan_name")
+        .str.to_lowercase()
+        .str.contains_any(
+            [" hmo", " epo", "hmo ", "epo ", "live health online"]
+        )
+    )
+    .select(
+        [
+            "employer_name",
+            "employer_state",
+            "tot_active_partcp_cnt",
+            "plan_name",
+            "payer_name",
+            "payer_id",
+        ]
+    )
+    .unique(["employer_name"])
+    .filter(
+        ~pl.col("employer_name").is_in(
+            ["ATH HOLDING COMPANY LLC", "UNIVERSAL SERVICES OF AMERICA, LP"]
+        )
+    )
+    .top_k(k=20, by="tot_active_partcp_cnt")
+).write_parquet("data/employers.parquet")
+
+temp = stoploss_df.select(
+    ["additional_generic_notes", "additional_payer_notes"]
+).unique()
