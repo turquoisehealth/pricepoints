@@ -105,6 +105,7 @@ blue_rates_state_agg_df <- blue_rates_df |>
   ) |>
   mutate(
     image = case_when(
+      payer_acronym %in% c("Regence ID", "Regence") ~ "images/bs.png",
       payer_acronym == "Empire BCBS" ~ "images/bcbs.png",
       str_detect(tolower(payer_name), "cross") &
         str_detect(tolower(payer_name), "shield") ~ "images/bcbs.png",
@@ -558,7 +559,7 @@ p_wa +
     guides = "collect"
   ) +
   plot_annotation(
-    title = "BlueCard underpayments happen at providers where Blues overlaps",
+    title = "BlueCard underpayments happen at providers where Blues overlap",
     subtitle = paste0(
       "Each dot is a hospital with 2+ Blue contracts. ",
       "Blank areas of each state have just a single Blue"
