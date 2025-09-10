@@ -6,7 +6,7 @@ trino_conn = get_trino_connection()
 
 ###### Data loading ############################################################
 
-# Load flatfile of all Blues by state, then keep only states with 2+ Blues
+# Load flatfile of all Blues by state and transform to string of payer IDs
 blues_df = pl.read_csv(
     "data/blues.csv", schema_overrides={"state_fips": pl.String}
 )
@@ -14,6 +14,7 @@ blues_payer_ids = ",".join(
     f"'{val}'" for val in blues_df["tq_payer_id"].unique().to_list()
 )
 
+# Keep only states with 2+ Blues, make a separate list of those IDs
 blues_twos_df = blues_df.filter(pl.len().over("state_fips") >= 2)
 blues_twos_payer_ids = ",".join(
     f"'{val}'" for val in blues_twos_df["tq_payer_id"].unique().to_list()
@@ -40,6 +41,7 @@ with open("queries/stoploss.sql", "r") as query:
     sql = sql_template.replace("{{ blue_payer_ids }}", blues_twos_payer_ids)
     stoploss_df = pl.read_database(sql, trino_conn)
 
+# Grab employers that utilize any Blue payer
 with open("queries/employers.sql", "r") as query:
     sql_template = query.read()
     sql = sql_template.replace("{{ blue_payer_ids }}", blues_payer_ids)
@@ -156,7 +158,3 @@ blue_providers_df.filter(
     )
     .top_k(k=20, by="tot_active_partcp_cnt")
 ).write_parquet("data/employers.parquet")
-
-temp = stoploss_df.select(
-    ["additional_generic_notes", "additional_payer_notes"]
-).unique()
