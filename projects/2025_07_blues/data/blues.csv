@@ -1,0 +1,63 @@
+bc_payer_id,tq_payer_id,state_name,state_fips,payer_name,payer_acronym
+510,160,AL,01,Blue Cross and Blue Shield of Alabama,BCBSAL
+430,628,AK,02,Premera Blue Cross Blue Shield of Alaska,Premera
+030,43,AZ,04,Blue Cross Blue Shield of Arizona,BCBSAZ
+020,454,AR,05,Arkansas Blue Cross and Blue Shield,BCBSAR
+040,42,CA,06,Anthem Blue Cross (California),Anthem CA
+042,403,CA,06,Blue Shield of California,Blue Shield CA
+051,42,CO,08,Anthem Blue Cross and Blue Shield Colorado,BCBSCO
+062,42,CT,09,Anthem Blue Cross and Blue Shield Connecticut,BCBSCT
+070,174,DE,10,Highmark Blue Cross Blue Shield Delaware,BCBSDE
+690,44,DC,11,CareFirst BlueCross BlueShield,CareFirst
+590,388,FL,12,Florida Blue (Blue Cross Blue Shield of Florida),BCBSFL
+102,42,GA,13,Anthem Blue Cross and Blue Shield of Georgia,BCBSGA
+471,455,HI,15,Blue Cross and Blue Shield of Hawaii,HMSA
+110,383,ID,16,Blue Cross of Idaho,BCI
+611,61,ID,16,Regence BlueShield of Idaho,Regence ID
+121,389,IL,17,Blue Cross and Blue Shield of Illinois,BCBSIL
+131,42,IN,18,Anthem Blue Cross and Blue Shield Indiana,BCBSIN
+140,461,IA,19,Wellmark Blue Cross and Blue Shield (Iowa),Wellmark IA
+150,390,KS,20,Blue Cross and Blue Shield of Kansas,BCBSKS
+161,42,KY,21,Anthem Blue Cross and Blue Shield Kentucky,BCBSKY
+170,391,LA,22,Blue Cross and Blue Shield of Louisiana,BCBSLA
+182,42,ME,23,Anthem Blue Cross and Blue Shield Maine,BCBSME
+690,44,MD,24,CareFirst BlueCross BlueShield,CareFirst
+700,392,MA,25,Blue Cross and Blue Shield of Massachusetts,BCBSMA
+710,49,MI,26,Blue Cross Blue Shield of Michigan,BCBSMI
+720,50,MN,27,Blue Cross and Blue Shield of Minnesota,BCBSMN
+230,456,MS,28,Blue Cross & Blue Shield of Mississippi,BCBSMS
+748,42,MO,29,Anthem Blue Cross and Blue Shield Missouri,BCBSMO
+240,47,MO,29,Blue Cross and Blue Shield of Kansas City,Blue KC
+250,165,MT,30,Blue Cross and Blue Shield of Montana,BCBSMT
+260,51,NE,31,Blue Cross and Blue Shield of Nebraska,BCBSNE
+266,42,NV,32,Anthem Blue Cross and Blue Shield Nevada,BCBSNV
+271,42,NH,33,Anthem Blue Cross and Blue Shield New Hampshire,BCBSNH
+280,229,NJ,34,Horizon Blue Cross and Blue Shield of New Jersey,Horizon BCBSNJ
+290,166,NM,35,Blue Cross and Blue Shield of New Mexico,BCBSNM
+254,42,NY,36,Anthem Blue Cross Blue Shield (Empire BCBS),Empire BCBS
+301,174,NY,36,Highmark Blue Cross Blue Shield of Western New York,BCBSWNY
+800,174,NY,36,Highmark Blue Shield of Northeastern New York,BSNENY
+302,101,NY,36,Excellus BlueCross BlueShield,Excellus BCBS
+310,52,NC,37,Blue Cross and Blue Shield of North Carolina,BCBSNC
+320,458,ND,38,Blue Cross Blue Shield of North Dakota,BCBSND
+330,42,OH,39,Anthem Blue Cross and Blue Shield Ohio,BCBSOH
+340,53,OK,40,Blue Cross and Blue Shield of Oklahoma,BCBSOK
+850,61,OR,41,Regence BlueCross BlueShield of Oregon,Regence OR
+361,54,PA,42,Capital Blue Cross,Capital
+378,174,PA,42,Highmark Blue Shield,Highmark BS
+363,174,PA,42,Highmark Blue Cross Blue Shield,Highmark BCBS
+362,56,PA,42,Independence Blue Cross,IBX
+370,397,RI,44,Blue Cross & Blue Shield of Rhode Island,BCBSRI
+380,168,SC,45,Blue Cross and Blue Shield of South Carolina,BCBSSC
+141,461,SD,46,Wellmark Blue Cross and Blue Shield (South Dakota),Wellmark SD
+890,398,TN,47,BlueCross BlueShield of Tennessee,BCBST
+400,169,TX,48,Blue Cross and Blue Shield of Texas,BCBSTX
+410,61,UT,49,Regence BlueCross BlueShield of Utah,Regence UT
+415,462,VT,50,Blue Cross and Blue Shield of Vermont,BCBSVT
+425,42,VA,51,Anthem Blue Cross and Blue Shield Virginia,BCBSVA
+690,44,VA,51,CareFirst BlueCross BlueShield,CareFirst
+430,628,WA,53,Premera Blue Cross,Premera
+932,61,WA,53,Regence BlueShield,Regence
+443,174,WV,54,Highmark Blue Cross Blue Shield West Virginia,BCBSWV
+458,42,WI,55,Anthem Blue Cross and Blue Shield Wisconsin,BCBSWI
+460,464,WY,56,Blue Cross Blue Shield of Wyoming,BCBSWY
