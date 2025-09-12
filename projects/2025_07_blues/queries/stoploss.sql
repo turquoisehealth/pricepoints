@@ -24,9 +24,10 @@ SELECT
     additional_generic_notes,
     additional_payer_notes
 FROM glue.hospital_data.hospital_rates
-WHERE provider_name = 'Riverside Community Hospital'
-    AND billing_code = '805'
+WHERE provider_name = 'West Valley Medical Center'
+    AND billing_code = '792'
     AND payer_class_name = 'Commercial'
-    AND plan_name = 'COMM'
+    AND plan_name = 'PPO'
+    AND contract_methodology = 'fee schedule'
     AND CAST(payer_id AS VARCHAR) IN ( {{ blue_payer_ids }} )
 ORDER BY payer_id
