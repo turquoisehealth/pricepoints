@@ -8,7 +8,7 @@ from tq.connectors import get_trino_connection
 trino_conn = get_trino_connection()
 
 MIN_N_PAYERS = 2
-MIN_RATE_SCORE = 4
+MIN_RATE_SCORE = 3
 
 
 # Automatically set the column width in Excel sheets based on the content

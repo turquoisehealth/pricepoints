@@ -6,7 +6,7 @@ WITH codes AS (
 
 cld AS (
     SELECT *
-    FROM tq_dev.internal_dev_mnajarian_cld_v1_1.prod_combined_abridged
+    FROM tq_dev.internal_dev_csong_cld_v2_0_1.prod_combined_abridged
     WHERE canonical_rate IS NOT NULL
         AND network_class = 'Commercial'
         AND taxonomy_grouping = 'Hospitals'
@@ -27,7 +27,7 @@ code_descriptions AS (
 
 provider_count_total AS (
     SELECT COUNT(DISTINCT provider_id) AS total_providers
-    FROM tq_dev.internal_dev_mnajarian_cld_v1_1.prod_combined_abridged
+    FROM tq_dev.internal_dev_csong_cld_v2_0_1.prod_combined_abridged
     WHERE taxonomy_grouping = 'Hospitals'
 ),
 
