@@ -38,3 +38,79 @@ conflict_prefer_all("dplyr", quiet = TRUE)
 sf_use_s2(FALSE)
 options(tigris_use_cache = TRUE)
 ```
+
+```{r load_data, message=FALSE, warning=FALSE}
+rates_clean_df <- read_parquet("data/output/rates_clean.parquet")
+
+# Bounding box to clip the Aleutian Islands
+states_bbox <- c(xmin = -168, xmax = -65, ymin = 18.5, ymax = 72) |>
+  st_bbox(crs = 4326) |>
+  st_as_sfc() |>
+  st_transform(4269)
+counties_gdf <- counties(cb = TRUE, resolution = "5m", year = 2021) |>
+  filter(str_sub(STATEFP) <= "56") |>
+  select(geoid = GEOID, state = STUSPS, geometry, county_name = NAME) |>
+  st_intersection(states_bbox) |>
+  tigris::shift_geometry()
+states_gdf <- tigris::states(cb = TRUE, resolution = "20m", year = 2021) |>
+  filter(str_sub(GEOID) <= "56") |>
+  select(geoid = GEOID, state = STUSPS, geometry, state_name = NAME) |>
+  st_intersection(states_bbox) |>
+  tigris::shift_geometry()
+```
+
+```{r county_map, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 7
+
+rates_clean_df |>
+  group_by(census_county_fips, nchs_class) |>
+  filter(!(is.na(all_wtd_mean_pct_of_medicare) | is.na(total_beds))) |>
+  summarise(
+    wtd_mean_pct_of_medicare = weighted.mean(
+      all_wtd_mean_pct_of_medicare, total_beds, na.rm = TRUE
+    )
+  ) |>
+  right_join(counties_gdf, by = c("census_county_fips" = "geoid")) |>
+  st_set_geometry("geometry") |>
+  filter(!is.na(nchs_class)) |>
+ggplot() +
+  geom_sf(aes(fill = wtd_mean_pct_of_medicare, color = wtd_mean_pct_of_medicare)) +
+  geom_sf(
+    data = states_gdf,
+    fill = NA,
+    color = "grey20",
+    linewidth = 0.5
+  ) +
+  scale_fill_viridis_c(
+    option = "viridis",
+    na.value = "white",
+    name = "Weighted Mean % of Medicare",
+    labels = scales::percent_format(accuracy = 1),
+    limits = c(1, 5),
+    oob = scales::squish
+  ) +
+  scale_color_viridis_c(
+    option = "viridis",
+    na.value = "white",
+    name = "Weighted Mean % of Medicare",
+    labels = scales::percent_format(accuracy = 1),
+    limits = c(1, 5),
+    oob = scales::squish
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.key.width = unit(2, "cm"),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank()
+  ) +
+  labs(
+    title = "Weighted Mean Percentage of Medicare Patients by County",
+  )
+
+```
+
