@@ -2,9 +2,14 @@
 import re
 
 import polars as pl
+from census import Census
+from dotenv import dotenv_values
 from tq.connectors import get_trino_connection
+from tq.utils import get_env_file_path
 
 trino_conn = get_trino_connection()
+config = dotenv_values(get_env_file_path())
+cen = Census(config.get("CENSUS_API_KEY"), year=2022)
 
 
 # Mini-classes for attaching utility methods to Polars DataFrames, mostly for
@@ -120,10 +125,28 @@ usds_df = (
     )
 )
 
+# Grab Census population for each county. 2022 year since that's what Turquoise
+# county IDs are based on
+cen_vars = {"B01001_001E": "total_pop", "B19013_001E": "median_hh_income"}
+cen_df_county = (
+    pl.DataFrame(
+        cen.acs5.state_county(
+            list(cen_vars.keys()), state_fips="*", county_fips="*"
+        )
+    )
+    .rename(cen_vars)
+    .with_columns(
+        pl.concat_str(pl.col("state"), pl.col("county")).alias("geoid")
+    )
+    .select(pl.exclude(["state", "county"]))
+)
+
+
+###### Data joining ############################################################
 
 # Join county codes, rural-urban classifications, and CAH status, then save
 # to disk
-(
+rates_df_clean = (
     rates_df.join(
         county_xwalk_df,
         on=["state", "county"],
@@ -147,4 +170,11 @@ usds_df = (
         right_on="medicare_provider_number",
         how="left",
     )
-).write_parquet("data/output/rates_clean.parquet")
+    .join(
+        cen_df_county,
+        left_on="census_county_fips",
+        right_on="geoid",
+        how="left",
+    )
+)
+rates_df_clean.write_parquet("data/output/rates_clean.parquet")

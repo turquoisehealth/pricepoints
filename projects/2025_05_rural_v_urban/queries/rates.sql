@@ -154,9 +154,12 @@ agg_payer_provider AS (
         ARBITRARY(state_market_share) AS state_market_share,
         COUNT() AS num_rates,
         AVG(canonical_rate) AS mean_rate,
+        AVG(medicare_rate) AS mean_medicare,
         AVG(canonical_rate_percent_of_medicare) AS mean_pct_of_medicare,
         SUM(canonical_rate * state_claims_percentile_all)
         / SUM(state_claims_percentile_all) AS wtd_mean_rate,
+        SUM(medicare_rate * state_claims_percentile_all)
+        / SUM(state_claims_percentile_all) AS wtd_mean_medicare,
         SUM(
             canonical_rate_percent_of_medicare
             * state_claims_percentile_all
@@ -178,9 +181,12 @@ agg_provider AS (
         provider_id,
         SUM(num_rates) AS num_rates,
         AVG(mean_rate) AS mean_rate,
+        AVG(mean_medicare) AS mean_medicare,
         AVG(mean_pct_of_medicare) AS mean_pct_of_medicare,
         SUM(wtd_mean_rate * state_market_share)
         / SUM(state_market_share) AS wtd_mean_rate,
+        SUM(wtd_mean_medicare * state_market_share)
+        / SUM(state_market_share) AS wtd_mean_medicare,
         SUM(wtd_mean_pct_of_medicare * state_market_share)
         / SUM(state_market_share) AS wtd_mean_pct_of_medicare
     FROM agg_payer_provider
@@ -199,9 +205,12 @@ agg_payer_provider_type AS (
         ARBITRARY(state_market_share) AS state_market_share,
         COUNT() AS num_rates,
         AVG(canonical_rate) AS mean_rate,
+        AVG(medicare_rate) AS mean_medicare,
         AVG(canonical_rate_percent_of_medicare) AS mean_pct_of_medicare,
         SUM(canonical_rate * state_claims_percentile_all)
         / SUM(state_claims_percentile_all) AS wtd_mean_rate,
+        SUM(medicare_rate * state_claims_percentile_all)
+        / SUM(state_claims_percentile_all) AS wtd_mean_medicare,
         SUM(
             canonical_rate_percent_of_medicare
             * state_claims_percentile_all
@@ -221,9 +230,12 @@ agg_provider_type AS (
         billing_code_type,
         SUM(num_rates) AS num_rates,
         AVG(mean_rate) AS mean_rate,
+        AVG(mean_medicare) AS mean_medicare,
         AVG(mean_pct_of_medicare) AS mean_pct_of_medicare,
         SUM(wtd_mean_rate * state_market_share)
         / SUM(state_market_share) AS wtd_mean_rate,
+        SUM(wtd_mean_medicare * state_market_share)
+        / SUM(state_market_share) AS wtd_mean_medicare,
         SUM(wtd_mean_pct_of_medicare * state_market_share)
         / SUM(state_market_share) AS wtd_mean_pct_of_medicare
     FROM agg_payer_provider_type
@@ -241,6 +253,7 @@ agg_payer_provider_subset AS (
         ARBITRARY(state_market_share) AS state_market_share,
         COUNT() AS num_rates,
         AVG(canonical_rate) AS mean_rate,
+        AVG(medicare_rate) AS mean_medicare,
         AVG(canonical_rate_percent_of_medicare) AS mean_pct_of_medicare
     FROM cld_filled
     WHERE (
@@ -283,9 +296,12 @@ agg_provider_subset AS (
         provider_id,
         SUM(num_rates) AS num_rates,
         AVG(mean_rate) AS mean_rate,
+        AVG(mean_medicare) AS mean_medicare,
         AVG(mean_pct_of_medicare) AS mean_pct_of_medicare,
         SUM(mean_rate * state_market_share)
         / SUM(state_market_share) AS wtd_mean_rate,
+        SUM(mean_medicare * state_market_share)
+        / SUM(state_market_share) AS wtd_mean_medicare,
         SUM(mean_pct_of_medicare * state_market_share)
         / SUM(state_market_share) AS wtd_mean_pct_of_medicare
     FROM agg_payer_provider_subset
@@ -298,23 +314,31 @@ SELECT
     pi.*,
     ap.num_rates AS all_num_rates,
     ap.mean_rate AS all_mean_rate,
+    ap.mean_medicare AS all_mean_medicare,
     ap.mean_pct_of_medicare AS all_mean_pct_of_medicare,
     ap.wtd_mean_rate AS all_wtd_mean_rate,
+    ap.wtd_mean_medicare AS all_wtd_mean_medicare,
     ap.wtd_mean_pct_of_medicare AS all_wtd_mean_pct_of_medicare,
     ip.num_rates AS ip_num_rates,
     ip.mean_rate AS ip_mean_rate,
+    ip.mean_medicare AS ip_mean_medicare,
     ip.mean_pct_of_medicare AS ip_mean_pct_of_medicare,
     ip.wtd_mean_rate AS ip_wtd_mean_rate,
+    ip.wtd_mean_medicare AS ip_wtd_mean_medicare,
     ip.wtd_mean_pct_of_medicare AS ip_wtd_mean_pct_of_medicare,
     op.num_rates AS op_num_rates,
     op.mean_rate AS op_mean_rate,
+    op.mean_medicare AS op_mean_medicare,
     op.mean_pct_of_medicare AS op_mean_pct_of_medicare,
     op.wtd_mean_rate AS op_wtd_mean_rate,
+    op.wtd_mean_medicare AS op_wtd_mean_medicare,
     op.wtd_mean_pct_of_medicare AS op_wtd_mean_pct_of_medicare,
     sub.num_rates AS sub_num_rates,
     sub.mean_rate AS sub_mean_rate,
+    sub.mean_medicare AS sub_mean_medicare,
     sub.mean_pct_of_medicare AS sub_mean_pct_of_medicare,
     sub.wtd_mean_rate AS sub_wtd_mean_rate,
+    sub.wtd_mean_medicare AS sub_wtd_mean_medicare,
     sub.wtd_mean_pct_of_medicare AS sub_wtd_mean_pct_of_medicare
 FROM agg_provider AS ap
 LEFT JOIN
