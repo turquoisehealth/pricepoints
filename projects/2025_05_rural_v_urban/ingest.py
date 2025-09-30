@@ -1,4 +1,3 @@
-# type: ignore
 import re
 
 import polars as pl
@@ -19,7 +18,7 @@ class UtilDataFrame:
     def __init__(self, df: pl.DataFrame) -> None:
         self._df = df
 
-    def to_snake_case(self: pl.DataFrame) -> pl.DataFrame:
+    def to_snake_case(self) -> pl.DataFrame:
         """Convert all column names to snake_case."""
         return self._df.rename(
             {
@@ -28,7 +27,7 @@ class UtilDataFrame:
             }
         )
 
-    def empty_strings_to_null(self: pl.DataFrame) -> pl.DataFrame:
+    def empty_strings_to_null(self) -> pl.DataFrame:
         """Convert all empty string columns to null."""
         return self._df.with_columns(
             pl.when(pl.col(pl.String).str.len_chars() == 0)
