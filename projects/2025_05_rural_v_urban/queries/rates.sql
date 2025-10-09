@@ -127,6 +127,9 @@ provider_info AS (
     SELECT DISTINCT
         provider_id,
         provider_name,
+        zip_code,
+        hq_longitude,
+        hq_latitude,
         health_system_id,
         health_system_name,
         medicare_provider_id,

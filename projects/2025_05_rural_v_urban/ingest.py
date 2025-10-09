@@ -8,7 +8,7 @@ from tq.utils import get_env_file_path
 
 trino_conn = get_trino_connection()
 config = dotenv_values(get_env_file_path())
-cen = Census(config.get("CENSUS_API_KEY"), year=2022)
+cen = Census(config.get("CENSUS_API_KEY"), year=2023)
 
 
 # Mini-classes for attaching utility methods to Polars DataFrames, mostly for
@@ -70,6 +70,17 @@ county_xwalk_df = pl.read_csv(
     },
 )
 
+# Manual county matching per provider when the TQ county name doesn't match a
+# current Census county. Most of these are in Connecticut since they
+# (very annoyingly) remapped all their counties in 2022
+missing_county_lookup_df = pl.read_csv(
+    source="data/input/missing_county_lookup.csv",
+    schema_overrides={
+        "provider_id": pl.String,
+        "missing_census_county_fips": pl.String,
+    },
+)
+
 # Read NCHS urban-rural classification codes
 # https://www.cdc.gov/nchs/data-analysis-tools/urban-rural.html
 nchs_df = (
@@ -77,11 +88,7 @@ nchs_df = (
         source="data/input/NCHSurb-rural-codes.csv",
         encoding="utf8-lossy",
         columns=["STFIPS", "CTYFIPS", "CODE2023"],
-        schema_overrides={
-            "STFIPS": pl.String,
-            "CTYFIPS": pl.String,
-            "CODE2023": pl.String,
-        },
+        schema_overrides={"STFIPS": pl.String, "CTYFIPS": pl.String},
     )
     .with_columns(
         pl.col("STFIPS").str.pad_start(2, "0"),
@@ -92,18 +99,23 @@ nchs_df = (
     )
     .rename({"CODE2023": "nchs_code"})
     .select(["geoid", "nchs_code"])
+    # The 2023 can be null because each row represents a county, but some
+    # counties existed in the past but no longer do in 2023
+    .filter(pl.col("nchs_code").is_not_null())
     .with_columns(
         (
-            pl.when(pl.col("nchs_code").is_in(["5", "6"]))
+            pl.when(pl.col("nchs_code") >= 5)
             .then(pl.lit("rural"))
-            .otherwise(pl.lit("urban"))
+            .when(pl.col("nchs_code") < 5)
+            .then(pl.lit("urban"))
+            .otherwise(None)
         ).alias("nchs_class")
     )
 )
 
-# Read USDS rural-urban continuum codes
+# Read USDA rural-urban continuum codes
 # https://www.ers.usda.gov/data-products/rural-urban-continuum-codes
-usds_df = (
+rucc_df = (
     (
         pl.read_csv(
             source="data/input/Ruralurbancontinuumcodes2023.csv",
@@ -112,15 +124,64 @@ usds_df = (
         )
     )
     .filter(pl.col("Attribute") == "RUCC_2023")
-    .rename({"Value": "usds_code", "FIPS": "geoid"})
-    .select(["geoid", "usds_code"])
+    .rename({"Value": "rucc_code", "FIPS": "geoid"})
+    .select(["geoid", "rucc_code"])
     .with_columns(pl.col("geoid").str.pad_start(5, "0"))
+    .with_columns(pl.col("rucc_code").cast(pl.Int64))
     .with_columns(
         (
-            pl.when(pl.col("usds_code") >= "6")
+            pl.when(pl.col("rucc_code") >= 4)
             .then(pl.lit("rural"))
-            .otherwise(pl.lit("urban"))
-        ).alias("usds_class")
+            .when(pl.col("rucc_code") < 4)
+            .then(pl.lit("urban"))
+            .otherwise(None)
+        ).alias("rucc_class")
+    )
+)
+
+# Read UDSA urban-influence codes
+# https://www.ers.usda.gov/data-products/urban-influence-codes
+uic_df = (
+    pl.read_csv(
+        source="data/input/Urbaninfluencecodes2024.csv",
+        encoding="utf8-lossy",
+        schema_overrides={"FIPS-UIC": pl.String},
+    )
+    .filter(pl.col("Attribute") == "UIC_2024")
+    .rename({"Value": "uic_code", "FIPS-UIC": "geoid"})
+    .select(["geoid", "uic_code"])
+    .with_columns(pl.col("geoid").str.pad_start(5, "0"))
+    .with_columns(pl.col("uic_code").cast(pl.Int64))
+    .with_columns(
+        (
+            pl.when(pl.col("uic_code") >= 3)
+            .then(pl.lit("rural"))
+            .when(pl.col("uic_code") < 3)
+            .then(pl.lit("urban"))
+            .otherwise(None)
+        ).alias("uic_class")
+    )
+)
+
+# Read USDA rural-urban commuting area codes by ZIP
+ruca_df = (
+    pl.read_csv(
+        source="data/input/RUCA-codes-2020-zipcode.csv",
+        encoding="utf8-lossy",
+        schema_overrides={"ZIPCode": pl.String, "PrimaryRUCA": pl.String},
+    )
+    .rename({"ZIPCode": "zip_code", "PrimaryRUCA": "ruca_code"})
+    .select(["zip_code", "ruca_code"])
+    .with_columns(pl.col("zip_code").str.pad_start(5, "0"))
+    .with_columns(pl.col("ruca_code").cast(pl.Int64))
+    .with_columns(
+        (
+            pl.when(pl.col("ruca_code") >= 4)
+            .then(pl.lit("rural"))
+            .when(pl.col("ruca_code") < 4)
+            .then(pl.lit("urban"))
+            .otherwise(None)
+        ).alias("ruca_class")
     )
 )
 
@@ -151,6 +212,14 @@ rates_df_clean = (
         on=["state", "county"],
         how="left",
     )
+    .join(missing_county_lookup_df, on="provider_id", how="left")
+    .with_columns(
+        pl.when(pl.col("census_county_fips").is_null())
+        .then(pl.col("missing_census_county_fips"))
+        .otherwise(pl.col("census_county_fips"))
+        .alias("census_county_fips")
+    )
+    .join(ruca_df, on="zip_code", how="left")
     .join(
         nchs_df,
         left_on="census_county_fips",
@@ -158,7 +227,13 @@ rates_df_clean = (
         how="left",
     )
     .join(
-        usds_df,
+        rucc_df,
+        left_on="census_county_fips",
+        right_on="geoid",
+        how="left",
+    )
+    .join(
+        uic_df,
         left_on="census_county_fips",
         right_on="geoid",
         how="left",
