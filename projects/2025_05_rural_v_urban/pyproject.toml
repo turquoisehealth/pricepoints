@@ -9,9 +9,11 @@ classifiers = [
 ]
 requires-python = "==3.13.5"
 dependencies = [
+  "census>=0.8.24",
   "ipykernel>=6.29.0",
   "pandas>=2.2.3",
   "pandas-stubs>=2.2.3",
+  "polars>=1.27.0",
   "pyarrow>=19.0.1",
   "tq @ file:///${PROJECT_ROOT}/../../tq"
 ]
