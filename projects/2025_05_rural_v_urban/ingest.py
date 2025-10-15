@@ -1,5 +1,6 @@
 import re
 
+import duckdb
 import polars as pl
 from census import Census
 from dotenv import dotenv_values
@@ -9,6 +10,14 @@ from tq.utils import get_env_file_path
 trino_conn = get_trino_connection()
 config = dotenv_values(get_env_file_path())
 cen = Census(config.get("CENSUS_API_KEY"), year=2023)
+
+# Get OpenTimes DuckDB database
+duckdb_conn = duckdb.connect(database=":memory:")
+duckdb_conn.execute("""
+  INSTALL httpfs;
+  LOAD httpfs;
+  ATTACH 'https://data.opentimes.org/databases/0.0.1.duckdb' AS opentimes;
+""")
 
 
 # Mini-classes for attaching utility methods to Polars DataFrames, mostly for
@@ -201,6 +210,18 @@ cen_df_county = (
     .select(pl.exclude(["state", "county"]))
 )
 
+# Grab county-to-county driving times from OpenTimes
+times_county_df = pl.DataFrame(
+    duckdb_conn.execute("""
+  SELECT origin_id, destination_id, duration_sec
+  FROM opentimes.public.times
+  WHERE version = '0.0.1'
+      AND mode = 'car'
+      AND year = '2024'
+      AND geography = 'county'
+      AND duration_sec <= 3600
+""").fetchdf()
+)
 
 ###### Data joining ############################################################
 

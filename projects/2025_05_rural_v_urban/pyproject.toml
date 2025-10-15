@@ -10,6 +10,7 @@ classifiers = [
 requires-python = "==3.13.5"
 dependencies = [
   "census>=0.8.24",
+  "duckdb>=1.4.1",
   "fastexcel>=0.16.0",
   "ipykernel>=6.29.0",
   "pandas>=2.2.3",
