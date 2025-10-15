@@ -37,80 +37,1789 @@ conflict_prefer_all("dplyr", quiet = TRUE)
 # Necessary for fast/accurate map rendering
 sf_use_s2(FALSE)
 options(tigris_use_cache = TRUE)
+
+# Transform numbers into abbreviated amounts
+# 100 becomes 100, 1000 becomes 1K, 1000000 becomes $1M, etc.
+label_comma_short <- function(x) {
+  sapply(
+    x,
+    function(val) {
+      if (is.na(val)) {
+        return(NA_character_)
+      }
+
+      abs_val <- abs(val)
+      sign_str <- ifelse(val < 0, "-", "")
+      if (abs_val >= 1e9) {
+        paste0(sign_str, round(abs_val / 1e9, 0), "B")
+      } else if (abs_val >= 1e6) {
+        paste0(sign_str, round(abs_val / 1e6, 0), "M")
+      } else if (abs_val >= 1e3) {
+        paste0(sign_str, round(abs_val / 1e3, 0), "K")
+      } else {
+        paste0(sign_str, formatC(abs_val, format = "f", digits = 0))
+      }
+    },
+    USE.NAMES = FALSE
+  )
+}
+
+# Static set of colors to associate with different urban/rural levels
+rurality_color_values <- c(
+  "urban" = "#66c2a5",
+  "rural" = "#fc8d62",
+  "urban-dark" = "#3b9177",
+  "rural-dark" = "#df7349",
+  "op" = "#8da0cb",
+  "ip" = "#e78ac3",
+  "op-dark" = "#627cb7",
+  "ip-dark" = "#c65398",
+  "yhs" = "#fb9a99",
+  "nhs" = "#cab2d6",
+  "yhs-dark" = "#d65e5c",
+  "nhs-dark" = "#8d58a7"
+)
 ```
 
 ```{r load_data, message=FALSE, warning=FALSE}
-rates_clean_df <- read_parquet("data/output/rates_clean.parquet")
+# Load the aggregated rates data created by the ingest script
+rates_clean_df <- read_parquet("data/output/rates_clean.parquet") |>
+  mutate(
+    # Drop health systems that have the same name as the provider and a count
+    # of only 1 hospital
+    health_system_id = ifelse(
+      health_system_name == provider_name & n_distinct(health_system_name),
+      NA_character_,
+      health_system_id
+    ),
+    health_system_name = ifelse(
+      health_system_name == provider_name & n_distinct(health_system_name),
+      NA_character_,
+      health_system_name
+    ),
+    .by = health_system_id
+  )
+
+# Load rates aggregated to the code level
+rates_code_clean_df <- read_parquet("data/output/rates_code_clean.parquet")
 
 # Bounding box to clip the Aleutian Islands
 states_bbox <- c(xmin = -168, xmax = -65, ymin = 18.5, ymax = 72) |>
   st_bbox(crs = 4326) |>
   st_as_sfc() |>
   st_transform(4269)
-counties_gdf <- counties(cb = TRUE, resolution = "5m", year = 2021) |>
+counties_gdf <- counties(cb = TRUE, resolution = "5m", year = 2023) |>
   filter(str_sub(STATEFP) <= "56") |>
   select(geoid = GEOID, state = STUSPS, geometry, county_name = NAME) |>
   st_intersection(states_bbox) |>
   tigris::shift_geometry()
-states_gdf <- tigris::states(cb = TRUE, resolution = "20m", year = 2021) |>
+states_gdf <- tigris::states(cb = TRUE, resolution = "20m", year = 2023) |>
   filter(str_sub(GEOID) <= "56") |>
   select(geoid = GEOID, state = STUSPS, geometry, state_name = NAME) |>
   st_intersection(states_bbox) |>
   tigris::shift_geometry()
+
+# Load county adjacency matrix for filling map
+county_adj_df <- read_parquet("data/output/county_adj_matrix.parquet")
+
+# Load NCHS codes for attaching to counties without rates
+nchs_codes_df <- read_parquet("data/output/nchs_codes.parquet")
 ```
 
-```{r county_map, message=FALSE}
+```{r county_rates_map, message=FALSE}
 #| column: page
 #| out-width: 100%
 #| fig-width: 9
-#| fig-height: 7
+#| fig-height: 7.5
 
+# Fill counties with the weighted average of providers in neighboring counties
+# (those less than a 1 hr drive away)
+county_map_fill_df <- county_adj_df |>
+  left_join(
+    rates_clean_df |>
+      select(provider_id, all_wtd_mean_pct_of_medicare, total_beds),
+    by = "provider_id"
+  ) |>
+  filter(origin_id != destination_id) |>
+  filter(str_sub(origin_id, 1, 2) == str_sub(destination_id, 1, 2)) |>
+  filter(!(is.na(all_wtd_mean_pct_of_medicare) | is.na(total_beds))) |>
+  group_by(origin_id) |>
+  summarise(
+    q50_fill = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.50,
+      na.rm = TRUE
+    )
+  )
+
+# Make a county-level map of commercial to medicare ratios
 rates_clean_df |>
-  group_by(census_county_fips, nchs_class) |>
+  group_by(census_county_fips) |>
   filter(!(is.na(all_wtd_mean_pct_of_medicare) | is.na(total_beds))) |>
   summarise(
-    wtd_mean_pct_of_medicare = weighted.mean(
-      all_wtd_mean_pct_of_medicare, total_beds, na.rm = TRUE
+    q50 = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.50,
+      na.rm = TRUE
     )
   ) |>
   right_join(counties_gdf, by = c("census_county_fips" = "geoid")) |>
+  left_join(
+    nchs_codes_df,
+    by = c("census_county_fips" = "geoid")
+  ) |>
+  left_join(
+    county_map_fill_df,
+    by = c("census_county_fips" = "origin_id")
+  ) |>
   st_set_geometry("geometry") |>
-  filter(!is.na(nchs_class)) |>
-ggplot() +
-  geom_sf(aes(fill = wtd_mean_pct_of_medicare, color = wtd_mean_pct_of_medicare)) +
+  mutate(
+    filled = is.na(q50),
+    q50 = ifelse(is.na(q50), q50_fill, q50)
+  ) |>
+  mutate(
+    ur_fill = cut(
+      q50,
+      breaks = c(-Inf, 1.5, 2.0, 2.5, 3.0, 3.5, Inf),
+      labels = c(
+        "< 150%",
+        "150-200%",
+        "200-250%",
+        "250-300%",
+        "300-350%",
+        "≥ 350%"
+      )
+    ),
+    ur_fill = fct_rev(ur_fill)
+  ) |>
+  ggplot() +
+  geom_sf(
+    aes(
+      fill = ur_fill,
+      color = ur_fill
+    )
+  ) +
   geom_sf(
     data = states_gdf,
     fill = NA,
     color = "grey20",
     linewidth = 0.5
   ) +
-  scale_fill_viridis_c(
-    option = "viridis",
-    na.value = "white",
-    name = "Weighted Mean % of Medicare",
-    labels = scales::percent_format(accuracy = 1),
-    limits = c(1, 5),
-    oob = scales::squish
+  scale_fill_brewer(
+    name = "Commercial to\nMedicare ratio",
+    palette = "BuPu",
+    direction = -1,
+    na.value = "grey80"
   ) +
-  scale_color_viridis_c(
-    option = "viridis",
-    na.value = "white",
-    name = "Weighted Mean % of Medicare",
-    labels = scales::percent_format(accuracy = 1),
-    limits = c(1, 5),
-    oob = scales::squish
+  scale_color_brewer(
+    name = "Commercial to\nMedicare ratio",
+    palette = "BuPu",
+    direction = -1,
+    na.value = "grey80"
+  ) +
+  coord_sf(expand = FALSE) +
+  labs(
+    title = "Commercial reimbursement varies significantly across the U.S.",
+    subtitle = paste0(
+      "Some PPO plans reimburse hospitals over 300% of adjusted Medicare ",
+      "costs, while others<br>reimburse hospitals less than Medicare ",
+      "(on average, across all common procedures)"
+    ),
+    caption = paste0(
+      "Based on ",
+      rates_clean_df |>
+        summarize(n = sum(all_num_rates)) |>
+        pull(n) |>
+        label_comma_short(),
+      " commercial PPO rates from Turquoise Health, ",
+      "weighted by utilization, payer market share, and ",
+      "provider bed count\n",
+      "Counties are colored by the weighted median commercial-to-Medicare ",
+      "ratio of all providers in the county\n",
+      "If there are no provider records for a given county, the weighted ",
+      "median of surrounding providers (reachable via a 1-hour drive) is ",
+      "used\n",
+      "Rates include all MS-DRGs and the top 5,000 HCPCS by volume, ",
+      "excluding drug and device codes"
+    )
+  ) +
+  guides(fill = guide_legend(override.aes = list(color = "grey20"))) +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    panel.background = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    legend.key.spacing.y = unit(0.15, "cm"),
+    legend.title = element_text(
+      size = 15,
+      face = "bold",
+      margin = margin(b = 14)
+    ),
+    legend.margin = margin(t = 100, l = -50),
+    legend.key.size = unit(0.75, "cm"),
+    legend.text = element_text(size = 12),
+    plot.title = element_text(
+      size = 20,
+      face = "bold",
+      margin = margin(b = 6, l = 20)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 14, l = 20),
+      lineheight = 1.1
+    ),
+    plot.caption = element_text(
+      size = 10,
+      lineheight = 1.1,
+      margin = margin(t = 10, r = -60)
+    )
+  )
+```
+
+```{r county_class_map, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 9
+#| fig-height: 6.5
+
+nchs_code_colors <- c(
+  "Large central" = "#0b5543",
+  "Large fringe" = "#1f7a61",
+  "Medium metro" = "#4fae8f",
+  "Small metro" = "#9ed4be",
+  "Micropolitan" = "#fdd7bf",
+  "Noncore" = "#fc8d62"
+)
+
+# Make a county-level map of commercial to medicare ratios
+counties_gdf |>
+  left_join(
+    nchs_codes_df,
+    by = "geoid"
+  ) |>
+  mutate(
+    code_label = factor(nchs_code),
+    code_label = fct_relabel(code_label, \(x) {
+      case_match(
+      x,
+      "1" ~ "Large central",
+      "2" ~ "Large fringe",
+      "3" ~ "Medium metro",
+      "4" ~ "Small metro",
+      "5" ~ "Micropolitan",
+      "6" ~ "Noncore"
+    )
+    })
+  ) |>
+  ggplot() +
+  geom_sf(aes(fill = code_label, color = code_label)) +
+  geom_sf(
+    data = states_gdf,
+    fill = NA,
+    color = "grey20",
+    linewidth = 0.5
+  ) +
+  coord_sf(expand = FALSE) +
+  scale_fill_manual(
+    name = "NCHS code",
+    values = nchs_code_colors
+  ) +
+  scale_color_manual(
+    name = "NCHS code",
+    values = nchs_code_colors
+  ) +
+  labs(
+    title = paste0(
+      "National Center for Health Statistics (NCHS) ",
+      "urban-rural classification"
+    ),
+    subtitle = paste0(
+      "Throughout the rest of this piece, **<span style='color:",
+      rurality_color_values["urban-dark"],
+      "'>green represents urban</span>** counties and hospitals, ",
+      "<br>while **<span style='color:",
+      rurality_color_values["rural-dark"],
+      "'>orange represents rural</span>** counties and hospitals"
+    ),
+    caption = paste0(
+      "See the CDC website for an interactive version of this map: ",
+      "https://www.cdc.gov/nchs/data-analysis-tools/urban-rural.html"
+    )
+  ) +
+  guides(fill = guide_legend(override.aes = list(color = "grey20"))) +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    panel.background = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    legend.key.spacing.y = unit(0.15, "cm"),
+    legend.title = element_text(
+      size = 15,
+      face = "bold",
+      margin = margin(b = 14)
+    ),
+    legend.margin = margin(t = 60, l = -44),
+    legend.key.size = unit(0.75, "cm"),
+    legend.text = element_text(size = 12),
+    plot.title = element_text(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 6, l = 16)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 14, l = 16),
+      lineheight = 1.1
+    ),
+    plot.caption = element_text(
+      size = 10,
+      lineheight = 1.1,
+      margin = margin(t = 10, r = -60)
+    )
+  )
+```
+
+```{r overall_boxplot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 6.5
+
+rates_clean_df |>
+  filter(!(is.na(all_wtd_mean_pct_of_medicare) | is.na(total_beds))) |>
+  filter(!is.na(nchs_class)) |>
+  group_by(nchs_class) |>
+  summarize(
+    ymin = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    ylower = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    ymiddle = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    yupper = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    ymax = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    num_beds = sum(total_beds),
+    num_rates = sum(all_num_rates),
+    num_providers = n_distinct(provider_id)
+  ) |>
+  mutate(
+    nchs_class_label = fct_relabel(
+      nchs_class,
+      \(x) {
+        paste0(
+          "**",
+          "<span style='color:",
+          rurality_color_values[paste0(x, "-dark")],
+          "'>",
+          str_to_title(x),
+          "</span>",
+          "**<br>",
+          "<span style='font-size:14px'>",
+          scales::label_comma()(num_rates),
+          " rates</span><br>",
+          "<span style='font-size:14px'>",
+          scales::label_comma()(num_providers),
+          " hospitals</span><br>",
+          "<span style='font-size:14px'>",
+          scales::label_comma()(num_beds),
+          " beds</span>"
+        )
+      }
+    ),
+    nchs_class_label = fct_rev(nchs_class_label)
+  ) |>
+  ggplot() +
+  geom_boxplot(
+    aes(
+      ymin = ymin,
+      lower = ylower,
+      middle = ymiddle,
+      upper = yupper,
+      ymax = ymax,
+      x = nchs_class_label,
+      fill = nchs_class
+    ),
+    stat = "identity",
+    width = 0.6
+  ) +
+  scale_fill_manual(
+    values = rurality_color_values[1:2]
+  ) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    limits = c(1.5, 3.5),
+    expand = c(0, 0)
+  ) +
+  guides(fill = "none") +
+  labs(
+    title = "Rural hospitals are reimbursed less than urban hospitals",
+    subtitle = paste0(
+      "Across a sample of 90M+ rates from over 5,000 hospitals, rural ",
+      "hospitals have<br>more variable rates and are reimbursed slightly ",
+      " less than their urban counterparts"
+    ),
+    x = "",
+    y = "Commercial to Medicare ratio",
+    caption = paste0(
+      "Urban/rural classification uses the National Center for Health ",
+      "Statistics (NCHS) Urban-Rural Classification Scheme for Counties\n",
+      "Rates are sourced from Turquoise Health Clear Rates, ",
+      "weighted by utilization, payer market share, and ",
+      "provider bed count\n",
+      "Box plots show weighted quantiles of commercial to Medicare rates ",
+      "ratios. Whiskers are 10th and 90th percentiles\n",
+      "Sample includes all MS-DRGs and the top 5,000 HCPCS by volume, ",
+      "excluding drug and device codes"
+    )
   ) +
   theme_minimal() +
   theme(
-    legend.position = "bottom",
-    legend.key.width = unit(2, "cm"),
-    axis.text = element_blank(),
-    axis.ticks = element_blank(),
-    panel.grid = element_blank()
-  ) +
-  labs(
-    title = "Weighted Mean Percentage of Medicare Patients by County",
+    plot.title = element_text(
+      size = 19,
+      face = "bold",
+      margin = margin(b = 8, l = -36)
+    ),
+    plot.subtitle = element_markdown(
+      size = 14,
+      margin = margin(b = 16, l = -36),
+      lineheight = 1.1
+    ),
+    axis.title.x = element_text(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 16,
+      margin = margin(t = 2)
+    ),
+    axis.text.y = element_markdown(
+      size = 12,
+      face = "bold"
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey85"),
+    panel.grid.minor.y = element_line(color = "grey90"),
+    plot.caption = element_text(
+      size = 10,
+      lineheight = 1.1,
+      margin = margin(t = -2)
+    )
   )
-
 ```
 
+```{r nchs_boxplot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 6.5
+
+nchs_agg_df <- rates_clean_df |>
+  filter(!(is.na(all_wtd_mean_pct_of_medicare) | is.na(total_beds))) |>
+  filter(!is.na(nchs_code)) |>
+  group_by(nchs_code, nchs_class) |>
+  summarize(
+    ymin = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    ylower = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    ymiddle = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    yupper = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    ymax = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    num_beds = sum(total_beds),
+    num_rates = sum(all_num_rates),
+    num_providers = n_distinct(provider_id)
+  ) |>
+  mutate(
+    code_source = "NCHS Urban-Rural Classification Scheme for Counties",
+    code_label = factor(nchs_code),
+    code_fill = fct_relabel(code_label, \(x) {
+      case_match(
+      x,
+      "1" ~ "Large central",
+      "2" ~ "Large fringe",
+      "3" ~ "Medium metro",
+      "4" ~ "Small metro",
+      "5" ~ "Micropolitan",
+      "6" ~ "Noncore"
+    )
+    }),
+    code_label = fct_relabel(
+      code_label,
+      \(x) {
+        paste0(
+          "**",
+          case_match(
+          x,
+          "1" ~ "Large central",
+          "2" ~ "Large fringe",
+          "3" ~ "Medium",
+          "4" ~ "Small",
+          "5" ~ "Micropolitan",
+          "6" ~ "Noncore"
+        ),
+          "**<br>",
+          "<span style='font-size:14px'>",
+          label_comma_short(num_rates),
+          " rates</span><br>",
+          "<span style='font-size:14px'>",
+          scales::label_comma()(num_providers),
+          " hospitals</span><br>",
+          "<span style='font-size:14px'>",
+          scales::label_comma()(num_beds),
+          " beds</span>"
+        )
+      }
+    ),
+    code_class = nchs_class
+  )
+
+nchs_agg_df |>
+  ggplot() +
+  geom_boxplot(
+    aes(
+      ymin = ymin,
+      lower = ylower,
+      middle = ymiddle,
+      upper = yupper,
+      ymax = ymax,
+      x = code_label,
+      fill = code_fill
+    ),
+    stat = "identity",
+    width = 0.6
+  ) +
+  annotate(
+    "segment",
+    x = 4.47,
+    xend = 4.47,
+    y = 0.85,
+    yend = 3.58,
+    linetype = "dashed",
+    color = "grey20"
+  ) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    expand = c(0, 0)
+  ) +
+  scale_fill_manual(values = nchs_code_colors) +
+  coord_cartesian(clip = "off", ylim = c(1.5, 3.5)) +
+  labs(
+    title = "Extremely rural hospitals have the lowest reimbursement",
+    subtitle = paste0(
+      "Hospitals in noncore rural counties are reimbursed 20 percentage points",
+      "<br>less (relative to Medicare) than hospitals in metro and",
+      " micropolitan counties"
+    ),
+    x = paste0(
+      "Metro (<span style='color:",
+      rurality_color_values["urban-dark"],
+      "'>urban</span>)",
+      "<span style='color:white'>███████████</span>",
+      "Nonmetro (<span style='color:",
+      rurality_color_values["rural-dark"],
+      "'>rural</span>)",
+      "<span style='color:white'>█ █</span>"
+    ),
+    y = "Commercial to Medicare ratio",
+    caption = paste0(
+      "Urban/rural classification uses the National Center for Health ",
+      "Statistics (NCHS) Urban-Rural Classification Scheme for Counties\n",
+      "Rates are sourced from Turquoise Health Clear Rates, ",
+      "weighted by utilization, payer market share, and ",
+      "provider bed count\n",
+      "Box plots show weighted quantiles of commercial to Medicare rates ",
+      "ratios. Whiskers are 10th and 90th percentiles\n",
+      "Sample includes all MS-DRGs and the top 5,000 HCPCS by volume, ",
+      "excluding drug and device codes"
+    )
+  ) +
+  theme_minimal() +
+  guides(fill = "none") +
+  theme(
+    plot.title = element_text(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 8, l = -36)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 16, l = -36),
+      lineheight = 1.1
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold",
+      hjust = 1
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 12,
+      margin = margin(t = 2),
+      lineheight = 1.1
+    ),
+    axis.text.y = element_markdown(
+      size = 12,
+      face = "bold"
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey85"),
+    panel.grid.minor.y = element_line(color = "grey90"),
+    plot.caption = element_text(
+      size = 10,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    )
+  )
+```
+
+```{r ipop_boxplot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 6.5
+
+nchs_ipop_agg_df <- rates_clean_df |>
+  filter(!(is.na(all_wtd_mean_pct_of_medicare) | is.na(total_beds))) |>
+  filter(!is.na(nchs_code)) |>
+  group_by(nchs_code, nchs_class) |>
+  summarize(
+    ip_ymin = wtd.quantile(
+      ip_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    ip_ylower = wtd.quantile(
+      ip_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    ip_ymiddle = wtd.quantile(
+      ip_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    ip_yupper = wtd.quantile(
+      ip_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    ip_ymax = wtd.quantile(
+      ip_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    op_ymin = wtd.quantile(
+      op_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    op_ylower = wtd.quantile(
+      op_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    op_ymiddle = wtd.quantile(
+      op_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    op_yupper = wtd.quantile(
+      op_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    op_ymax = wtd.quantile(
+      op_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    num_beds = sum(total_beds),
+    num_providers = n_distinct(provider_id),
+    ip_num_rates = sum(ip_num_rates, na.rm = TRUE),
+    op_num_rates = sum(op_num_rates, na.rm = TRUE)
+  ) |>
+  pivot_longer(
+    cols = c(
+      starts_with("ip"),
+      starts_with("op"),
+    ),
+    names_pattern = "([a-z]*)_([a-z]*)",
+    names_to = c("type", "aes"),
+    values_to = "ratio"
+  ) |>
+  pivot_wider(
+    names_from = "aes",
+    values_from = "ratio"
+  ) |>
+  mutate(
+    ipop_label = paste0(
+      paste0(
+        paste0(
+          "<span style='font-size:14px;color:",
+          rurality_color_values[paste0(type, "-dark")],
+          "'>",
+          label_comma_short(num),
+          "</span>"
+        ),
+        collapse = " / "
+      ),
+      "<span style='font-size:14px'> rates</span><br>"
+    )
+  ) |>
+  mutate(
+    # Overlaps onto vline showing urban/rural split
+    ipop_label = ifelse(
+      nchs_code == 4,
+      str_remove_all(ipop_label, " rates"),
+      ipop_label
+    ),
+    code_label = factor(nchs_code),
+    code_label = fct_relabel(
+      code_label,
+      \(x) {
+        paste0(
+          "**",
+          case_match(
+          x,
+          "1" ~ "Large central",
+          "2" ~ "Large fringe",
+          "3" ~ "Medium",
+          "4" ~ "Small",
+          "5" ~ "Micropolitan",
+          "6" ~ "Noncore"
+        ),
+          "**<br>",
+          ipop_label,
+          "<span style='font-size:14px'>",
+          scales::label_comma()(num_providers),
+          " hospitals</span><br>",
+          "<span style='font-size:14px'>",
+          scales::label_comma()(num_beds),
+          " beds</span>"
+        )
+      }
+    ),
+    code_class = nchs_class
+  )
+
+nchs_ipop_agg_df |>
+  ggplot() +
+  geom_boxplot(
+    aes(
+      ymin = ymin,
+      lower = ylower,
+      middle = ymiddle,
+      upper = yupper,
+      ymax = ymax,
+      x = code_label,
+      fill = type
+    ),
+    stat = "identity",
+    width = 0.6
+  ) +
+  annotate(
+    "segment",
+    x = 4.47,
+    xend = 4.47,
+    y = 0.5,
+    yend = 3.58,
+    linetype = "dashed",
+    color = "grey20"
+  ) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    expand = c(0, 0)
+  ) +
+  scale_fill_manual(
+    values = rurality_color_values[5:6]
+  ) +
+  coord_cartesian(clip = "off", ylim = c(1.05, 3.5)) +
+  labs(
+    title = paste0(
+      "Inpatient reimbursement is much lower at rural hospitals"
+    ),
+    subtitle = paste0(
+      "And the gap between **<span style='color:",
+      rurality_color_values["ip-dark"],
+      "'>inpatient</span>**",
+      " and **<span style='color:",
+      rurality_color_values["op-dark"],
+      "'>outpatient</span>**",
+      " reimbursement is larger"
+    ),
+    x = paste0(
+      "Metro (urban)",
+      "<span style='color:white'>████████████</span>",
+      "Nonmetro (rural)",
+      "<span style='color:white'>█ █</span>"
+    ),
+    y = "Commercial to Medicare ratio",
+    caption = paste0(
+      "Urban/rural classification uses the National Center for Health ",
+      "Statistics (NCHS) Urban-Rural Classification Scheme for Counties\n",
+      "Rates are sourced from Turquoise Health Clear Rates, ",
+      "weighted by utilization, payer market share, and ",
+      "provider bed count\n",
+      "Box plots show weighted quantiles of commercial to Medicare rates ",
+      "ratios. Whiskers are 10th and 90th percentiles\n",
+      "Sample includes all MS-DRGs and the top 5,000 HCPCS by volume, ",
+      "excluding drug and device codes"
+    )
+  ) +
+  theme_minimal() +
+  guides(fill = "none") +
+  theme(
+    plot.title = element_markdown(
+      size = 19,
+      face = "bold",
+      lineheight = 1.1,
+      margin = margin(b = 8, l = -36)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 16, l = -36),
+      lineheight = 1.1
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold",
+      hjust = 1
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 12,
+      margin = margin(t = 2),
+      lineheight = 1.1
+    ),
+    axis.text.y = element_markdown(
+      size = 12,
+      face = "bold"
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey85"),
+    panel.grid.minor.y = element_line(color = "grey90"),
+    plot.caption = element_text(
+      size = 10,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    )
+  )
+```
+
+```{r health_system_boxplot}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 6.5
+
+nchs_hs_agg_df <- rates_clean_df |>
+  filter(!(is.na(all_wtd_mean_pct_of_medicare) | is.na(total_beds))) |>
+  filter(!is.na(nchs_code)) |>
+  mutate(
+    is_health_system = !is.na(health_system_id),
+    hs = ifelse(is_health_system, "yhs", "nhs")
+  ) |>
+  group_by(nchs_code, nchs_class, is_health_system, hs) |>
+  summarize(
+    ymin = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    ylower = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    ymiddle = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    yupper = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    ymax = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    num_beds = sum(total_beds),
+    num_rates = sum(all_num_rates),
+    num_providers = n_distinct(provider_id)
+  ) |>
+  ungroup() |>
+  mutate(
+    hs_rates_label = paste0(
+      paste0(
+        paste0(
+          "<span style='font-size:14px;'>",
+          label_comma_short(num_rates),
+          "</span>"
+        ),
+        collapse = " / "
+      ),
+      "<span style='font-size:14px'> rates</span><br>"
+    ),
+    hs_providers_label = paste0(
+      paste0(
+        paste0(
+          "<span style='font-size:14px;color:",
+          rurality_color_values[paste0(hs, "-dark")],
+          "'>",
+          label_comma_short(num_providers),
+          "</span>"
+        ),
+        collapse = " / "
+      ),
+      "<span style='font-size:14px'> hosp.</span><br>"
+    ),
+    hs_beds_label = paste0(
+      paste0(
+        paste0(
+          "<span style='font-size:14px;'>",
+          label_comma_short(num_beds),
+          "</span>"
+        ),
+        collapse = " / "
+      ),
+      "<span style='font-size:14px'> beds</span>"
+    ),
+    .by = nchs_code
+  ) |>
+  group_by(nchs_code, nchs_class, is_health_system) |>
+  mutate(
+    code_label = factor(nchs_code),
+    code_label = fct_relabel(
+      code_label,
+      \(x) {
+        paste0(
+          "**",
+          case_match(
+          x,
+          "1" ~ "Large central",
+          "2" ~ "Large fringe",
+          "3" ~ "Medium",
+          "4" ~ "Small",
+          "5" ~ "Micropolitan",
+          "6" ~ "Noncore"
+        ),
+          "**<br>",
+          hs_providers_label,
+          hs_rates_label,
+          hs_beds_label
+        )
+      }
+    ),
+    code_class = nchs_class
+  ) |>
+  ungroup() |>
+  mutate(
+    pct_health_system = num_providers / sum(num_providers),
+    .by = code_label
+  )
+
+ggplot(
+  nchs_hs_agg_df,
+  aes(
+    ymin = ymin,
+    lower = ylower,
+    middle = ymiddle,
+    upper = yupper,
+    ymax = ymax,
+    x = code_label,
+    fill = hs
+  )
+) +
+  # This is a horrible hack to generate variable width boxes, which
+  # aren't natively supported by ggplot
+  Map(
+    \(x) {
+      geom_boxplot(
+        data = nchs_hs_agg_df |>
+          filter(nchs_code == x),
+        width = nchs_hs_agg_df |>
+          filter(nchs_code == x) |>
+          pull(pct_health_system),
+        stat = "identity"
+      )
+    },
+    1:6
+  ) +
+  annotate(
+    "segment",
+    x = 4.48,
+    xend = 4.48,
+    y = 0.94,
+    yend = 3.6,
+    linetype = "dashed",
+    color = "grey20"
+  ) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    expand = c(0, 0)
+  ) +
+  scale_fill_manual(
+    values = rurality_color_values[8:12]
+  ) +
+  coord_cartesian(clip = "off", ylim = c(1.5, 3.5)) +
+  labs(
+    title = paste0(
+      "**<span style='color:",
+      rurality_color_values["nhs-dark"],
+      "'>Independent</span>**",
+      " hospitals are reimbursed less than **<span style='color:",
+      rurality_color_values["yhs-dark"],
+      "'>health systems</span>**"
+    ),
+    subtitle = paste0(
+      "Rural counties have a higher proportion (i.e. box width) ",
+      "of independent hospitals"
+    ),
+    x = paste0(
+      "Metro (urban)",
+      "<span style='color:white'>████████████</span>",
+      "Nonmetro (rural)",
+      "<span style='color:white'>█ █</span>"
+    ),
+    y = "Commercial to Medicare ratio",
+    caption = paste0(
+      "Box width is scaled to the proportion of hospital types (independent ",
+      "or part of a health system) within each NCHS code\n",
+      "Urban/rural classification uses the National Center for Health ",
+      "Statistics (NCHS) Urban-Rural Classification Scheme for Counties\n",
+      "Rates are sourced from Turquoise Health Clear Rates, ",
+      "weighted by utilization, payer market share, and ",
+      "provider bed count\n",
+      "Box plots show weighted quantiles of commercial to Medicare rates ",
+      "ratios. Whiskers are 10th and 90th percentiles\n",
+      "Sample includes all MS-DRGs and the top 5,000 HCPCS by volume, ",
+      "excluding drug and device codes"
+    )
+  ) +
+  theme_minimal() +
+  guides(fill = "none") +
+  theme(
+    plot.title = element_markdown(
+      size = 17.5,
+      face = "bold",
+      margin = margin(b = 8, l = -36)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 16, l = -36),
+      lineheight = 1.1
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold",
+      hjust = 1
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 12,
+      margin = margin(t = 2),
+      lineheight = 1.1
+    ),
+    axis.text.y = element_markdown(
+      size = 12,
+      face = "bold"
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey85"),
+    panel.grid.minor.y = element_line(color = "grey90"),
+    plot.caption = element_text(
+      size = 10,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    )
+  )
+```
+
+```{r classifications_boxplot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 10
+
+rucc_agg_df <- rates_clean_df |>
+  filter(!(is.na(all_wtd_mean_pct_of_medicare) | is.na(total_beds))) |>
+  filter(!is.na(rucc_code)) |>
+  group_by(rucc_code, rucc_class) |>
+  summarize(
+    ymin = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    ylower = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    ymiddle = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    yupper = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    ymax = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    num_rates = sum(all_num_rates),
+    num_providers = n_distinct(provider_id)
+  ) |>
+  mutate(
+    code_source = "USDS Rural-Urban Continuum Codes",
+    code_label = factor(rucc_code),
+    code_label = fct_relabel(
+      code_label,
+      \(x) {
+        paste0(
+          "**",
+          case_match(
+          x,
+          "1" ~ "≥ 1M",
+          "2" ~ "250K - 1M",
+          "3" ~ "< 250K",
+          "4" ~ "≥ 20K<br>adjacent",
+          "5" ~ "≥ 20K<br>not adj.",
+          "6" ~ "20K - 5K<br>adjacent",
+          "7" ~ "20K - 5K<br>not adj.",
+          "8" ~ "< 5K<br>adjacent",
+          "9" ~ "< 5K<br>not adj.",
+        ),
+          "**<br>",
+          "<span style='font-size:10px'>",
+          label_comma_short(num_rates),
+          " rates</span><br>",
+          "<span style='font-size:10px'>",
+          scales::label_comma()(num_providers),
+          " hospitals</span>"
+        )
+      }
+    ),
+    code_class = rucc_class
+  )
+
+uic_agg_df <- rates_clean_df |>
+  filter(!(is.na(all_wtd_mean_pct_of_medicare) | is.na(total_beds))) |>
+  filter(!is.na(uic_code)) |>
+  group_by(uic_code, uic_class) |>
+  summarize(
+    ymin = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    ylower = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    ymiddle = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    yupper = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    ymax = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    num_rates = sum(all_num_rates),
+    num_providers = n_distinct(provider_id)
+  ) |>
+  mutate(
+    code_source = "USDS Urban-Influence Codes",
+    code_label = factor(uic_code),
+    code_label = fct_relabel(
+      code_label,
+      \(x) {
+        paste0(
+          "**",
+          case_match(
+          x,
+          "1" ~ "Large metro",
+          "2" ~ "Micropolitan<br>adjacent",
+          "3" ~ "Noncore<br>adjacent",
+          "4" ~ "Small metro",
+          "5" ~ "Micropolitan<br>adjacent",
+          "6" ~ "Noncore<br>adjacent",
+          "7" ~ "Micropolitan<br>Not adj.",
+          "8" ~ "Noncore<br>Pop. ≥ 5K",
+          "9" ~ "Noncore<br>Pop. < 5K",
+        ),
+          "**<br>",
+          "<span style='font-size:10px'>",
+          label_comma_short(num_rates),
+          " rates</span><br>",
+          "<span style='font-size:10px'>",
+          scales::label_comma()(num_providers),
+          " hospitals</span>"
+        )
+      }
+    ),
+    code_class = uic_class
+  )
+
+ruca_agg_df <- rates_clean_df |>
+  filter(!(is.na(all_wtd_mean_pct_of_medicare) | is.na(total_beds))) |>
+  filter(!is.na(ruca_code)) |>
+  group_by(ruca_code, ruca_class) |>
+  summarize(
+    ymin = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    ylower = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    ymiddle = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    yupper = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    ymax = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    num_rates = sum(all_num_rates),
+    num_providers = n_distinct(provider_id)
+  ) |>
+  mutate(
+    code_source = "USDS Rural-Urban Commuting Areas",
+    code_label = factor(ruca_code),
+    code_label = fct_relabel(
+      code_label,
+      \(x) {
+        paste0(
+          "**",
+          case_match(
+          x,
+          "1" ~ "Metro core",
+          "2" ~ "Metro high<br>commuting",
+          "3" ~ "Metro low<br>commuting",
+          "4" ~ "Micro core",
+          "5" ~ "Micro high<br>commuting",
+          "6" ~ "Micro low<br>commuting",
+          "7" ~ "Small town",
+          "8" ~ "S. town high<br>commuting",
+          "9" ~ "S. town low<br>commuting",
+          "10" ~ "Rural",
+        ),
+          "**<br>",
+          "<span style='font-size:10px'>",
+          label_comma_short(num_rates),
+          " rates</span><br>",
+          "<span style='font-size:10px'>",
+          scales::label_comma()(num_providers),
+          " hospitals</span>"
+        )
+      }
+    ),
+    code_class = ruca_class
+  )
+
+bind_rows(nchs_agg_df, rucc_agg_df, uic_agg_df, ruca_agg_df) |>
+  mutate(
+    code_source = factor(
+      code_source,
+      levels = c(
+        "NCHS Urban-Rural Classification Scheme for Counties",
+        "USDS Rural-Urban Continuum Codes",
+        "USDS Rural-Urban Commuting Areas",
+        "USDS Urban-Influence Codes"
+      )
+    )
+  ) |>
+  ggplot() +
+  geom_boxplot(
+    aes(
+      ymin = ymin,
+      lower = ylower,
+      middle = ymiddle,
+      upper = yupper,
+      ymax = ymax,
+      x = code_label,
+      fill = code_class
+    ),
+    stat = "identity",
+    width = 0.6
+  ) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    expand = c(0, 0)
+  ) +
+  scale_fill_manual(values = rurality_color_values[1:2]) +
+  coord_cartesian(ylim = c(1.5, 3.5)) +
+  guides(fill = "none") +
+  facet_wrap(vars(code_source), ncol = 1, scales = "free_x") +
+  labs(
+    title = paste0(
+      "Rural-urban reimbursement patterns are consistent\nacross ",
+      "different rurality classification schemes"
+    ),
+    subtitle = paste0(
+      "Hospitals in the most rural counties (rightmost box) are reimbursed ",
+      "the lowest, while<br>hospitals in suburban/",
+      "micropolitan counties (middle boxes) are reimbursed the highest"
+    ),
+    x = paste0(
+      "<span style='font-size:30px'>←</span> More <span style='color:",
+      rurality_color_values["urban-dark"],
+      "'>urban</span> counties",
+      "<span style='color:white'>██████</span>",
+      "More <span style='color:",
+      rurality_color_values["rural-dark"],
+      "'>rural</span> counties <span style='font-size:30px'>→</span><br>"
+    ),
+    y = "Commercial to Medicare ratio",
+    caption = paste0(
+      "Boxes represent codes for each rurality classification. Only metro",
+      " counties in each classification are considered urban (green)\n",
+      "Rates are sourced from Turquoise Health Clear Rates, ",
+      "weighted by utilization, payer market share, and ",
+      "provider bed count\n",
+      "Box plots show weighted quantiles of commercial to Medicare rates ",
+      "ratios. Whiskers are 10th and 90th percentiles\n",
+      "Sample includes all MS-DRGs and the top 5,000 HCPCS by volume, ",
+      "excluding drug and device codes"
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 8)
+    ),
+    plot.subtitle = element_markdown(
+      size = 13,
+      margin = margin(b = 16),
+      lineheight = 1.1
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 4),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x = element_blank(),
+    axis.text.y = element_markdown(
+      size = 12,
+      face = "bold"
+    ),
+    strip.background = element_rect(
+      fill = "grey80",
+    ),
+    strip.text = element_text(
+      size = 13,
+      face = "bold"
+    ),
+    panel.background = element_rect(color = "black"),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey85"),
+    panel.grid.minor.y = element_line(color = "grey90"),
+    plot.caption = element_text(
+      size = 10,
+      lineheight = 1.1,
+      margin = margin(t = 2)
+    )
+  )
+```
+
+```{r methods_boxplot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 6.5
+
+rates_clean_df |>
+  filter(!(is.na(all_wtd_mean_pct_of_medicare) | is.na(total_beds))) |>
+  filter(!is.na(nchs_class)) |>
+  group_by(nchs_class) |>
+  summarize(
+    wtd_ymin = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    wtd_ylower = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    wtd_ymiddle = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    wtd_yupper = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    wtd_ymax = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    uwtd_ymin = quantile(
+      all_mean_pct_of_medicare,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    uwtd_ylower = quantile(
+      all_mean_pct_of_medicare,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    uwtd_ymiddle = quantile(
+      all_mean_pct_of_medicare,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    uwtd_yupper = quantile(
+      all_mean_pct_of_medicare,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    uwtd_ymax = quantile(
+      all_mean_pct_of_medicare,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    sub_ymin = wtd.quantile(
+      sub_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    sub_ylower = wtd.quantile(
+      sub_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    sub_ymiddle = wtd.quantile(
+      sub_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    sub_yupper = wtd.quantile(
+      sub_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    sub_ymax = wtd.quantile(
+      sub_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.90,
+      na.rm = TRUE
+    )
+  ) |>
+  mutate(
+    nchs_class_label = fct_relabel(
+      nchs_class,
+      \(x) {
+        paste0(
+          "**",
+          "<span style='color:",
+          rurality_color_values[paste0(x, "-dark")],
+          "'>",
+          str_to_title(x),
+          "</span>",
+          "**"
+        )
+      }
+    ),
+    nchs_class_label = fct_rev(nchs_class_label)
+  ) |>
+  pivot_longer(
+    cols = c(
+      starts_with("wtd"),
+      starts_with("uwtd"),
+      starts_with("sub"),
+    ),
+    names_pattern = "([a-z]*)_([a-z]*)",
+    names_to = c("type", "aes"),
+    values_to = "ratio"
+  ) |>
+  pivot_wider(
+    names_from = "aes",
+    values_from = "ratio"
+  ) |>
+  mutate(
+    type = case_match(
+      type,
+      "sub" ~ "Sub-sample of\ncommon codes*",
+      "uwtd" ~ "Unweighted rates",
+      "wtd" ~ "Weighted rates"
+    ),
+    type = fct_rev(type)
+  ) |>
+  ggplot() +
+  geom_boxplot(
+    aes(
+      ymin = ymin,
+      lower = ylower,
+      middle = ymiddle,
+      upper = yupper,
+      ymax = ymax,
+      x = nchs_class_label,
+      fill = nchs_class
+    ),
+    stat = "identity",
+    width = 0.6
+  ) +
+  scale_fill_manual(
+    values = rurality_color_values[1:2]
+  ) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    limits = c(1.5, 3.5),
+    expand = c(0, 0)
+  ) +
+  labs(
+    title = "Rural reimbursement is lower across methods and samples",
+    subtitle = paste0(
+      "Using unweighted rates or a subset of codes doesn't\n",
+      "change the reimbursement pattern"
+    ),
+    x = "",
+    y = "Commercial to Medicare ratio",
+    caption = paste0(
+      "Urban/rural classification uses the National Center for Health ",
+      "Statistics (NCHS) Urban-Rural Classification Scheme for Counties\n",
+      "Box plots show weighted quantiles of commercial to Medicare rates ",
+      "ratios. Whiskers are 10th and 90th percentiles\n",
+      "*Sub-sample includes the following HCPCS: 27130, 29881, 29877, 42820, ",
+      "66984, 71046, 73720, 73721, 77066\n",
+      "And the following MS-DRGs: 177, 195, 280, 291, 343, 460, 470, 743, ",
+      "788, 807, 871"
+    )
+  ) +
+  facet_wrap(vars(type), nrow = 1, strip.position = "bottom") +
+  coord_cartesian(clip = "off") +
+  guides(fill = "none") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 8, l = -36)
+    ),
+    plot.subtitle = element_markdown(
+      size = 13.5,
+      margin = margin(b = 16, l = -36),
+      lineheight = 1.1
+    ),
+    axis.title.x = element_text(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 14,
+      margin = margin(t = 2)
+    ),
+    axis.text.y = element_markdown(
+      size = 12,
+      face = "bold"
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey85"),
+    panel.grid.minor.y = element_line(color = "grey90"),
+    strip.text.x = element_text(
+      size = 14,
+      face = "bold",
+      vjust = 1
+    ),
+    strip.placement = "outside",
+    plot.caption = element_text(
+      size = 10,
+      lineheight = 1.1,
+      margin = margin(t = -2)
+    )
+  )
+```
+
+```{r}
+rates_code_clean_df |>
+  filter(!is.na(nchs_class)) |>
+  group_by(service_line, nchs_class) |>
+  summarize(
+    q10 = wtd.quantile(wtd_mean_pct_of_medicare, num_rates, 0.10, na.rm = TRUE),
+    q25 = wtd.quantile(wtd_mean_pct_of_medicare, num_rates, 0.25, na.rm = TRUE),
+    q50 = wtd.quantile(wtd_mean_pct_of_medicare, num_rates, 0.50, na.rm = TRUE),
+    q75 = wtd.quantile(wtd_mean_pct_of_medicare, num_rates, 0.75, na.rm = TRUE),
+    q90 = wtd.quantile(wtd_mean_pct_of_medicare, num_rates, 0.90, na.rm = TRUE)
+  ) |>
+  ungroup() |>
+  mutate(q50_all = q50[nchs_class == "urban"], .by = service_line) |>
+  mutate(service_line = fct_reorder(service_line, q50_all)) |>
+  ggplot() +
+  geom_boxplot(
+    aes(
+      xmin = q10,
+      xlower = q25,
+      xmiddle = q50,
+      xupper = q75,
+      xmax = q90,
+      y = service_line,
+      fill = nchs_class
+    ),
+    stat = "identity"
+  )
+```
