@@ -1,7 +1,7 @@
 -- Keep only commercial rates from hospitals, no MA, no drug codes, no ASCs, etc
 WITH cld_subset AS (
     SELECT cld.*
-    FROM tq_dev.internal_dev_csong_cld_v2_1_1.prod_combined_all AS cld
+    FROM tq_dev.internal_dev_csong_cld_v2_2_0.prod_combined_all AS cld
     WHERE cld.taxonomy_grouping = 'Hospitals'
         AND cld.network_type = 'PPO'
         AND cld.canonical_rate IS NOT NULL
@@ -141,7 +141,9 @@ provider_info AS (
         total_beds,
         nashp_medicare_mix,
         nashp_medicaid_mix,
-        nashp_commercial_payer_mix
+        nashp_commercial_payer_mix,
+        MAX(state_market_share)
+            OVER (PARTITION BY state) AS max_state_market_share
     FROM cld_filled
 ),
 
