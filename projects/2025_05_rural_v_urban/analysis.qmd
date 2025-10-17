@@ -1279,7 +1279,7 @@ rucc_agg_df <- rates_clean_df |>
     num_providers = n_distinct(provider_id)
   ) |>
   mutate(
-    code_source = "USDS Rural-Urban Continuum Codes",
+    code_source = "USDA Rural-Urban Continuum Codes",
     code_label = factor(rucc_code),
     code_label = fct_relabel(
       code_label,
@@ -1350,7 +1350,7 @@ uic_agg_df <- rates_clean_df |>
     num_providers = n_distinct(provider_id)
   ) |>
   mutate(
-    code_source = "USDS Urban-Influence Codes",
+    code_source = "USDA Urban-Influence Codes",
     code_label = factor(uic_code),
     code_label = fct_relabel(
       code_label,
@@ -1421,7 +1421,7 @@ ruca_agg_df <- rates_clean_df |>
     num_providers = n_distinct(provider_id)
   ) |>
   mutate(
-    code_source = "USDS Rural-Urban Commuting Areas",
+    code_source = "USDA Rural-Urban Commuting Areas",
     code_label = factor(ruca_code),
     code_label = fct_relabel(
       code_label,
@@ -1460,9 +1460,9 @@ bind_rows(nchs_agg_df, rucc_agg_df, uic_agg_df, ruca_agg_df) |>
       code_source,
       levels = c(
         "NCHS Urban-Rural Classification Scheme for Counties",
-        "USDS Rural-Urban Continuum Codes",
-        "USDS Rural-Urban Commuting Areas",
-        "USDS Urban-Influence Codes"
+        "USDA Rural-Urban Continuum Codes",
+        "USDA Rural-Urban Commuting Areas",
+        "USDA Urban-Influence Codes"
       )
     )
   ) |>

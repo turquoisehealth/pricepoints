@@ -126,7 +126,7 @@ nchs_df = (
     )
     .rename({"CODE2023": "nchs_code"})
     .select(["geoid", "nchs_code"])
-    # The 2023 can be null because each row represents a county, but some
+    # The 2023 column can be null because each row represents a county, but some
     # counties existed in the past but no longer do in 2023
     .filter(pl.col("nchs_code").is_not_null())
     .with_columns(
@@ -170,7 +170,7 @@ rucc_df = (
     )
 )
 
-# Read UDSA urban-influence codes
+# Read USDA urban-influence codes
 # https://www.ers.usda.gov/data-products/urban-influence-codes
 uic_df = (
     pl.read_csv(
