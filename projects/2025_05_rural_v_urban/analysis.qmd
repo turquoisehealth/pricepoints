@@ -1802,7 +1802,7 @@ rates_clean_df |>
 #| column: page
 #| out-width: 100%
 #| fig-width: 8
-#| fig-height: 12
+#| fig-height: 11
 
 rates_code_clean_df |>
   mutate(
@@ -1920,7 +1920,8 @@ rates_code_clean_df |>
     label.colour = "transparent",
     fill = "transparent",
     lineheight = 1.1,
-    color = "grey30"
+    color = "grey30",
+    nudge_y = -0.03
   ) +
   geom_richtext(
     aes(
@@ -1931,7 +1932,8 @@ rates_code_clean_df |>
     hjust = 1,
     label.colour = "transparent",
     fill = "transparent",
-    lineheight = 1.1
+    lineheight = 1,
+    nudge_y = -0.03
   ) +
   annotate(
     "text",
