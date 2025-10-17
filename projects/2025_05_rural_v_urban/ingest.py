@@ -320,6 +320,7 @@ rates_code_clean_df = (
         ["billing_code", "billing_code_type", "service_line", "nchs_class"]
     )
     .agg(
+        pl.col("state_claims_percentile_all").first(),
         pl.col("num_rates").sum().alias("num_rates"),
         pl.col("mean_rate").mean().alias("mean_rate"),
         pl.col("mean_medicare").mean().alias("mean_medicare"),

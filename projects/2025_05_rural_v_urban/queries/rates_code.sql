@@ -71,6 +71,30 @@ payer_market_share AS (
         AND pr.line_of_business = st.line_of_business
 ),
 
+-- Turn claim counts into a 0-1 percentile rank by state. Used to downweight
+-- codes that aren't heavily used
+code_utilization AS (
+    SELECT DISTINCT
+        *,
+        PERCENT_RANK()
+            OVER (
+                PARTITION BY state
+                ORDER BY state_claims_count
+            )
+            AS state_claims_percentile_all
+    FROM (
+        SELECT
+            state,
+            billing_code,
+            billing_code_type,
+            SUM(total_count_encounters) AS state_claims_count
+        FROM tq_production.claims_benchmarks.claims_benchmarks_utilization_state
+        WHERE REGEXP_LIKE(billing_code, '^[0-9]{3}$|^[0-9]{5}')
+            AND service_year = 2024
+        GROUP BY state, billing_code, billing_code_type
+    )
+),
+
 -- Join the weights data and replace missing weights with a 1st
 -- percentile rank (lowest)
 cld_filled AS (
@@ -115,5 +139,11 @@ agg_provider_code AS (
     GROUP BY 1, 2, 3, 4, 5, 6, 7, 8 HAVING COUNT() >= 4 -- noqa
 )
 
-SELECT *
-FROM agg_provider_code
+SELECT
+    apc.*,
+    cu.state_claims_percentile_all
+FROM agg_provider_code AS apc
+LEFT JOIN code_utilization AS cu
+    ON apc.state = cu.state
+    AND apc.billing_code = cu.billing_code
+    AND apc.billing_code_type = cu.billing_code_type
