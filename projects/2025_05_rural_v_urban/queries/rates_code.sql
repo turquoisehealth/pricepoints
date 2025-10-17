@@ -16,6 +16,12 @@ WITH cld_subset AS (
             OR cld.billing_code_type = 'MS-DRG'
         )
         AND cld.canonical_rate_percent_of_medicare BETWEEN 0.4 AND 10.0
+        AND cld.provider_type IN (
+            'Short Term Acute Care Hospital',
+            'Rehabilitation Hospital',
+            'Childrens Hospital',
+            'Critical Access Hospital'
+        )
 ),
 
 -- Use Policy Reporter to get state-level number of covered lives per payer,

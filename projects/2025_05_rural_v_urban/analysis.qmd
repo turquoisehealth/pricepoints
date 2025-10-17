@@ -1873,7 +1873,7 @@ rates_code_clean_df |>
         service_line == "Behavioral Health",
         paste0(
           label_comma_short(first(num_rates)),
-          "<span style='color:transparent'> █</span>"
+          "<span style='color:transparent'>█</span>"
         ),
         label_comma_short(first(num_rates))
       ),
@@ -1908,7 +1908,7 @@ rates_code_clean_df |>
     ),
     width = 0.6,
     stat = "identity",
-    position = "dodge"
+    position = position_dodge(width = 0.8)
   ) +
   geom_richtext(
     aes(
