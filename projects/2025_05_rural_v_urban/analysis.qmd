@@ -101,7 +101,10 @@ rates_clean_df <- read_parquet("data/output/rates_clean.parquet") |>
   )
 
 # Load rates aggregated to the code level
-rates_code_clean_df <- read_parquet("data/output/rates_code_clean.parquet")
+rates_code_clean_df <- read_parquet("data/output/rates_code_clean.parquet") |>
+  mutate(
+    state_claims_percentile_all = replace_na(state_claims_percentile_all, 0.01)
+  )
 
 # Bounding box to clip the Aleutian Islands
 states_bbox <- c(xmin = -168, xmax = -65, ymin = 18.5, ymax = 72) |>
@@ -1795,31 +1798,254 @@ rates_clean_df |>
   )
 ```
 
-```{r}
+```{r service_line_boxplot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 12
+
 rates_code_clean_df |>
+  mutate(
+    service_line = replace(
+      service_line,
+      str_detect(service_line, "Consultative"),
+      "Preventative Care"
+    )
+  ) |>
   filter(!is.na(nchs_class)) |>
+  filter(
+    # Not enough codes in these service lines for a large enough sample
+    !service_line %in% c("Transplant", "Surgery", "Dental", "Nephrology")
+  ) |>
   group_by(service_line, nchs_class) |>
   summarize(
-    q10 = wtd.quantile(wtd_mean_pct_of_medicare, num_rates, 0.10, na.rm = TRUE),
-    q25 = wtd.quantile(wtd_mean_pct_of_medicare, num_rates, 0.25, na.rm = TRUE),
-    q50 = wtd.quantile(wtd_mean_pct_of_medicare, num_rates, 0.50, na.rm = TRUE),
-    q75 = wtd.quantile(wtd_mean_pct_of_medicare, num_rates, 0.75, na.rm = TRUE),
-    q90 = wtd.quantile(wtd_mean_pct_of_medicare, num_rates, 0.90, na.rm = TRUE)
+    num_rates = sum(num_rates),
+    num_codes = n_distinct(billing_code),
+    q10 = wtd.quantile(
+      wtd_mean_pct_of_medicare,
+      state_claims_percentile_all,
+      0.10,
+      na.rm = TRUE
+    ),
+    q25 = wtd.quantile(
+      wtd_mean_pct_of_medicare,
+      state_claims_percentile_all,
+      0.25,
+      na.rm = TRUE
+    ),
+    q50 = wtd.quantile(
+      wtd_mean_pct_of_medicare,
+      state_claims_percentile_all,
+      0.50,
+      na.rm = TRUE
+    ),
+    q75 = wtd.quantile(
+      wtd_mean_pct_of_medicare,
+      state_claims_percentile_all,
+      0.75,
+      na.rm = TRUE
+    ),
+    q90 = wtd.quantile(
+      wtd_mean_pct_of_medicare,
+      state_claims_percentile_all,
+      0.90,
+      na.rm = TRUE
+    )
   ) |>
   ungroup() |>
   mutate(q50_all = q50[nchs_class == "urban"], .by = service_line) |>
-  mutate(service_line = fct_reorder(service_line, q50_all)) |>
+  mutate(service_line = fct_rev(fct_reorder(service_line, q50_all))) |>
+  arrange(service_line, nchs_class) |>
+  mutate(
+    # Absolutely hacky, garbage label creation. The ifelse here is to shift
+    # the labels over using whitespace only for the Behavioral Health row
+    codes_label = label_comma()(first(num_codes)),
+    rates_label = paste0(
+      "<span style='color:",
+      rurality_color_values["urban-dark"],
+      "'>",
+      label_comma_short(last(num_rates)),
+      "</span><br>",
+      "<span style='color:",
+      rurality_color_values["rural-dark"],
+      "'>",
+      ifelse(
+        service_line == "Behavioral Health",
+        paste0(
+          label_comma_short(first(num_rates)),
+          "<span style='color:transparent'> █</span>"
+        ),
+        label_comma_short(first(num_rates))
+      ),
+      "</span>"
+    ),
+    .by = service_line
+  ) |>
+  mutate(
+    stripes = rep(c("dark", "dark", "light", "light"), length.out = n())
+  ) |>
+  filter(!is.na(service_line)) |>
   ggplot() +
+  geom_tile(
+    aes(
+      y = service_line,
+      x = 1,
+      width = Inf,
+      height = 1,
+      fill = stripes
+    ),
+    alpha = 0.2
+  ) +
   geom_boxplot(
     aes(
-      xmin = q10,
+      xmin = q25,
       xlower = q25,
       xmiddle = q50,
       xupper = q75,
-      xmax = q90,
+      xmax = q75,
       y = service_line,
       fill = nchs_class
     ),
-    stat = "identity"
+    width = 0.6,
+    stat = "identity",
+    position = "dodge"
+  ) +
+  geom_richtext(
+    aes(
+      x = 1.5,
+      y = service_line,
+      label = codes_label
+    ),
+    hjust = 1,
+    label.colour = "transparent",
+    fill = "transparent",
+    lineheight = 1.1,
+    color = "grey30"
+  ) +
+  geom_richtext(
+    aes(
+      x = 1.75,
+      y = service_line,
+      label = rates_label
+    ),
+    hjust = 1,
+    label.colour = "transparent",
+    fill = "transparent",
+    lineheight = 1.1
+  ) +
+  annotate(
+    "text",
+    x = 1.48,
+    y = 23,
+    hjust = 1,
+    size = 3.8,
+    fontface = "bold",
+    label = "Num.\ncodes",
+    lineheight = 0.85,
+    color = "grey30"
+  ) +
+  annotate(
+    "text",
+    x = 1.73,
+    y = 23,
+    hjust = 1,
+    size = 3.8,
+    fontface = "bold",
+    label = "Num.\nrates",
+    lineheight = 0.85,
+    color = "grey30"
+  ) +
+  annotate(
+    "rect",
+    xmin = 1.8,
+    xmax = Inf,
+    ymin = 22.5,
+    ymax = Inf,
+    fill = "white"
+  ) +
+  scale_fill_manual(
+    values = c(
+      rurality_color_values[1:2],
+      "dark" = "grey70",
+      "light" = "white"
+    )
+  ) +
+  scale_x_continuous(
+    labels = percent_format(accuracy = 1),
+    expand = c(0, 0),
+    n.breaks = 6
+  ) +
+  guides(fill = "none") +
+  coord_cartesian(
+    clip = "off",
+    xlim = c(1.25, 4.35),
+    ylim = c(1, 22.75)
+  ) +
+  labs(
+    title = paste0(
+      "<span style='color:",
+      rurality_color_values["rural-dark"],
+      "'>Rural</span> hospitals are reimbursed less than ",
+      "<span style='color:",
+      rurality_color_values["urban-dark"],
+      "'>urban</span> for most services"
+    ),
+    subtitle = paste0(
+      "Across nearly all service lines, rural hospitals are reimbursed less by ",
+      "commercial insurers"
+    ),
+    y = "Service line",
+    x = "Commercial to Medicare ratio",
+    caption = paste0(
+      "Rates are sourced from Turquoise Health Clear Rates, ",
+      "weighted by utilization, payer market share, and ",
+      "provider bed count\n",
+      "Box plots show weighted quantiles of commercial to Medicare rates ",
+      "ratios. Whiskers are excluded to aid visualization\n",
+      "Codes include all MS-DRGs and the top 5,000 HCPCS by volume, ",
+      "excluding drug and device codes"
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(
+      size = 17.5,
+      face = "bold",
+      margin = margin(b = 8, l = -106)
+    ),
+    plot.subtitle = element_markdown(
+      size = 13.5,
+      margin = margin(b = 6, l = -106),
+      lineheight = 1.1
+    ),
+    axis.title.x = element_text(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = -2),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 14,
+      margin = margin(t = 2)
+    ),
+    axis.text.y = element_markdown(
+      size = 12,
+      face = "bold",
+      margin = margin(r = 6)
+    ),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_line(color = "grey85"),
+    panel.grid.minor.x = element_line(color = "grey90"),
+    plot.caption = element_text(
+      size = 10,
+      lineheight = 1.1,
+      margin = margin(t = 10)
+    )
   )
 ```
