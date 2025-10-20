@@ -126,6 +126,7 @@ Key limitations include:
 - Orozco Rodriguez, J. (2025, June 12). ‘One Big Beautiful Bill’ Would Batter Rural Hospital Finances, Researchers Say. KFF Health News. <https://kffhealthnews.org/news/article/rural-hospitals-battered-by-big-beautiful-bill-researchers/>
 - Quealy, K. and Sanger-Katz, M. (2015, December 15). The Experts Were Wrong About the Best Places for Better and Cheaper Health Care. The New York Times. <https://www.nytimes.com/interactive/2015/12/15/upshot/the-best-places-for-better-cheaper-health-care-arent-what-experts-thought.html>
 - Rural Health Information Hub. (2024, December 10). Critical Access Hospitals (CAHs). <https://www.ruralhealthinfo.org/topics/critical-access-hospitals/organizations>
+- Tribble, S. (2025, October 17). States Jostle Over $50B Rural Health Fund as Trump’s Medicaid Cuts Trigger Scramble. KFF. <https://kffhealthnews.org/news/article/rural-health-fund-medicaid-cuts-hospitals-cms-maha/>
 - Vox. (2025, June 12). How America is failing its rural hospitals. <https://www.youtube.com/watch?v=3onNLEpMZ00>)
 - Zionts, A. (2025, September 23). RFK Jr. Misses Mark in Touting Rural Health Transformation Fund as Historic Infusion of Cash. KFF Health News. <https://kffhealthnews.org/news/article/fact-check-rfk-jr-misses-mark-calling-rural-health-transformation-program-historic-cash-infusion/>
 
