@@ -666,7 +666,7 @@ nchs_agg_df |>
   labs(
     title = "Extremely rural hospitals have the lowest reimbursement",
     subtitle = paste0(
-      "Hospitals in noncore rural counties are reimbursed 20 percentage points",
+      "Hospitals in noncore rural counties are reimbursed 25 percentage points",
       "<br>less (relative to Medicare) than hospitals in metro and",
       " micropolitan counties"
     ),
