@@ -6,7 +6,7 @@ This project uses a large national sample of aggregated, cleaned [Price Transpar
 
 ## Data used
 
-This analysis primarily uses \~92M rates commercial PPO rates negotiated between providers and insurers. The rates were exported from the Turquoise Health Clear Rates database, which collapses hospital rates, payer rates, claims data, and more into a single "canonical rate" per provider, payer, and code. Clear Rates also standardizes payment and contract methods by converting most rates into a flat "case rate" per code. This vastly expands the number of comparable rates.
+This analysis primarily uses \~92M commercial PPO rates negotiated between providers and insurers. The rates were exported from the Turquoise Health Clear Rates database, which collapses hospital rates, payer rates, claims data, and more into a single "canonical rate" per provider, payer, and code. Clear Rates also standardizes payment and contract methods by converting most rates into a flat rate per code, vastly expanding the number of comparable rates. Note however, that the \~92M rates represent a small, high-confidence subset of the larger Clear Rates database.
 
 The following additional data sources are used:
 
@@ -38,24 +38,24 @@ All `Short Term Acute Care`, `Rehabilitation`, `Children's`, and `Critical Acces
 
 ### Payers and plans
 
-Only commercial PPO rates are included in this analysis. Medicare Advantage, Exchange, VA, Medicaid, and traditional Medicare rates are excluded. Payers are weighted by their state-level market share (number of covered lives) from Policy Reporter data. Payers with missing market share data are assigned a minimal weight of 0.01 (1st percentile).
+Only commercial PPO rates are included in this analysis. Medicare Advantage, Exchange, VA, Medicaid, and traditional Medicare rates are excluded. Payers are weighted by their state-level market share (number of covered lives) from Policy Reporter data. Payers with missing market share data are assigned a minimal weight of 0.01 (1st percentile). The analysis includes 51 of the largest payers in the U.S., including all BUCAH payers.
 
-Medicare rates are used as a benchmark for comparison (i.e., rates are expressed as a percentage of Medicare). Medicare rates are derived from Turquoise's internal Medicare rate database and are typically provided-adjusted (e.g. for DSH percentage).
+Medicare rates are used as a benchmark for comparison (i.e., rates are expressed as a percentage of Medicare). Medicare rates are derived from Turquoise's internal Medicare rate database and are typically provider-adjusted (e.g. for DSH percentage).
 
 > [!NOTE]
-> This analysis has an important limitation in that it uses estimated Medicare fee-for-service rates as a benchmark even in cases where those rates may not apply. For example, Critical Access Hospitals (CAHs) are reimbursed by Medicare at 101% of cost, rather than at a fixed rate. However, the cost reimbursement data is unavailable to Turquoise, so we fallback to the fee-for-service rates.
+> This analysis has an important limitation in that it uses estimated Medicare fee-for-service rates as a benchmark even in cases where those rates may not apply. For example, Critical Access Hospitals (CAHs) are reimbursed by Medicare at 101% of cost (99% with sequestration), rather than at a fixed rate. However, the cost reimbursement data is unavailable to Turquoise, so we fallback to the fee-for-service rates.
 >
-> In reality, CAH reimbursement is probably *higher* than the rates used in this analysis, which means the denominator in the "percentage of Medicare" calculation is artificially low. This means that the reported commercial-to-Medicare ratios for CAHs are likely *overstated*, and rural hospitals may be making even less as a percentage of Medicare than reported here.
+> As a result of the cost-based reimbursement, CAH reimbursement is probably *higher* in reality than the rates used in this analysis. That means the denominator in the "percentage of Medicare" calculation is artificially low. This means that the reported commercial-to-Medicare ratios for CAHs are likely *overstated*, and rural hospitals may be making even less as a percentage of Medicare than reported here.
 
 ### Codes
 
-The analysis includes both HCPCS and MS-DRG billing codes. HCPCS codes must be 5-digit numeric codes, while MS-DRGs are included without restriction. Drug codes and device codes are excluded. Rates must be between 40% and 1000% of the Medicare rate to be included. A subset of representative codes is also used for certain analyses, including common HCPCS procedures (e.g., 27130, 29881, 71046, 73720, 77066) and MS-DRGs (e.g., 177, 195, 280, 291, 460, 470, 743, 788, 807, 871).
+The analysis includes both HCPCS (Level 1, i.e. CPT codes) and MS-DRG billing codes. HCPCS codes must be 5-digit numeric codes, while MS-DRGs are included without restriction. Drug codes and device codes are excluded. Rates must be between 40% and 1000% of the Medicare rate to be included. A subset of representative codes is also used for certain analyses, including common HCPCS procedures (e.g., 27130, 29881, 71046, 73720, 77066) and MS-DRGs (e.g., 177, 195, 280, 291, 460, 470, 743, 788, 807, 871).
 
 Codes are weighted according to their state-level utilization, as derived from claims data from 2024. Codes with higher utilization receive higher weights when aggregating rates across codes. Codes with missing utilization data are assigned a minimal weight of 0.01 (1st percentile).
 
 ### Time periods
 
-This analysis uses the most recent available rates from the Turquoise Health Clear Rates database (v2.2.0). Claims utilization data is from 2024. Census population and income data are from the 2023 5-year ACS estimates. NCHS urban-rural classification codes are from the 2023 vintage. USDA codes are the most recent available vintage (2023 for RUCCs and UICs, 2020 for RUCAs). Driving times are from the most recent OpenTimes dataset (2023).
+This analysis uses the most recent available rates from the Turquoise Health Clear Rates database (v2.2.0), which includes rates mostly from spring and summer of 2025. Claims utilization data is from 2024. Census population and income data are from the 2023 5-year ACS estimates. NCHS urban-rural classification codes are from the 2023 vintage. USDA codes are the most recent available vintage (2023 for RUCCs and UICs, 2020 for RUCAs). Driving times are from the most recent OpenTimes dataset (2023).
 
 ## Methods
 
@@ -63,7 +63,7 @@ This analysis uses the most recent available rates from the Turquoise Health Cle
 
 Data is extracted from the Turquoise Health Clear Rates database using two SQL queries ([rates.sql](./queries/rates.sql) and [rates_code.sql](./queries/rates_code.sql)). The queries perform the following key steps:
 
-1. **Rate filtering**: Only commercial PPO rates from hospitals are included. Rates must have a canonical rate score of 3 or higher and fall between 40% and 1000% of Medicare rates.
+1. **Rate filtering**: Only commercial PPO rates from hospitals are included. Rates must have a canonical rate score of 3 or higher, which means high-confidence rates that have been validated with Medicare benchmark prices. Rates must also fall between 40% and 1000% of Medicare rates.
 2. **Provider filtering**: Only Short Term Acute Care, Rehabilitation, Childrens, and Critical Access hospitals are included.
 3. **Code filtering**: HCPCS codes must be 5-digit numeric codes. MS-DRGs are included without restriction. Drug and device codes are excluded.
 4. **Payer market share weighting**: Policy Reporter data provides state-level covered lives per payer, which is converted to a 0-1 weight using percentile ranks within each state. Payers with missing market share are assigned a weight of 0.01.
@@ -103,6 +103,7 @@ The analysis assumes that:
 - Provider bed counts are a reasonable proxy for provider size and utilization
 - County-level urban-rural classifications accurately reflect the characteristics of providers within those counties (i.e. an "urban" county's hospitals are all urban in character)
 - Payer market share at the state level is a reasonable weight for aggregating rates across payers
+- Provider-adjusted Medicare rates accurately represent what a hospital would receive and are not systematically biased or wrong in a way that would change the conclusions of the project
 
 Key limitations include:
 
