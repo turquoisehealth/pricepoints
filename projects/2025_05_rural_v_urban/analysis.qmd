@@ -2051,3 +2051,247 @@ rates_code_clean_df |>
     )
   )
 ```
+
+```{r ownership_boxplot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 6.5
+
+nchs_own_agg_df <- rates_clean_df |>
+  mutate(
+    ownership = str_extract_all(
+      provider_hospital_ownership,
+      "(.*) -",
+      simplify = TRUE
+    ),
+    ownership = case_match(
+      ownership,
+      "Governmental -" ~ "Government",
+      "Proprietary -" ~ "Private",
+      "Voluntary Nonprofit -" ~ "Nonprofit"
+    )
+  ) |>
+  filter(!(is.na(all_wtd_mean_pct_of_medicare) | is.na(total_beds))) |>
+  filter(!is.na(nchs_code), !is.na(ownership)) |>
+  mutate(
+    ownership = factor(
+      ownership,
+      levels = c("Private", "Nonprofit", "Government")
+    )
+  ) |>
+  group_by(nchs_code, nchs_class, ownership) |>
+  summarize(
+    ymin = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    ylower = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    ymiddle = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    yupper = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    ymax = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    num_beds = sum(total_beds),
+    num_rates = sum(all_num_rates),
+    num_providers = n_distinct(provider_id)
+  ) |>
+  ungroup() |>
+  mutate(
+    own_rates_label = paste0(
+      paste0(
+        paste0(
+          "<span style='font-size:12px;'>",
+          label_comma_short(num_rates),
+          "</span>"
+        ),
+        collapse = " / "
+      ),
+      "<span style='font-size:12px'> rates</span><br>"
+    ),
+    own_providers_label = paste0(
+      paste0(
+        paste0(
+          "<span style='font-size:12px;color:",
+          case_match(
+            ownership,
+            "Private" ~ "#cd3c32",
+            "Nonprofit" ~ "#0d772d",
+            "Government" ~ "#3269c8"
+          ),
+          "'>",
+          label_comma_short(num_providers),
+          "</span>"
+        ),
+        collapse = " / "
+      ),
+      "<span style='font-size:12px'> hosp.</span><br>"
+    ),
+    own_beds_label = paste0(
+      paste0(
+        paste0(
+          "<span style='font-size:12px;'>",
+          label_comma_short(num_beds),
+          "</span>"
+        ),
+        collapse = " / "
+      ),
+      "<span style='font-size:12px'> beds</span>"
+    ),
+    .by = nchs_code
+  ) |>
+  group_by(nchs_code, nchs_class, ownership) |>
+  mutate(
+    code_label = factor(nchs_code),
+    code_label = fct_relabel(
+      code_label,
+      \(x) {
+        paste0(
+          "**",
+          case_match(
+          x,
+          "1" ~ "Large central",
+          "2" ~ "Large fringe",
+          "3" ~ "Medium metro",
+          "4" ~ "Small metro",
+          "5" ~ "Micropolitan",
+          "6" ~ "Noncore"
+        ),
+          "**<br>",
+          own_providers_label,
+          own_rates_label,
+          own_beds_label
+        )
+      }
+    ),
+    code_class = nchs_class
+  ) |>
+  ungroup() |>
+  filter(!nchs_code == 6) |>
+  mutate(ymax = ifelse(nchs_code == 5, pmin(ymax, 3.6), ymax))
+
+nchs_own_agg_df |>
+  ggplot() +
+  geom_boxplot(
+    aes(
+      ymin = ymin,
+      lower = ylower,
+      middle = ymiddle,
+      upper = yupper,
+      ymax = ymax,
+      x = code_label,
+      fill = ownership
+    ),
+    stat = "identity",
+    width = 0.6
+  ) +
+  annotate(
+    "segment",
+    x = 4.5,
+    xend = 4.5,
+    y = 0.85,
+    yend = 3.58,
+    linetype = "dashed",
+    color = "grey20"
+  ) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    expand = c(0, 0)
+  ) +
+  coord_cartesian(clip = "off", ylim = c(1.5, 3.5)) +
+  labs(
+    title = paste0(
+      "Government-owned, rural hospitals are reimbursed the least"
+    ),
+    subtitle = paste0(
+      "Across all **<span style='color:#cd3c32'>private</span>**",
+      ", **<span style='color:#0d772d'>nonprofit</span>**",
+      ", and **<span style='color:#3269c8'>government-owned</span>**",
+      " hospitals in the U.S."
+    ),
+    x = paste0(
+      "Metro (urban)",
+      "<span style='color:white'>████████████████</span>",
+      "Rural*",
+      "<span style='color:white'> █ █</span>"
+    ),
+    y = "Commercial to Medicare ratio",
+    caption = paste0(
+      "* Noncore rural hospitals are excluded because ",
+      "most are missing ownership data. Around 1,500 hospitals total are excluded\n",
+      "Urban/rural classification uses the National Center for Health ",
+      "Statistics (NCHS) Urban-Rural Classification Scheme for Counties\n",
+      "Rates are sourced from Turquoise Health Clear Rates, ",
+      "weighted by utilization, payer market share, and ",
+      "provider bed count\n",
+      "Box plots show weighted quantiles of commercial to Medicare rates ",
+      "ratios. Whiskers are 10th and 90th percentiles\n",
+      "Sample includes all MS-DRGs and the top 5,000 HCPCS by volume, ",
+      "excluding drug and device codes"
+    )
+  ) +
+  theme_minimal() +
+  guides(fill = "none") +
+  theme(
+    plot.title = element_text(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 8, l = -36)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 16, l = -36),
+      lineheight = 1.1
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold",
+      hjust = 1
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 12,
+      margin = margin(t = 2),
+      lineheight = 1.1
+    ),
+    axis.text.y = element_markdown(
+      size = 12,
+      face = "bold"
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey85"),
+    panel.grid.minor.y = element_line(color = "grey90"),
+    plot.caption = element_text(
+      size = 10,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    )
+  )
+```
