@@ -5,9 +5,9 @@ description = "Rural v Urban"
 classifiers = [
   "Intended Audience :: Developers",
   "Intended Audience :: Science/Research",
-  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
 ]
-requires-python = "==3.13.5"
+requires-python = "==3.14.0"
 dependencies = [
   "census>=0.8.24",
   "duckdb>=1.4.1",
