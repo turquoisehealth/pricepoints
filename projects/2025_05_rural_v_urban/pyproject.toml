@@ -1,0 +1,42 @@
+[project]
+name = "2025_05_rural_v_urban"
+version = "0.0.1"
+description = "Rural v Urban"
+classifiers = [
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3.14",
+]
+requires-python = "==3.14.0"
+dependencies = [
+  "census>=0.8.24",
+  "duckdb>=1.4.1",
+  "fastexcel>=0.16.0",
+  "ipykernel>=6.29.0",
+  "pandas>=2.2.3",
+  "pandas-stubs>=2.2.3",
+  "polars>=1.27.0",
+  "pyarrow>=19.0.1",
+  "tq @ file:///${PROJECT_ROOT}/../../tq",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pre-commit>=4.0.1",
+  "ruff>=0.11.0",
+  "sqlfluff>=2.3.5"
+]
+
+# Linting and type checking tool configs inherited from the root pyproject.toml
+[tool.pyright]
+extends = "../../pyproject.toml"
+
+[tool.ruff]
+extend = "../../pyproject.toml"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.sqlfluff.templater.jinja.context]
+s3_location = ""
+table_name = "dsnow_temp"
