@@ -185,9 +185,9 @@ uic_df = (
     .with_columns(pl.col("uic_code").cast(pl.Int64))
     .with_columns(
         (
-            pl.when(pl.col("uic_code") >= 3)
+            pl.when(pl.col("uic_code").is_in([2, 3, 5, 6, 7, 8, 9]))
             .then(pl.lit("rural"))
-            .when(pl.col("uic_code") < 3)
+            .when(pl.col("uic_code").is_in([1, 4]))
             .then(pl.lit("urban"))
             .otherwise(None)
         ).alias("uic_class")
