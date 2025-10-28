@@ -211,13 +211,13 @@ rates_clean_df |>
     linewidth = 0.5
   ) +
   scale_fill_brewer(
-    name = "Commercial to\nMedicare ratio",
+    name = "Wtd. median\nCommercial to\nMedicare ratio",
     palette = "BuPu",
     direction = -1,
     na.value = "grey80"
   ) +
   scale_color_brewer(
-    name = "Commercial to\nMedicare ratio",
+    name = "Wtd. median\nCommercial to\nMedicare ratio",
     palette = "BuPu",
     direction = -1,
     na.value = "grey80"
@@ -226,9 +226,9 @@ rates_clean_df |>
   labs(
     title = "Commercial reimbursement varies significantly across the U.S.",
     subtitle = paste0(
-      "Some PPO plans reimburse hospitals over 300% of adjusted Medicare ",
-      "costs, while others<br>reimburse hospitals less than Medicare ",
-      "(on average, across all common procedures)"
+      "In some counties, the median reimbursement is over 350% of adjusted ",
+      "Medicare costs, while<br>others have a median reimbursement of just ",
+      "150% of Medicare costs (across all procedures)"
     ),
     caption = paste0(
       "Based on ",
@@ -240,7 +240,7 @@ rates_clean_df |>
       "weighted by utilization, payer market share, and ",
       "provider bed count\n",
       "Counties are colored by the weighted median commercial-to-Medicare ",
-      "ratio of all providers in the county\n",
+      "ratio of all providers, payers, and rates in the county\n",
       "If there are no provider records for a given county, the weighted ",
       "median of surrounding providers (reachable via a 1-hour drive) is ",
       "used\n",
@@ -267,11 +267,11 @@ rates_clean_df |>
     plot.title = element_text(
       size = 20,
       face = "bold",
-      margin = margin(b = 6, l = 20)
+      margin = margin(b = 6, l = 10)
     ),
     plot.subtitle = element_markdown(
       size = 15,
-      margin = margin(b = 14, l = 20),
+      margin = margin(b = 14, l = 10),
       lineheight = 1.1
     ),
     plot.caption = element_text(
