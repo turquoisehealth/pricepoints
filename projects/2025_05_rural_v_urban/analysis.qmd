@@ -483,8 +483,8 @@ rates_clean_df |>
   labs(
     title = "Rural hospitals are reimbursed less than urban hospitals",
     subtitle = paste0(
-      "Across a sample of 90M+ rates from over 5,000 hospitals, rural ",
-      "hospitals have<br>more variable rates and are reimbursed slightly ",
+      "Across a sample of 93M+ rates from over 5,000 hospitals, rural ",
+      "hospitals have<br>more variable rates and are reimbursed",
       " less than their urban counterparts"
     ),
     x = "",
@@ -590,7 +590,7 @@ nchs_agg_df <- rates_clean_df |>
     num_providers = n_distinct(provider_id)
   ) |>
   mutate(
-    code_source = "NCHS Urban-Rural Classification Scheme for Counties",
+    code_source = "NCHS Urban-Rural Classification Scheme",
     code_label = factor(nchs_code),
     code_fill = fct_relabel(code_label, \(x) {
       case_match(
@@ -666,7 +666,7 @@ nchs_agg_df |>
   labs(
     title = "Extremely rural hospitals have the lowest reimbursement",
     subtitle = paste0(
-      "Hospitals in noncore rural counties are reimbursed 25 percentage points",
+      "Hospitals in noncore rural counties are reimbursed 33 percentage points",
       "<br>less (relative to Medicare) than hospitals in metro and",
       " micropolitan counties"
     ),
@@ -1238,9 +1238,395 @@ ggplot(
 #| column: page
 #| out-width: 100%
 #| fig-width: 8
-#| fig-height: 10
+#| fig-height: 8
+
+nchs_class_agg_df <- rates_clean_df |>
+  filter(!(is.na(all_wtd_mean_pct_of_medicare) | is.na(total_beds))) |>
+  filter(!is.na(nchs_code)) |>
+  group_by(nchs_class) |>
+  summarize(
+    ymin = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    ylower = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    ymiddle = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    yupper = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    ymax = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    num_beds = sum(total_beds),
+    num_rates = sum(all_num_rates),
+    num_providers = n_distinct(provider_id)
+  ) |>
+  mutate(
+    code_source = "NCHS Urban-Rural Classification Scheme*",
+    class_label = fct_relabel(
+      nchs_class,
+      \(x) {
+        paste0(
+          "**",
+          "<span style='color:",
+          rurality_color_values[paste0(x, "-dark")],
+          "'>",
+          str_to_title(x),
+          "</span>",
+          "**<br>",
+          "<span style='font-size:14px'>",
+          scales::label_comma()(num_rates),
+          " rates</span><br>",
+          "<span style='font-size:14px'>",
+          scales::label_comma()(num_providers),
+          " hospitals</span><br>",
+          "<span style='font-size:14px'>",
+          scales::label_comma()(num_beds),
+          " beds</span>"
+        )
+      }
+    ),
+    class_label = fct_rev(class_label),
+    code_class = nchs_class
+  )
 
 rucc_agg_df <- rates_clean_df |>
+  filter(!(is.na(all_wtd_mean_pct_of_medicare) | is.na(total_beds))) |>
+  filter(!is.na(rucc_code)) |>
+  group_by(rucc_class) |>
+  summarize(
+    ymin = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    ylower = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    ymiddle = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    yupper = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    ymax = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    num_beds = sum(total_beds),
+    num_rates = sum(all_num_rates),
+    num_providers = n_distinct(provider_id)
+  ) |>
+  mutate(
+    code_source = "USDA Rural-Urban Continuum Codes*",
+    class_label = fct_relabel(
+      rucc_class,
+      \(x) {
+        paste0(
+          "**",
+          "<span style='color:",
+          rurality_color_values[paste0(x, "-dark")],
+          "'>",
+          str_to_title(x),
+          "</span>",
+          "**<br>",
+          "<span style='font-size:14px'>",
+          scales::label_comma()(num_rates),
+          " rates</span><br>",
+          "<span style='font-size:14px'>",
+          scales::label_comma()(num_providers),
+          " hospitals</span><br>",
+          "<span style='font-size:14px'>",
+          scales::label_comma()(num_beds),
+          " beds</span>"
+        )
+      }
+    ),
+    class_label = fct_rev(class_label),
+    code_class = rucc_class
+  )
+
+uic_agg_df <- rates_clean_df |>
+  filter(!(is.na(all_wtd_mean_pct_of_medicare) | is.na(total_beds))) |>
+  filter(!is.na(uic_code)) |>
+  group_by(uic_class) |>
+  summarize(
+    ymin = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    ylower = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    ymiddle = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    yupper = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    ymax = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    num_beds = sum(total_beds),
+    num_rates = sum(all_num_rates),
+    num_providers = n_distinct(provider_id)
+  ) |>
+  mutate(
+    code_source = "USDA Urban-Influence Codes*",
+    class_label = fct_relabel(
+      uic_class,
+      \(x) {
+        paste0(
+          "**",
+          "<span style='color:",
+          rurality_color_values[paste0(x, "-dark")],
+          "'>",
+          str_to_title(x),
+          "</span>",
+          "**<br>",
+          "<span style='font-size:14px'>",
+          scales::label_comma()(num_rates),
+          " rates</span><br>",
+          "<span style='font-size:14px'>",
+          scales::label_comma()(num_providers),
+          " hospitals</span><br>",
+          "<span style='font-size:14px'>",
+          scales::label_comma()(num_beds),
+          " beds</span>"
+        )
+      }
+    ),
+    class_label = fct_rev(class_label),
+    code_class = uic_class
+  )
+
+ruca_agg_df <- rates_clean_df |>
+  filter(!(is.na(all_wtd_mean_pct_of_medicare) | is.na(total_beds))) |>
+  filter(!is.na(ruca_code)) |>
+  group_by(ruca_class) |>
+  summarize(
+    ymin = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    ylower = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    ymiddle = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    yupper = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    ymax = wtd.quantile(
+      all_wtd_mean_pct_of_medicare,
+      weights = total_beds,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    num_beds = sum(total_beds),
+    num_rates = sum(all_num_rates),
+    num_providers = n_distinct(provider_id)
+  ) |>
+  mutate(
+    code_source = "USDA Rural-Urban Commuting Areas",
+    class_label = fct_relabel(
+      ruca_class,
+      \(x) {
+        paste0(
+          "**",
+          "<span style='color:",
+          rurality_color_values[paste0(x, "-dark")],
+          "'>",
+          str_to_title(x),
+          "</span>",
+          "**<br>",
+          "<span style='font-size:14px'>",
+          scales::label_comma()(num_rates),
+          " rates</span><br>",
+          "<span style='font-size:14px'>",
+          scales::label_comma()(num_providers),
+          " hospitals</span><br>",
+          "<span style='font-size:14px'>",
+          scales::label_comma()(num_beds),
+          " beds</span>"
+        )
+      }
+    ),
+    class_label = fct_rev(class_label),
+    code_class = ruca_class
+  )
+
+bind_rows(nchs_class_agg_df, rucc_agg_df, uic_agg_df, ruca_agg_df) |>
+  mutate(
+    code_source = factor(
+      code_source,
+      levels = c(
+        "NCHS Urban-Rural Classification Scheme*",
+        "USDA Rural-Urban Continuum Codes*",
+        "USDA Rural-Urban Commuting Areas",
+        "USDA Urban-Influence Codes*"
+      )
+    )
+  ) |>
+  ggplot() +
+  geom_boxplot(
+    aes(
+      ymin = ymin,
+      lower = ylower,
+      middle = ymiddle,
+      upper = yupper,
+      ymax = ymax,
+      x = class_label,
+      fill = code_class
+    ),
+    stat = "identity",
+    width = 0.6
+  ) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    expand = c(0, 0)
+  ) +
+  scale_fill_manual(values = rurality_color_values[1:2]) +
+  coord_cartesian(ylim = c(1.5, 3.5)) +
+  guides(fill = "none") +
+  facet_wrap(vars(code_source), ncol = 2, scales = "free_x") +
+  labs(
+    title = paste0(
+      "The urban-rural reimbursement gap is consistent across\n",
+      "different county-level rurality classification schemes"
+    ),
+    subtitle = paste0(
+      "Most schemes (those with an asterisk) share the same urban/rural cutoff",
+      " (from OMB 2023)"
+    ),
+    x = "",
+    y = "Commercial to Medicare ratio",
+    caption = paste0(
+      "For NCHS, rural is codes ≥ 5. For RUCC/RUCA, rural is codes ≥ 4. ",
+      "For Urban-Influence, rural is all codes not equal to 1 or 4\n",
+      "Rates are sourced from Turquoise Health Clear Rates, ",
+      "weighted by utilization, payer market share, and ",
+      "provider bed count\n",
+      "Box plots show weighted quantiles of commercial to Medicare rates ",
+      "ratios. Whiskers are 10th and 90th percentiles\n",
+      "Sample includes all MS-DRGs and the top 5,000 HCPCS by volume, ",
+      "excluding drug and device codes"
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 8, l = -36),
+    ),
+    plot.subtitle = element_markdown(
+      size = 13,
+      margin = margin(b = 16, l = -36),
+      lineheight = 1.1
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 4),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 14,
+      margin = margin(t = 2)
+    ),
+    axis.text.y = element_markdown(
+      size = 12,
+      face = "bold"
+    ),
+    strip.background = element_rect(
+      fill = "grey80",
+    ),
+    strip.text = element_text(
+      size = 12,
+      face = "bold"
+    ),
+    panel.background = element_rect(color = "black"),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey85"),
+    panel.grid.minor.y = element_line(color = "grey90"),
+    plot.caption = element_text(
+      size = 10,
+      lineheight = 1.1,
+      margin = margin(t = 12)
+    )
+  )
+```
+
+```{r classifications_breakout_boxplot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 10
+
+rucc_agg_br_df <- rates_clean_df |>
   filter(!(is.na(all_wtd_mean_pct_of_medicare) | is.na(total_beds))) |>
   filter(!is.na(rucc_code)) |>
   group_by(rucc_code, rucc_class) |>
@@ -1311,7 +1697,7 @@ rucc_agg_df <- rates_clean_df |>
     code_class = rucc_class
   )
 
-uic_agg_df <- rates_clean_df |>
+uic_agg_br_df <- rates_clean_df |>
   filter(!(is.na(all_wtd_mean_pct_of_medicare) | is.na(total_beds))) |>
   filter(!is.na(uic_code)) |>
   group_by(uic_code, uic_class) |>
@@ -1349,9 +1735,13 @@ uic_agg_df <- rates_clean_df |>
     num_rates = sum(all_num_rates),
     num_providers = n_distinct(provider_id)
   ) |>
+  ungroup() |>
   mutate(
-    code_source = "USDA Urban-Influence Codes",
-    code_label = factor(uic_code),
+    code_source = "USDA Urban-Influence Codes*",
+    code_label = factor(
+      as.character(uic_code),
+      levels = c("1", "4", "2", "5", "7", "3", "6", "8", "9")
+    ),
     code_label = fct_relabel(
       code_label,
       \(x) {
@@ -1360,12 +1750,12 @@ uic_agg_df <- rates_clean_df |>
           case_match(
           x,
           "1" ~ "Large metro",
-          "2" ~ "Micropolitan<br>adjacent",
-          "3" ~ "Noncore<br>adjacent",
           "4" ~ "Small metro",
+          "2" ~ "Micropolitan<br>adjacent",
           "5" ~ "Micropolitan<br>adjacent",
-          "6" ~ "Noncore<br>adjacent",
           "7" ~ "Micropolitan<br>Not adj.",
+          "3" ~ "Noncore<br>adjacent",
+          "6" ~ "Noncore<br>adjacent",
           "8" ~ "Noncore<br>Pop. ≥ 5K",
           "9" ~ "Noncore<br>Pop. < 5K",
         ),
@@ -1382,7 +1772,7 @@ uic_agg_df <- rates_clean_df |>
     code_class = uic_class
   )
 
-ruca_agg_df <- rates_clean_df |>
+ruca_agg_br_df <- rates_clean_df |>
   filter(!(is.na(all_wtd_mean_pct_of_medicare) | is.na(total_beds))) |>
   filter(!is.na(ruca_code)) |>
   group_by(ruca_code, ruca_class) |>
@@ -1454,15 +1844,15 @@ ruca_agg_df <- rates_clean_df |>
     code_class = ruca_class
   )
 
-bind_rows(nchs_agg_df, rucc_agg_df, uic_agg_df, ruca_agg_df) |>
+bind_rows(nchs_agg_df, rucc_agg_br_df, uic_agg_br_df, ruca_agg_br_df) |>
   mutate(
     code_source = factor(
       code_source,
       levels = c(
-        "NCHS Urban-Rural Classification Scheme for Counties",
+        "NCHS Urban-Rural Classification Scheme",
         "USDA Rural-Urban Continuum Codes",
         "USDA Rural-Urban Commuting Areas",
-        "USDA Urban-Influence Codes"
+        "USDA Urban-Influence Codes*"
       )
     )
   ) |>
@@ -1490,13 +1880,11 @@ bind_rows(nchs_agg_df, rucc_agg_df, uic_agg_df, ruca_agg_df) |>
   facet_wrap(vars(code_source), ncol = 1, scales = "free_x") +
   labs(
     title = paste0(
-      "Rural-urban reimbursement patterns are consistent\nacross ",
-      "different rurality classification schemes"
+      "Urban-rural reimbursement patterns are relatively consistent"
     ),
     subtitle = paste0(
-      "Hospitals in the most rural counties (rightmost box) are reimbursed ",
-      "the lowest, while<br>hospitals in suburban/",
-      "micropolitan counties (middle boxes) are reimbursed the highest"
+      "Across rurality classification schemes, ",
+      "more rural almost always means lower reimbursement"
     ),
     x = paste0(
       "<span style='font-size:30px'>←</span> More <span style='color:",
@@ -1509,6 +1897,8 @@ bind_rows(nchs_agg_df, rucc_agg_df, uic_agg_df, ruca_agg_df) |>
     ),
     y = "Commercial to Medicare ratio",
     caption = paste0(
+      "* Urban-Influence Codes are re-ordered in terms of their rurality, ",
+      "rather than their adjacency to populated areas\n",
       "Boxes represent codes for each rurality classification. Only metro",
       " counties in each classification are considered urban (green)\n",
       "Rates are sourced from Turquoise Health Clear Rates, ",
@@ -1525,11 +1915,11 @@ bind_rows(nchs_agg_df, rucc_agg_df, uic_agg_df, ruca_agg_df) |>
     plot.title = element_text(
       size = 18,
       face = "bold",
-      margin = margin(b = 8)
+      margin = margin(b = 8, l = -36),
     ),
     plot.subtitle = element_markdown(
       size = 13,
-      margin = margin(b = 16),
+      margin = margin(b = 16, l = -36),
       lineheight = 1.1
     ),
     axis.title.x = element_markdown(
