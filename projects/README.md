@@ -5,13 +5,14 @@ contains a link to the project subdirectory and post/publication (if it has
 been published). Each project subdirectory contains a README with the
 project's data, methods, and references.
 
-| Date    | Project Name                                                                       | Project Link                                         | Post Link                                                      |
-|:-------:|------------------------------------------------------------------------------------|------------------------------------------------------|----------------------------------------------------------------|
-| 2025-04 | How much does it cost to give birth in the United States?                          | [./2025_04_delivery_costs](./2025_04_delivery_costs) | [/delivery-costs](https://pricepoints.health/p/delivery-costs) |
-| 2025-05 | Orange County’s big healthcare brawl                                               | [./2025_05_bsca_hoag](./2025_05_bsca_hoag)           | [/bsca-hoag](https://www.pricepoints.health/p/bsca-hoag)       |
-| 2025-05 | The 340B program has gone off the rails                                            | [./2025_06_il_340b](./2025_06_il_340b)               | [/il-340b](https://www.pricepoints.health/p/il-340b)           |
-| 2025-06 | The OBBB may disqualify hundreds of hospitals from the 340B program                | [./2025_06_il_340b](./2025_06_il_340b)               | [/obbb-340b](https://www.pricepoints.health/p/obbb-340b)       |
-| 2025-07 | Secretive vendors are exploiting a free money glitch in the U.S. healthcare system | [./2025_07_blues](./2025_07_blues)                   | [/blues](https://www.pricepoints.health/p/blues)               |
+| Date       | Project Name                                                                       | Project Link                                         | Post Link                                                        |
+|:----------:|------------------------------------------------------------------------------------|------------------------------------------------------|------------------------------------------------------------------|
+| 2025-05-07 | How much does it cost to give birth in the United States?                          | [./2025_04_delivery_costs](./2025_04_delivery_costs) | [/delivery-costs](https://pricepoints.health/p/delivery-costs)   |
+| 2025-05-30 | Orange County’s big healthcare brawl                                               | [./2025_05_bsca_hoag](./2025_05_bsca_hoag)           | [/bsca-hoag](https://www.pricepoints.health/p/bsca-hoag)         |
+| 2025-07-17 | The 340B program has gone off the rails                                            | [./2025_06_il_340b](./2025_06_il_340b)               | [/il-340b](https://www.pricepoints.health/p/il-340b)             |
+| 2025-07-24 | The OBBB may disqualify hundreds of hospitals from the 340B program                | [./2025_06_il_340b](./2025_06_il_340b)               | [/obbb-340b](https://www.pricepoints.health/p/obbb-340b)         |
+| 2025-09-11 | Secretive vendors are exploiting a free money glitch in the U.S. healthcare system | [./2025_07_blues](./2025_07_blues)                   | [/blues](https://www.pricepoints.health/p/blues)                 |
+| 2025-11-03 | Rural hospitals are paid less than urban hospitals                                 | [./2025_05_rural_v_urban](./2025_05_rural_v_urban)   | [/rural-v-urban](https://www.pricepoints.health/p/rural-v-urban) |
 
 ## Using the project template
 
