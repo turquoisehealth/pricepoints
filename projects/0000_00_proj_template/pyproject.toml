@@ -5,22 +5,21 @@ description = "Project template"
 classifiers = [
   "Intended Audience :: Developers",
   "Intended Audience :: Science/Research",
-  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.14",
 ]
-requires-python = "==3.12.8"
+requires-python = "==3.14.0"
 dependencies = [
-  "ipykernel>=6.29.0",
-  "pandas>=2.2.3",
-  "pandas-stubs>=2.2.3",
-  "pyarrow>=19.0.1",
-  "tq @ file:///${PROJECT_ROOT}/../../tq"
+  "polars>=1.35.1",
+  "pyarrow>=22.0.0",
+  "tq @ file:///${PROJECT_ROOT}/../../tq",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "pre-commit>=4.0.1",
-  "ruff>=0.11.0",
-  "sqlfluff>=2.3.5"
+  "pre-commit>=4.3.0",
+  "ruff>=0.14.3",
+  "sqlfluff>=3.5.0",
+  "ty>=0.0.1a25",
 ]
 
 # Linting and type checking tool configs inherited from the root pyproject.toml

@@ -1,4 +1,4 @@
-import pandas as pd
+import polars as pl
 import tq
 
 # Example script using the built-in tq module
@@ -11,5 +11,5 @@ query = """
     limit 100
 """
 
-df = pd.read_sql_query(query, trino_conn)
+df = pl.read_database(query, trino_conn)
 print(df)
