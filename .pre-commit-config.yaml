@@ -6,13 +6,12 @@ repos:
         args:
           - --fix
       - id: ruff-format
-  - repo: https://github.com/RobertCraigie/pyright-python
-    rev: v1.1.398
+  - repo: local
     hooks:
-      - id: pyright
-        args:
-          - --level
-          - error
+      - id: ty
+        name: ty check
+        entry: uvx ty check . --ignore unresolved-import --ignore unresolved-attribute
+        language: system
   - repo: https://github.com/adrienverge/yamllint.git
     rev: v1.36.2
     hooks:

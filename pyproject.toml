@@ -4,15 +4,6 @@ version = "0.0.0"
 
 # Linting and type checking tools. These get inherited by subdirectories
 # using extend directives in their respective pyproject.toml files
-[tool.pyright]
-# Disable import and module checking (we mostly want to check types)
-reportMissingImports = "warning"
-reportMissingModuleSource = "warning"
-reportAttributeAccessIssue = "warning"
-# Let ruff handle these
-reportUnusedImport = "none"
-reportUndefinedVariable = "none"
-
 [tool.ruff]
 line-length = 79
 
