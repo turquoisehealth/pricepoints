@@ -1,15 +1,14 @@
 import polars as pl
 import tq
 
-# Example script using the built-in tq module
 trino_conn = tq.get_trino_connection()
 
-query = """
-    select *
-    from hive.public_latest.core_rates
-    where payer_id = '76'
-    limit 100
-"""
+with open("queries/self_v_fully_funded.sql", "r") as query:
+    employers_df = pl.read_database(query.read(), trino_conn)
 
-df = pl.read_database(query, trino_conn)
-print(df)
+print(employers_df)
+
+
+# Cigna tq_network_id
+24593  # Gartner
+33082  # Hilton

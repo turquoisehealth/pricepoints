@@ -100,7 +100,7 @@ wheels = [
 ]
 
 [[package]]
-name = "employer-check"
+name = "employer-networks"
 version = "0.0.1"
 source = { virtual = "." }
 dependencies = [

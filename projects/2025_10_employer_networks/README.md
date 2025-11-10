@@ -1,1 +1,6 @@
-# Employer networks
+- New business rates, will be lower
+  - Can find some of these in the hospital data (NBR in files)
+  - Carrier gets admin fees, employer gets lower rates
+- For self-funded plans, carriers let employers build when they want
+- Worth comparing to exchange plans
+- Plan vs product vs network makes comparing very tricky

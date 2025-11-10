@@ -1,4 +1,5 @@
 WITH f5500 AS (
+    -- Grab the most recent Form 5500 record for each employer (by EIN)
     SELECT f5500_by_date.*
     FROM (
         SELECT DISTINCT
@@ -29,14 +30,12 @@ WITH f5500 AS (
                     ORDER BY form_tax_prd DESC
                 )
                 AS rn
-        FROM
-            redshift.reference.ref_form_5500
-        WHERE tot_active_partcp_cnt >= 5000
+        FROM redshift.reference.ref_form_5500
     ) AS f5500_by_date
-    -- Keep only the most recent filing for each EIN
     WHERE f5500_by_date.rn = 1
 ),
 
+-- Classify each employer/EIN as self- or fully-funded
 f5500_classified AS (
     SELECT
         *,
@@ -60,20 +59,18 @@ f5500_classified AS (
     FROM f5500
 )
 
-SELECT DISTINCT
+-- Return actual rates from compressed schema
+SELECT
     f5500_classified.*,
-    plans.reporting_entity_type,
-    plans.plan_name,
-    plans.plan_id,
-    plans.plan_id_type,
-    plans.plan_market_type,
-    plans.payer_name,
-    plans.payer_id
-FROM
-    hive.public_2025_07.compressed_idx_plan AS plans
+    rates.*
+FROM hive.public_2025_07.compressed_rates AS rates
+INNER JOIN hive.public_2025_07.compressed_rates_files_references AS rates_files
+    ON rates.rate_hash = rates_files.rate_hash
+INNER JOIN hive.public_2025_07.compressed_idx_plan AS plans
+    ON rates_files.file_hash = plans.file_hash
+    AND rates_files.payer_id = plans.payer_id
 INNER JOIN f5500_classified
-    ON
-    plans.plan_id = f5500_classified.spons_dfe_ein
+    ON plans.plan_id = f5500_classified.spons_dfe_ein
 WHERE
     LOWER(plans.plan_id_type) = 'ein'
     AND plans.file_hash IS NOT NULL
@@ -87,4 +84,40 @@ WHERE
     AND f5500_classified.funding_type_inferred IN (
         'self_funded',
         'fully_funded'
+    )
+    -- Only employers with over 5K employees/participants
+    AND f5500_classified.tot_active_partcp_cnt >= 5000
+    -- Representative subset (by volume) of all billing codes
+    AND (
+        rates.billing_code_type = 'HCPCS'
+        AND rates.billing_code IN (
+            '27130',
+            '29881',
+            '29877',
+            '42820',
+            '66984',
+            '71046',
+            '73720',
+            '73721',
+            '77066'
+        )
+    ) OR (
+        rates.billing_code_type = 'MS-DRG'
+        AND rates.billing_code IN (
+            '177',
+            '195',
+            '280',
+            '291',
+            '343',
+            '460',
+            '470',
+            '743',
+            '788',
+            '807',
+            '871'
+        )
+    )
+    AND plans.plan_id IN (
+        '043099750', -- Cigna, Gartner, Fully-funded
+        '842071583'  -- Cigna, Hilton, Self-funded
     )
