@@ -1,0 +1,30 @@
+[project]
+name = "2025_11_cpw"
+version = "0.0.1"
+description = "CPW"
+classifiers = [
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3.14",
+]
+requires-python = "==3.14.0"
+dependencies = [
+  "polars>=1.35.1",
+  "pyarrow>=22.0.0",
+  "tq @ file:///${PROJECT_ROOT}/../../tq",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pre-commit>=4.3.0",
+  "ruff>=0.14.3",
+  "sqlfluff>=3.5.0",
+  "ty>=0.0.1a25",
+]
+
+# Linting and type checking tool configs inherited from the root pyproject.toml
+[tool.ruff]
+extend = "../../pyproject.toml"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
