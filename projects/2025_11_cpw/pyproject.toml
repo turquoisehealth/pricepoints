@@ -5,10 +5,11 @@ description = "CPW"
 classifiers = [
   "Intended Audience :: Developers",
   "Intended Audience :: Science/Research",
-  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.13",
 ]
-requires-python = "==3.14.0"
+requires-python = "==3.13.8"
 dependencies = [
+  "fastexcel>=0.16.0",
   "polars>=1.35.1",
   "pyarrow>=22.0.0",
   "tq @ file:///${PROJECT_ROOT}/../../tq",
@@ -28,3 +29,7 @@ extend = "../../pyproject.toml"
 
 [tool.setuptools.packages.find]
 include = ["src*"]
+
+[tool.sqlfluff.templater.jinja.context]
+bswh_eins = ""
+bswh_npis = ""

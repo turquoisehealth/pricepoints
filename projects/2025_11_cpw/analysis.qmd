@@ -1,0 +1,266 @@
+---
+title: "CPW"
+subtitle: "By Dan Snow"
+format:
+  html:
+    fig-format: retina
+    fig-dpi: 320
+    toc: false
+    embed-resources: true
+    grid:
+      body-width: 900px
+execute:
+  echo: false
+---
+
+```{r setup, message=FALSE}
+library(arrow)
+library(conflicted)
+library(data.table)
+library(dplyr)
+library(forcats)
+library(ggplot2)
+library(ggtext)
+library(Hmisc)
+library(lubridate)
+library(patchwork)
+library(readr)
+library(scales)
+library(sf)
+library(stringr)
+library(tidyr)
+library(tigris)
+
+# Always use dplyr over other packages
+conflict_prefer_all("dplyr", quiet = TRUE)
+
+# Necessary for fast/accurate map rendering
+sf_use_s2(FALSE)
+options(tigris_use_cache = TRUE)
+
+# Transform numbers into abbreviated amounts
+# 100 becomes 100, 1000 becomes 1K, 1000000 becomes $1M, etc.
+label_comma_short <- function(x) {
+  sapply(
+    x,
+    function(val) {
+      if (is.na(val)) {
+        return(NA_character_)
+      }
+
+      abs_val <- abs(val)
+      sign_str <- ifelse(val < 0, "-", "")
+      if (abs_val >= 1e9) {
+        paste0(sign_str, round(abs_val / 1e9, 0), "B")
+      } else if (abs_val >= 1e6) {
+        paste0(sign_str, round(abs_val / 1e6, 0), "M")
+      } else if (abs_val >= 1e3) {
+        paste0(sign_str, round(abs_val / 1e3, 0), "K")
+      } else {
+        paste0(sign_str, formatC(abs_val, format = "f", digits = 0))
+      }
+    },
+    USE.NAMES = FALSE
+  )
+}
+```
+
+```{r load_data, message=FALSE, warning=FALSE}
+bswh_inst_providers_df <- read_parquet(
+  "data/input/CostPlusWellness.com_C010_20251104_BaylorScottWhiteHealth_Facility.csv")
+bswh_inst_sub_df <- read_parquet("data/output/bswh_inst_sub.parquet")
+bswh_inst_tq_payer_code_agg_df <- read_parquet(
+  "data/output/bswh_inst_tq_payer_code_agg.parquet"
+)
+bswh_inst_tq_payer_agg_df <- read_parquet(
+  "data/output/bswh_inst_tq_payer_agg.parquet"
+)
+```
+
+```{r payer_code_boxplot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 6.5
+
+payer_code_billing_code_subset <- c(
+  "195",
+  "280",
+  "291",
+  "343",
+  "460",
+  "470",
+  "743",
+  "788",
+  "807",
+  "871",
+  "27130",
+  "29881",
+  "29877",
+  "42820",
+  "66984",
+  "71046",
+  "73720",
+  "73721"
+)
+
+bswh_inst_tq_payer_code_agg_df |>
+  filter(billing_code %in% payer_code_billing_code_subset) |>
+ggplot() +
+  geom_hline(
+    data = bswh_inst_df |>
+      filter(billing_code %in% payer_billing_code_subset),
+    aes(yintercept = rate,),
+    color = "red"
+  ) +
+  geom_boxplot(
+    aes(
+      ymin = p10_canonical_rate,
+      lower = p25_canonical_rate,
+      middle = p50_canonical_rate,
+      upper = p75_canonical_rate,
+      ymax = p90_canonical_rate,
+      x = payer_name
+    ),
+    stat = "identity",
+    width = 0.6
+  ) +
+  scale_y_continuous(
+    labels = label_comma_short,
+  ) +
+  facet_wrap(vars(billing_code), scales = "free_y") +
+  theme_bw() +
+  guides(fill = "none") +
+  theme(
+    plot.title = element_text(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 8, l = -36)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 16, l = -36),
+      lineheight = 1.1
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold",
+      hjust = 1
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 12,
+      margin = margin(t = 2),
+      lineheight = 1.1
+    ),
+    axis.text.y = element_markdown(
+      size = 10,
+      face = "bold"
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey85"),
+    panel.grid.minor.y = element_line(color = "grey90"),
+    plot.caption = element_text(
+      size = 10,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    )
+  )
+
+```
+
+
+```{r payer_boxplot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 6.5
+
+bswh_inst_cpw_payer_agg_df <- bswh_inst_sub_df |>
+  group_by(payer_name, payer_id) |>
+  summarize(
+    p10_pct_of_medicare = quantile(pct_of_medicare, 0.10),
+    p25_pct_of_medicare = quantile(pct_of_medicare, 0.25),
+    p50_pct_of_medicare = quantile(pct_of_medicare, 0.50),
+    p75_pct_of_medicare = quantile(pct_of_medicare, 0.75),
+    p90_pct_of_medicare = quantile(pct_of_medicare, 0.90),
+  )
+
+bind_rows(bswh_inst_tq_payer_agg_df, bswh_inst_cpw_payer_agg_df) |>
+  mutate(
+    payer_name = case_match(
+      payer_name,
+      "CPW" ~ "Cost Plus",
+      "UnitedHealthcare" ~ "UHC",
+      "Baylor Scott & White Health Plan" ~ "BSW Health",
+      "Blue Cross Blue Shield of Texas" ~ "BCBSTX",
+      .default = payer_name
+    ),
+    payer_name = fct_reorder(payer_name, p50_pct_of_medicare),
+  ) |>
+ggplot() +
+  geom_boxplot(
+    aes(
+      ymin = p10_pct_of_medicare,
+      lower = p25_pct_of_medicare,
+      middle = p50_pct_of_medicare,
+      upper = p75_pct_of_medicare,
+      ymax = p90_pct_of_medicare,
+      x = payer_name
+    ),
+    stat = "identity",
+    width = 0.6
+  ) +
+  scale_y_continuous(
+    labels = label_comma_short,
+  ) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 8)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 16),
+      lineheight = 1.1
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 12,
+      margin = margin(t = 2),
+      lineheight = 1.1
+    ),
+    axis.text.y = element_markdown(
+      size = 12,
+      face = "bold"
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey85"),
+    panel.grid.minor.y = element_line(color = "grey90"),
+    plot.caption = element_text(
+      size = 10,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    )
+  )
+```
