@@ -533,7 +533,10 @@ bswh_pro_tq_payer_agg_df <- bswh_pro_tq_rates_df |>
     ),
     num_rates = n(),
     num_urates = n_distinct(
-      billing_code, billing_code_type, canonical_rate, facility
+      billing_code,
+      billing_code_type,
+      canonical_rate,
+      facility
     ),
     num_providers = n_distinct(provider_id)
   ) |>
@@ -574,7 +577,7 @@ bind_rows(bswh_pro_tq_payer_agg_df, bswh_pro_cpw_payer_agg_df) |>
           "**",
           case_match(
             payer_name,
-            "Cost Plus" ~ "<span style='color:#38599b'>Cost Plus<br>(BSW)</span>",
+            "Cost Plus" ~ "<span style='color:#38599b'>Cost Plus</span>",
             .default = x
           ),
           "**<br>",
@@ -624,7 +627,7 @@ bind_rows(bswh_pro_tq_payer_agg_df, bswh_pro_cpw_payer_agg_df) |>
     y = "Commercial to Medicare ratio",
     title = paste0(
       "Cost Plus ",
-      "professional rates are comparable to other insurers"
+      "professional rates are comparable to other insurers'"
     ),
     subtitle = paste0(
       "Includes only Baylor Scott & White physician groups. Anesthesia ",
