@@ -71,103 +71,11 @@ color_values <- c(
 ```{r load_data, message=FALSE, warning=FALSE}
 bswh_inst_sub_df <- read_parquet("data/output/bswh_inst_sub.parquet")
 bswh_inst_tq_rates_df <- read_parquet("data/output/bswh_inst_tq_rates.parquet")
+bswh_pro_sub_df <- read_parquet("data/output/bswh_pro_sub.parquet")
+bswh_pro_tq_rates_df <- read_parquet("data/output/bswh_pro_tq_rates.parquet")
 ```
 
-```{r payer_code_boxplot, message=FALSE}
-#| column: page
-#| out-width: 100%
-#| fig-width: 8
-#| fig-height: 6.5
-
-payer_code_billing_code_subset <- c(
-  "195",
-  "280",
-  "291",
-  "343",
-  "460",
-  "470",
-  "743",
-  "788",
-  "807",
-  "871",
-  "27130",
-  "29881",
-  "29877",
-  "42820",
-  "66984",
-  "71046",
-  "73720",
-  "73721"
-)
-
-bswh_inst_tq_payer_code_agg_df |>
-  filter(billing_code %in% payer_code_billing_code_subset) |>
-  ggplot() +
-  geom_hline(
-    data = bswh_inst_sub_df |>
-      filter(billing_code %in% payer_billing_code_subset),
-    aes(yintercept = pct_of_medicare, color = payer_name),
-  ) +
-  geom_boxplot(
-    aes(
-      ymin = p10_pct_of_medicare,
-      lower = p25_pct_of_medicare,
-      middle = p50_pct_of_medicare,
-      upper = p75_pct_of_medicare,
-      ymax = p90_pct_of_medicare,
-      x = payer_name,
-      fill = payer_name
-    ),
-    stat = "identity",
-    width = 0.6
-  ) +
-  scale_y_continuous(
-    labels = label_percent(),
-  ) +
-  facet_wrap(vars(billing_code)) +
-  theme_bw() +
-  theme(
-    plot.title = element_text(
-      size = 18,
-      face = "bold",
-      margin = margin(b = 8, l = -36)
-    ),
-    plot.subtitle = element_markdown(
-      size = 15,
-      margin = margin(b = 16, l = -36),
-      lineheight = 1.1
-    ),
-    axis.title.x = element_markdown(
-      margin = margin(t = 10),
-      size = 16,
-      face = "bold"
-    ),
-    axis.title.y = element_text(
-      margin = margin(r = 10),
-      size = 16,
-      lineheight = 1.1,
-      face = "bold"
-    ),
-    axis.ticks.x = element_blank(),
-    axis.text.x = element_blank(),
-    axis.text.y = element_markdown(
-      size = 10,
-      face = "bold"
-    ),
-    panel.grid.major.x = element_blank(),
-    panel.grid.minor.x = element_blank(),
-    panel.grid.major.y = element_line(color = "grey85"),
-    panel.grid.minor.y = element_line(color = "grey90"),
-    plot.caption = element_text(
-      size = 10,
-      lineheight = 1.1,
-      margin = margin(t = 16)
-    )
-  )
-
-```
-
-```{r payer_boxplot, message=FALSE}
+```{r inst_payer_boxplot, message=FALSE}
 #| column: page
 #| out-width: 100%
 #| fig-width: 8
@@ -363,7 +271,7 @@ bind_rows(bswh_inst_tq_payer_agg_df, bswh_inst_cpw_payer_agg_df) |>
   )
 ```
 
-```{r payer_ipop_boxplot, message=FALSE}
+```{r inst_payer_ipop_boxplot, message=FALSE}
 #| column: page
 #| out-width: 100%
 #| fig-width: 8
@@ -375,31 +283,31 @@ bswh_inst_tq_payer_ipop_agg_df <- bswh_inst_tq_rates_df |>
   summarise(
     ymin = wtd.quantile(
       canonical_rate / medicare_rate,
-      weights = total_beds * state_claims_percentile_all,
+      weights = total_beds * state_claims_percentile_sep,
       probs = 0.10,
       na.rm = TRUE
     ),
     ylower = wtd.quantile(
       canonical_rate / medicare_rate,
-      weights = total_beds * state_claims_percentile_all,
+      weights = total_beds * state_claims_percentile_sep,
       probs = 0.25,
       na.rm = TRUE
     ),
     ymiddle = wtd.quantile(
       canonical_rate / medicare_rate,
-      weights = total_beds * state_claims_percentile_all,
+      weights = total_beds * state_claims_percentile_sep,
       probs = 0.50,
       na.rm = TRUE
     ),
     yupper = wtd.quantile(
       canonical_rate / medicare_rate,
-      weights = total_beds * state_claims_percentile_all,
+      weights = total_beds * state_claims_percentile_sep,
       probs = 0.75,
       na.rm = TRUE
     ),
     ymax = wtd.quantile(
       canonical_rate / medicare_rate,
-      weights = total_beds * state_claims_percentile_all,
+      weights = total_beds * state_claims_percentile_sep,
       probs = 0.90,
       na.rm = TRUE
     ),
@@ -412,11 +320,11 @@ bswh_inst_tq_payer_ipop_agg_df <- bswh_inst_tq_rates_df |>
 bswh_inst_cpw_payer_ipop_agg_df <- bswh_inst_sub_df |>
   group_by(payer_name, payer_id, bill_type) |>
   summarize(
-    ymin = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.10),
-    ylower = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.25),
-    ymiddle = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.50),
-    yupper = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.75),
-    ymax = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.90),
+    ymin = wtd.quantile(pct_of_medicare, state_claims_percentile_sep, 0.10),
+    ylower = wtd.quantile(pct_of_medicare, state_claims_percentile_sep, 0.25),
+    ymiddle = wtd.quantile(pct_of_medicare, state_claims_percentile_sep, 0.50),
+    yupper = wtd.quantile(pct_of_medicare, state_claims_percentile_sep, 0.75),
+    ymax = wtd.quantile(pct_of_medicare, state_claims_percentile_sep, 0.90),
     num_rates = n(),
     num_urates = n_distinct(billing_code, billing_code_type, canonical_rate),
     num_providers = 32 # Count of hospitals listed in the CPW BSW contract
@@ -580,82 +488,171 @@ bind_rows(bswh_inst_tq_payer_ipop_agg_df, bswh_inst_cpw_payer_ipop_agg_df) |>
   )
 ```
 
-```{r rate_ranking_plot, message=FALSE}
+```{r pro_payer_boxplot, message=FALSE}
 #| column: page
 #| out-width: 100%
 #| fig-width: 8
 #| fig-height: 6.5
 
-bswh_inst_tq_rates_df |>
-  group_by(
-    payer_id,
-    payer_name,
-    billing_code,
-    billing_code_type,
-    service_line
+bswh_pro_tq_payer_agg_df <- bswh_pro_tq_rates_df |>
+  inner_join(
+    bswh_pro_sub_df |> select(billing_code, facility),
+    by = c("billing_code", "facility")
   ) |>
-  summarize(canonical_rate = wtd.mean(canonical_rate, total_beds)) |>
-  bind_rows(
-    bswh_inst_sub_df |>
-      select(
-        payer_id,
-        payer_name,
-        billing_code,
-        billing_code_type,
-        service_line,
-        canonical_rate
-      )
+  group_by(payer_id, payer_name) |>
+  summarise(
+    ymin = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = state_claims_percentile_all,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    ylower = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = state_claims_percentile_all,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    ymiddle = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = state_claims_percentile_all,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    yupper = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = state_claims_percentile_all,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    ymax = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = state_claims_percentile_all,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    num_rates = n(),
+    num_urates = n_distinct(
+      billing_code, billing_code_type, canonical_rate, facility
+    ),
+    num_providers = n_distinct(provider_id)
   ) |>
-  group_by(billing_code, billing_code_type) |>
-  # Keep only rates with six payers
-  filter(n_distinct(payer_id) == 6) |>
-  mutate(rank = dense_rank(canonical_rate)) |>
-  ungroup() |>
+  ungroup()
+
+bswh_pro_cpw_payer_agg_df <- bswh_pro_sub_df |>
+  group_by(payer_name, payer_id) |>
+  summarize(
+    ymin = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.10),
+    ylower = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.25),
+    ymiddle = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.50),
+    yupper = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.75),
+    ymax = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.90),
+    num_rates = n(),
+    num_urates = n_distinct(billing_code, billing_code_type, canonical_rate),
+    num_providers = 6 # Count of hospitals listed in the CPW BSW contract
+  ) |>
+  ungroup()
+
+bind_rows(bswh_pro_tq_payer_agg_df, bswh_pro_cpw_payer_agg_df) |>
   mutate(
-    service_line = factor(service_line),
-    service_line = fct_explicit_na(service_line, "Other"),
-    service_line = fct_lump_min(service_line, 400)
+    payer_name = case_match(
+      payer_name,
+      "CPW" ~ "Cost Plus",
+      "UnitedHealthcare" ~ "UHC",
+      "Baylor Scott & White Health Plan" ~ "BSW Health",
+      "Blue Cross Blue Shield of Texas" ~ "BCBSTX",
+      .default = payer_name
+    ),
+    payer_name = fct_reorder(payer_name, ymiddle)
   ) |>
-  filter(payer_name %in% c("CPW")) |>
+  arrange(payer_name) |>
+  mutate(
+    payer_name = fct_relabel(
+      payer_name,
+      \(x) {
+        paste0(
+          "**",
+          case_match(
+            payer_name,
+            "Cost Plus" ~ "<span style='color:#38599b'>Cost Plus<br>(BSW)</span>",
+            .default = x
+          ),
+          "**<br>",
+          "<span style='font-size:13px'>",
+          label_comma_short(num_urates),
+          " unique rates</span><br>",
+          "<span style='font-size:13px'>",
+          case_match(
+            payer_name,
+            "Cost Plus" ~ "for",
+            .default = "from"
+          ),
+          " ",
+          scales::label_comma()(num_providers),
+          " providers</span>"
+        )
+      }
+    ),
+  ) |>
   ggplot() +
-  geom_tile(
+  geom_rect(
+    data = tibble(bill_type = "Inpatient"),
     aes(
-      y = billing_code,
-      x = rank
+      xmin = 2.5,
+      xmax = 3.5,
+      ymin = -0.15,
+      ymax = Inf
     ),
-    fill = "#38599b"
+    fill = "#38599b",
+    alpha = 0.2
   ) +
-  scale_x_discrete(expand = c(0, 0)) +
-  facet_grid(
-    rows = vars(service_line),
-    scales = "free_y",
-    space = "free_y",
-    switch = "y"
+  geom_boxplot(
+    aes(
+      ymin = ymin,
+      lower = ylower,
+      middle = ymiddle,
+      upper = yupper,
+      ymax = ymax,
+      x = payer_name
+    ),
+    stat = "identity",
+    width = 0.6
   ) +
+  scale_y_continuous(labels = label_percent()) +
   labs(
-    y = "<span style='color:white'>█████</span>Service line",
-    x = paste0(
-      "<span style='font-size:30px'>←</span> Least expensive insurer",
-      "<span style='color:white'>████████████████</span>",
-      "Most expensive insurer <span style='font-size:30px'>→</span><br><br>",
-      "<span style='font-size:20px'>**Billing code ranked by price**</span>"
+    x = "",
+    y = "Commercial to Medicare ratio",
+    title = paste0(
+      "Cost Plus ",
+      "professional rates are comparable to other insurers"
     ),
-    title = "Cost Plus Wellness has rates higher than peer insurers",
     subtitle = paste0(
-      ""
+      "Includes only Baylor Scott & White physician groups. Anesthesia ",
+      "codes are excluded"
+    ),
+    caption = paste0(
+      "Cost Plus box includes only Baylor Scott & White professional rates ",
+      "with at least one equivalent commercial PPO rate from another insurer\n",
+      "Medicare baseline rates for Cost Plus billing codes are imputed using ",
+      "provider and code-specific Medicare prices, sourced from Turquoise\n",
+      "Professional rates include both facility (roughly 66% of total) ",
+      "and non-facility (33%) rates. If a code has both types, then ",
+      "both are included\n",
+      "Box plots show weighted quantiles of commercial to Medicare rates ",
+      "ratios. Whiskers are 10th and 90th percentiles"
     )
   ) +
-  guides(fill = "none") +
   theme_minimal() +
+  coord_cartesian(clip = "off", ylim = c(0.5, 3.3)) +
   theme(
     plot.title = element_markdown(
       size = 18,
       face = "bold",
-      margin = margin(b = 8, l = -80)
+      margin = margin(b = 8, l = -36)
     ),
     plot.subtitle = element_markdown(
-      size = 15,
-      margin = margin(b = 6, l = -80),
+      size = 14,
+      margin = margin(b = 6, l = -36),
       lineheight = 1.1
     ),
     plot.caption = element_text(
@@ -664,31 +661,28 @@ bswh_inst_tq_rates_df |>
       margin = margin(t = 16)
     ),
     axis.title.x = element_markdown(
-      margin = margin(t = 2),
-      size = 12
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
     ),
-    axis.title.y = element_markdown(
-      margin = margin(r = -8),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
       size = 16,
       lineheight = 1.1,
       face = "bold"
     ),
-    axis.text.x = element_text(
+    axis.text.x = element_markdown(
       size = 12,
       margin = margin(t = 2),
       lineheight = 1.1
     ),
-    strip.text.y.left = element_text(
-      size = 11,
-      angle = 0,
-      hjust = 1
+    axis.text.y = element_markdown(
+      size = 12,
+      face = "bold"
     ),
-    strip.clip = "off",
-    panel.spacing.y = unit(0.1, "cm"),
-    axis.text.y = element_blank(),
     panel.grid.major.x = element_blank(),
     panel.grid.minor.x = element_blank(),
-    panel.grid.major.y = element_blank(),
-    panel.grid.minor.y = element_blank()
+    panel.grid.major.y = element_line(color = "grey85"),
+    panel.grid.minor.y = element_line(color = "grey90")
   )
 ```

@@ -12,21 +12,19 @@ trino_conn = tq.get_trino_connection()
 # I manually extracted the CSV version of this PDF using Tabula + some light
 # hand editing (e.g. to delete duplicate header rows)
 bswh_inst_df = (
-    (
-        pl.read_csv(
-            "data/input/CostPlusWellness.com_C010_RateSheet_BSWH_Institutional.csv",
-            schema_overrides={"billing_code": pl.String},
-        )
-        .with_columns(rate=pl.col("rate").str.replace_all(",", ""))
-        .with_columns(rate=pl.col("rate").cast(pl.Float64))
-        .with_columns(
-            billing_code_type=pl.col("billing_code_type").replace(
-                ["CPT/HCP MCC", "CPT"], "HCPCS"
-            ),
-            setting=pl.col("setting").str.to_titlecase(),
-            payer_id=pl.lit("0"),
-            payer_name=pl.lit("CPW"),
-        )
+    pl.read_csv(
+        "data/input/CostPlusWellness.com_C010_RateSheet_BSWH_Institutional.csv",
+        schema_overrides={"billing_code": pl.String},
+    )
+    .with_columns(rate=pl.col("rate").str.replace_all(",", ""))
+    .with_columns(rate=pl.col("rate").cast(pl.Float64))
+    .with_columns(
+        billing_code_type=pl.col("billing_code_type").replace(
+            ["CPT/HCP MCC", "CPT"], "HCPCS"
+        ),
+        setting=pl.col("setting").str.to_titlecase(),
+        payer_id=pl.lit("0"),
+        payer_name=pl.lit("CPW"),
     )
     .select(pl.exclude("category"))
     .rename(
