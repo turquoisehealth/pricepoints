@@ -10,6 +10,7 @@ classifiers = [
 requires-python = "==3.13.8"
 dependencies = [
   "fastexcel>=0.16.0",
+  "playwright>=1.48.0",
   "polars>=1.35.1",
   "pyarrow>=22.0.0",
   "tq @ file:///${PROJECT_ROOT}/../../tq",
