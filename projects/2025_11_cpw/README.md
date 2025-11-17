@@ -177,7 +177,7 @@ results of running the ingestion scripts) are available via the ZIP file
 below. Extract the ZIP file to the `data/` directory, install dependencies, and
 run the [`analysis.qmd`](./analysis.qmd) notebook to reproduce the analysis.
 
-#### [Link to replication data]()
+#### [Link to replication data](https://drive.google.com/uc?export=download&id=1MWsvlO6N5D6MK3AkirPIjpg5wkFyLtP2)
 
 ### Dependencies
 
