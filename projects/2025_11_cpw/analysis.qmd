@@ -73,6 +73,7 @@ bswh_inst_sub_df <- read_parquet("data/output/bswh_inst_sub.parquet")
 bswh_inst_tq_rates_df <- read_parquet("data/output/bswh_inst_tq_rates.parquet")
 bswh_pro_sub_df <- read_parquet("data/output/bswh_pro_sub.parquet")
 bswh_pro_tq_rates_df <- read_parquet("data/output/bswh_pro_tq_rates.parquet")
+dfw_provider_counts_df <- read_parquet("data/output/dfw_provider_counts.parquet")
 ```
 
 ```{r inst_payer_boxplot, message=FALSE}
@@ -677,6 +678,131 @@ bind_rows(bswh_pro_tq_payer_agg_df, bswh_pro_cpw_payer_agg_df) |>
     axis.text.x = element_markdown(
       size = 12,
       margin = margin(t = 2),
+      lineheight = 1.1
+    ),
+    axis.text.y = element_markdown(
+      size = 12,
+      face = "bold"
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey85"),
+    panel.grid.minor.y = element_line(color = "grey90")
+  )
+```
+
+```{r dfw_provider_counts, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 6.5
+
+dfw_provider_counts_df |>
+  mutate(
+    payer_name = case_match(
+      payer_name,
+      "CostPlus" ~ "Cost Plus",
+      "UnitedHealthcare" ~ "UHC",
+      "Baylor Scott & White Health Plan" ~ "BSW Health",
+      "Blue Cross Blue Shield of Texas" ~ "BCBSTX",
+      .default = payer_name
+    ),
+    payer_name = fct_reorder(payer_name, provider_count)
+  ) |>
+  arrange(payer_name) |>
+  mutate(
+    payer_name = fct_relabel(
+      payer_name,
+      \(x) {
+        paste0(
+          "**",
+          case_match(
+            payer_name,
+            "Cost Plus" ~ "<span style='color:#38599b'>Cost Plus</span>",
+            .default = x
+          ),
+          "**"
+        )
+      }
+    )
+  ) |>
+  ggplot() +
+  geom_rect(
+    data = tibble(bill_type = "Inpatient"),
+    aes(
+      xmin = 1.5,
+      xmax = 2.5,
+      ymin = -24,
+      ymax = Inf
+    ),
+    fill = "#38599b",
+    alpha = 0.2
+  ) +
+  geom_col(
+    aes(
+      x = payer_name,
+      y = provider_count
+    ),
+    width = 0.8
+  ) +
+  geom_text(
+    aes(
+      x = payer_name,
+      y = provider_count,
+      label = provider_count
+    ),
+    color = "grey20",
+    nudge_y = 12,
+    size = 6
+  ) +
+  labs(
+    x = "",
+    y = "Facility count",
+    title = "Cost Plus has a narrower network than most other TX insurers",
+    subtitle = paste0(
+      "Within the DFW Metroplex, Cost Plus has the second lowest number ",
+      "of unique facilities"
+    ),
+    caption = paste0(
+      "Cost Plus facility count reflects number from their website: ",
+      "https://www.costpluswellness.com/directory\n",
+      "Other payers' facility counts are the total number of unique provider ",
+      "locations within their Transparency in Coverage pricing files\n",
+      "Includes only facilities in the Dallas-Fort Worth-Arlington, TX CBSA "
+    )
+  ) +
+  coord_cartesian(clip = "off", ylim = c(0.0, 360)) +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 8, l = -36)
+    ),
+    plot.subtitle = element_markdown(
+      size = 14,
+      margin = margin(b = 6, l = -36),
+      lineheight = 1.1
+    ),
+    plot.caption = element_text(
+      size = 9.2,
+      lineheight = 1.1,
+      margin = margin(t = 4)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 12,
+      margin = margin(t = -14),
       lineheight = 1.1
     ),
     axis.text.y = element_markdown(
