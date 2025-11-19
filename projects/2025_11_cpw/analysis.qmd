@@ -101,35 +101,35 @@ bswh_inst_tq_cash_agg_df <- bswh_inst_tq_rates_df |>
     num_urates = n_distinct(discounted_cash_rate)
   ) |>
   ungroup() |>
-  mutate(total_beds_percentile = percent_rank(total_beds)) |>
+  mutate(total_beds_scaled = total_beds / max(total_beds)) |>
   summarise(
     ymin = wtd.quantile(
       cash_pct_of_medicare,
-      weights = total_beds_percentile * state_claims_percentile_all,
+      weights = total_beds_scaled * state_claims_percentile_all,
       probs = 0.10,
       na.rm = TRUE
     ),
     ylower = wtd.quantile(
       cash_pct_of_medicare,
-      weights = total_beds_percentile * state_claims_percentile_all,
+      weights = total_beds_scaled * state_claims_percentile_all,
       probs = 0.25,
       na.rm = TRUE
     ),
     ymiddle = wtd.quantile(
       cash_pct_of_medicare,
-      weights = total_beds_percentile * state_claims_percentile_all,
+      weights = total_beds_scaled * state_claims_percentile_all,
       probs = 0.50,
       na.rm = TRUE
     ),
     yupper = wtd.quantile(
       cash_pct_of_medicare,
-      weights = total_beds_percentile * state_claims_percentile_all,
+      weights = total_beds_scaled * state_claims_percentile_all,
       probs = 0.75,
       na.rm = TRUE
     ),
     ymax = wtd.quantile(
       cash_pct_of_medicare,
-      weights = total_beds_percentile * state_claims_percentile_all,
+      weights = total_beds_scaled * state_claims_percentile_all,
       probs = 0.90,
       na.rm = TRUE
     ),
@@ -147,35 +147,35 @@ bswh_inst_tq_comm_agg_df <- bswh_inst_tq_rates_df |>
   filter(
     billing_code %in% bswh_inst_sub_df$billing_code,
   ) |>
-  mutate(total_beds_percentile = percent_rank(total_beds)) |>
+  mutate(total_beds_scaled = total_beds / max(total_beds)) |>
   summarise(
     ymin = wtd.quantile(
       canonical_rate / medicare_rate,
-      weights = total_beds_percentile * state_claims_percentile_all,
+      weights = total_beds_scaled * state_claims_percentile_all,
       probs = 0.10,
       na.rm = TRUE
     ),
     ylower = wtd.quantile(
       canonical_rate / medicare_rate,
-      weights = total_beds_percentile * state_claims_percentile_all,
+      weights = total_beds_scaled * state_claims_percentile_all,
       probs = 0.25,
       na.rm = TRUE
     ),
     ymiddle = wtd.quantile(
       canonical_rate / medicare_rate,
-      weights = total_beds_percentile * state_claims_percentile_all,
+      weights = total_beds_scaled * state_claims_percentile_all,
       probs = 0.50,
       na.rm = TRUE
     ),
     yupper = wtd.quantile(
       canonical_rate / medicare_rate,
-      weights = total_beds_percentile * state_claims_percentile_all,
+      weights = total_beds_scaled * state_claims_percentile_all,
       probs = 0.75,
       na.rm = TRUE
     ),
     ymax = wtd.quantile(
       canonical_rate / medicare_rate,
-      weights = total_beds_percentile * state_claims_percentile_all,
+      weights = total_beds_scaled * state_claims_percentile_all,
       probs = 0.90,
       na.rm = TRUE
     ),
@@ -229,10 +229,10 @@ bind_rows(
             .default = x
           ),
           "**<br>",
-          "<span style='font-size:13px'>",
+          "<span style='font-size:12px'>",
           label_comma_short(num_urates),
           " unique rates</span><br>",
-          "<span style='font-size:13px'>",
+          "<span style='font-size:12px'>",
           case_match(
             payer_name,
             "Cost Plus rates" ~ "for BSW providers",
@@ -348,37 +348,37 @@ ggplot() +
 #| fig-height: 6.5
 
 bswh_inst_tq_payer_agg_df <- bswh_inst_tq_rates_df |>
-  mutate(total_beds_percentile = percent_rank(total_beds)) |>
+  mutate(total_beds_scaled = total_beds / max(total_beds)) |>
   filter(billing_code %in% bswh_inst_sub_df$billing_code) |>
   group_by(payer_id, payer_name) |>
   summarise(
     ymin = wtd.quantile(
       canonical_rate / medicare_rate,
-      weights = total_beds_percentile * state_claims_percentile_all,
+      weights = total_beds_scaled * state_claims_percentile_all,
       probs = 0.10,
       na.rm = TRUE
     ),
     ylower = wtd.quantile(
       canonical_rate / medicare_rate,
-      weights = total_beds_percentile * state_claims_percentile_all,
+      weights = total_beds_scaled * state_claims_percentile_all,
       probs = 0.25,
       na.rm = TRUE
     ),
     ymiddle = wtd.quantile(
       canonical_rate / medicare_rate,
-      weights = total_beds_percentile * state_claims_percentile_all,
+      weights = total_beds_scaled * state_claims_percentile_all,
       probs = 0.50,
       na.rm = TRUE
     ),
     yupper = wtd.quantile(
       canonical_rate / medicare_rate,
-      weights = total_beds_percentile * state_claims_percentile_all,
+      weights = total_beds_scaled * state_claims_percentile_all,
       probs = 0.75,
       na.rm = TRUE
     ),
     ymax = wtd.quantile(
       canonical_rate / medicare_rate,
-      weights = total_beds_percentile * state_claims_percentile_all,
+      weights = total_beds_scaled * state_claims_percentile_all,
       probs = 0.90,
       na.rm = TRUE
     ),
@@ -427,10 +427,10 @@ bind_rows(bswh_inst_tq_payer_agg_df, bswh_inst_cpw_payer_agg_df) |>
             .default = x
           ),
           "**<br>",
-          "<span style='font-size:13px'>",
+          "<span style='font-size:12px'>",
           label_comma_short(num_urates),
           " unique rates</span><br>",
-          "<span style='font-size:13px'>",
+          "<span style='font-size:12px'>",
           case_match(
             payer_name,
             "Cost Plus" ~ "for",
@@ -441,14 +441,14 @@ bind_rows(bswh_inst_tq_payer_agg_df, bswh_inst_cpw_payer_agg_df) |>
           " providers</span>"
         )
       }
-    ),
+    )
   ) |>
   ggplot() +
   geom_rect(
     data = tibble(bill_type = "Inpatient"),
     aes(
-      xmin = 5.5,
-      xmax = 6.5,
+      xmin = 4.5,
+      xmax = 5.5,
       ymin = -0.15,
       ymax = Inf
     ),
@@ -468,12 +468,11 @@ bind_rows(bswh_inst_tq_payer_agg_df, bswh_inst_cpw_payer_agg_df) |>
     width = 0.6
   ) +
   scale_y_continuous(labels = label_percent()) +
-  scale_x_discrete(expand = expansion(mult = c(0.08, 0.0))) +
   labs(
     x = "",
     y = "Commercial to Medicare ratio",
     title = paste0(
-      "Cost Plus Wellness has higher rates than large Texas insurers"
+      "Cost Plus Wellness has higher rates than most Texas insurers"
     ),
     subtitle = paste0(
       "Across Baylor Scott & White (BSW) hospitals and medical centers ",
@@ -545,37 +544,37 @@ bind_rows(bswh_inst_tq_payer_agg_df, bswh_inst_cpw_payer_agg_df) |>
 #| fig-height: 6.5
 
 bswh_inst_tq_payer_ipop_agg_df <- bswh_inst_tq_rates_df |>
-  mutate(total_beds_percentile = percent_rank(total_beds)) |>
+  mutate(total_beds_scaled = total_beds / max(total_beds)) |>
   filter(billing_code %in% bswh_inst_sub_df$billing_code) |>
   group_by(payer_id, payer_name, bill_type) |>
   summarise(
     ymin = wtd.quantile(
       canonical_rate / medicare_rate,
-      weights = total_beds_percentile * state_claims_percentile_sep,
+      weights = total_beds_scaled * state_claims_percentile_sep,
       probs = 0.10,
       na.rm = TRUE
     ),
     ylower = wtd.quantile(
       canonical_rate / medicare_rate,
-      weights = total_beds_percentile * state_claims_percentile_sep,
+      weights = total_beds_scaled * state_claims_percentile_sep,
       probs = 0.25,
       na.rm = TRUE
     ),
     ymiddle = wtd.quantile(
       canonical_rate / medicare_rate,
-      weights = total_beds_percentile * state_claims_percentile_sep,
+      weights = total_beds_scaled * state_claims_percentile_sep,
       probs = 0.50,
       na.rm = TRUE
     ),
     yupper = wtd.quantile(
       canonical_rate / medicare_rate,
-      weights = total_beds_percentile * state_claims_percentile_sep,
+      weights = total_beds_scaled * state_claims_percentile_sep,
       probs = 0.75,
       na.rm = TRUE
     ),
     ymax = wtd.quantile(
       canonical_rate / medicare_rate,
-      weights = total_beds_percentile * state_claims_percentile_sep,
+      weights = total_beds_scaled * state_claims_percentile_sep,
       probs = 0.90,
       na.rm = TRUE
     ),
@@ -611,7 +610,7 @@ bind_rows(bswh_inst_tq_payer_ipop_agg_df, bswh_inst_cpw_payer_ipop_agg_df) |>
     ),
     payer_name = factor(
       payer_name,
-      levels = c("UHC", "Cigna", "BSW Health", "Aetna", "BCBSTX", "Cost Plus")
+      levels = c("Cigna", "BSW Health", "UHC", "Aetna", "Cost Plus", "BCBSTX")
     ),
     ymax = pmin(ymax, 5.5)
   ) |>
@@ -620,7 +619,7 @@ bind_rows(bswh_inst_tq_payer_ipop_agg_df, bswh_inst_cpw_payer_ipop_agg_df) |>
     rate_label = paste0(
       paste0(
         paste0(
-          "<span style='font-size:13px;color:",
+          "<span style='font-size:12px;color:",
           color_values[paste0(bill_type, "-dark")],
           "'>",
           label_comma_short(num_urates),
@@ -628,12 +627,12 @@ bind_rows(bswh_inst_tq_payer_ipop_agg_df, bswh_inst_cpw_payer_ipop_agg_df) |>
         ),
         collapse = " / "
       ),
-      "<span style='font-size:13px'> u. rates</span><br>"
+      "<span style='font-size:12px'> u. rates</span><br>"
     ),
     provider_label = paste0(
       paste0(
         paste0(
-          "<span style='font-size:13px;color:",
+          "<span style='font-size:12px;color:",
           color_values[paste0(bill_type, "-dark")],
           "'>",
           paste0(scales::label_comma()(num_providers)),
@@ -641,7 +640,7 @@ bind_rows(bswh_inst_tq_payer_ipop_agg_df, bswh_inst_cpw_payer_ipop_agg_df) |>
         ),
         collapse = " / "
       ),
-      "<span style='font-size:13px'> providers</span>"
+      "<span style='font-size:12px'> providers</span>"
     ),
     .by = payer_name
   ) |>
@@ -654,10 +653,10 @@ bind_rows(bswh_inst_tq_payer_ipop_agg_df, bswh_inst_cpw_payer_ipop_agg_df) |>
         .default = payer_name
       ),
       "**<br>",
-      "<span style='font-size:13px'>",
+      "<span style='font-size:12px'>",
       rate_label,
       "</span>",
-      "<span style='font-size:13px'>",
+      "<span style='font-size:12px'>",
       case_match(
         payer_name,
         "Cost Plus" ~ "for BSW providers",
@@ -671,8 +670,8 @@ bind_rows(bswh_inst_tq_payer_ipop_agg_df, bswh_inst_cpw_payer_ipop_agg_df) |>
   geom_rect(
     data = tibble(bill_type = "Inpatient"),
     aes(
-      xmin = 5.5,
-      xmax = 6.5,
+      xmin = 4.5,
+      xmax = 5.5,
       ymin = -0.15,
       ymax = Inf
     ),
@@ -693,7 +692,6 @@ bind_rows(bswh_inst_tq_payer_ipop_agg_df, bswh_inst_cpw_payer_ipop_agg_df) |>
     width = 0.6
   ) +
   scale_y_continuous(labels = label_percent()) +
-  scale_x_discrete(expand = expansion(mult = c(0.08, 0.0))) +
   scale_fill_manual(values = color_values[1:2]) +
   guides(fill = "none") +
   labs(
@@ -864,10 +862,10 @@ bind_rows(bswh_pro_tq_payer_agg_df, bswh_pro_cpw_payer_agg_df) |>
             .default = x
           ),
           "**<br>",
-          "<span style='font-size:13px'>",
+          "<span style='font-size:12px'>",
           label_comma_short(num_urates),
           " unique rates</span><br>",
-          "<span style='font-size:13px'>",
+          "<span style='font-size:12px'>",
           case_match(
             payer_name,
             "Cost Plus" ~ "for",
@@ -905,13 +903,12 @@ bind_rows(bswh_pro_tq_payer_agg_df, bswh_pro_cpw_payer_agg_df) |>
     width = 0.6
   ) +
   scale_y_continuous(labels = label_percent()) +
-  scale_x_discrete(expand = expansion(mult = c(0.1, 0.1))) +
   labs(
     x = "",
     y = "Commercial to Medicare ratio",
     title = paste0(
-      "Cost Plus ",
-      "professional rates are comparable to large insurers'"
+      "Cost Plus has ",
+      "professional rates comparable to large insurers"
     ),
     subtitle = paste0(
       "Includes only Baylor Scott & White physician groups. Anesthesia ",
@@ -925,8 +922,8 @@ bind_rows(bswh_pro_tq_payer_agg_df, bswh_pro_cpw_payer_agg_df) |>
       "Professional rates include both facility (roughly 66% of total) ",
       "and non-facility (33%) rates. If a code has both types, then ",
       "both are included\n",
-      "Box plots show weighted quantiles of commercial to Medicare rate ",
-      "ratios. Whiskers are 10th and 90th percentiles"
+      "Box plots show weighted (by utilization) quantiles of commercial ",
+      "to Medicare rate ratios. Whiskers are 10th and 90th percentiles"
     )
   ) +
   theme_minimal() +
@@ -1005,7 +1002,7 @@ dfw_provider_counts_df |>
             .default = x
           ),
           "**<br>",
-          "<span style='font-size:13px'>",
+          "<span style='font-size:12px'>",
           label_comma_short(provider_count),
           " facilities</span>"
         )
