@@ -73,7 +73,9 @@ bswh_inst_sub_df <- read_parquet("data/output/bswh_inst_sub.parquet")
 bswh_inst_tq_rates_df <- read_parquet("data/output/bswh_inst_tq_rates.parquet")
 bswh_pro_sub_df <- read_parquet("data/output/bswh_pro_sub.parquet")
 bswh_pro_tq_rates_df <- read_parquet("data/output/bswh_pro_tq_rates.parquet")
-dfw_provider_counts_df <- read_parquet("data/output/dfw_provider_counts.parquet")
+dfw_provider_counts_df <- read_parquet(
+  "data/output/dfw_provider_counts.parquet"
+)
 ```
 
 ```{r inst_cash_boxplot, message=FALSE}
@@ -90,8 +92,12 @@ bswh_inst_tq_cash_agg_df <- bswh_inst_tq_rates_df |>
     between(discounted_cash_rate / medicare_rate, 0.4, 10.0)
   ) |>
   group_by(
-    provider_id, provider_name, total_beds,
-    billing_code, billing_code_type, state_claims_percentile_all
+    provider_id,
+    provider_name,
+    total_beds,
+    billing_code,
+    billing_code_type,
+    state_claims_percentile_all
   ) |>
   # Aggregate across payers, since presumably cash rates don't vary much
   # between them
@@ -246,7 +252,7 @@ bind_rows(
       }
     )
   ) |>
-ggplot() +
+  ggplot() +
   geom_rect(
     data = tibble(bill_type = "Inpatient"),
     mapping = aes(
