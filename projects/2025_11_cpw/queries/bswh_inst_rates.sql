@@ -39,6 +39,7 @@ SELECT
     cr.service_description,
     cr.medicare_rate,
     cr.canonical_rate,
+    cr.discounted_cash_rate,
     COALESCE(cu.state_claims_percentile_sep, 0.01)
         AS state_claims_percentile_sep,
     COALESCE(cu.state_claims_percentile_all, 0.01)
