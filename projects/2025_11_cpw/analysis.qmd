@@ -1,0 +1,1096 @@
+---
+title: "CPW"
+subtitle: "By Dan Snow"
+format:
+  html:
+    fig-format: retina
+    fig-dpi: 320
+    toc: false
+    embed-resources: true
+    grid:
+      body-width: 900px
+execute:
+  echo: false
+---
+
+```{r setup, message=FALSE}
+library(arrow)
+library(conflicted)
+library(data.table)
+library(dplyr)
+library(forcats)
+library(ggplot2)
+library(ggtext)
+library(Hmisc)
+library(lubridate)
+library(patchwork)
+library(readr)
+library(scales)
+library(stringr)
+library(tidyr)
+
+# Always use dplyr over other packages
+conflict_prefer_all("dplyr", quiet = TRUE)
+
+# Transform numbers into abbreviated amounts
+# 100 becomes 100, 1000 becomes 1K, 1000000 becomes $1M, etc.
+label_comma_short <- function(x) {
+  sapply(
+    x,
+    function(val) {
+      if (is.na(val)) {
+        return(NA_character_)
+      }
+
+      abs_val <- abs(val)
+      sign_str <- ifelse(val < 0, "-", "")
+      if (abs_val >= 1e9) {
+        paste0(sign_str, round(abs_val / 1e9, 0), "B")
+      } else if (abs_val >= 1e6) {
+        paste0(sign_str, round(abs_val / 1e6, 0), "M")
+      } else if (abs_val >= 1e3) {
+        paste0(sign_str, round(abs_val / 1e3, 0), "K")
+      } else {
+        paste0(sign_str, formatC(abs_val, format = "f", digits = 0))
+      }
+    },
+    USE.NAMES = FALSE
+  )
+}
+
+
+# Static set of colors to associate with different factors
+color_values <- c(
+  "Outpatient" = "#8da0cb",
+  "Inpatient" = "#e78ac3",
+  "Outpatient-dark" = "#627cb7",
+  "Inpatient-dark" = "#c65398"
+)
+```
+
+```{r load_data, message=FALSE, warning=FALSE}
+bswh_inst_sub_df <- read_parquet("data/output/bswh_inst_sub.parquet")
+bswh_inst_tq_rates_df <- read_parquet("data/output/bswh_inst_tq_rates.parquet")
+bswh_pro_sub_df <- read_parquet("data/output/bswh_pro_sub.parquet")
+bswh_pro_tq_rates_df <- read_parquet("data/output/bswh_pro_tq_rates.parquet")
+dfw_provider_counts_df <- read_parquet(
+  "data/output/dfw_provider_counts.parquet"
+)
+```
+
+```{r inst_cash_boxplot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 6.5
+
+bswh_inst_tq_cash_agg_df <- bswh_inst_tq_rates_df |>
+  filter(
+    billing_code %in% bswh_inst_sub_df$billing_code,
+    !is.na(discounted_cash_rate),
+    # Same filtering used on canonical/commercial rates
+    between(discounted_cash_rate / medicare_rate, 0.4, 10.0)
+  ) |>
+  group_by(
+    provider_id,
+    provider_name,
+    total_beds,
+    billing_code,
+    billing_code_type,
+    state_claims_percentile_all
+  ) |>
+  # Aggregate across payers, since presumably cash rates don't vary much
+  # between them
+  summarize(
+    cash_pct_of_medicare = median(discounted_cash_rate / medicare_rate),
+    num_rates = n(),
+    num_urates = n_distinct(discounted_cash_rate)
+  ) |>
+  ungroup() |>
+  mutate(total_beds_scaled = total_beds / max(total_beds)) |>
+  summarise(
+    ymin = wtd.quantile(
+      cash_pct_of_medicare,
+      weights = total_beds_scaled * state_claims_percentile_all,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    ylower = wtd.quantile(
+      cash_pct_of_medicare,
+      weights = total_beds_scaled * state_claims_percentile_all,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    ymiddle = wtd.quantile(
+      cash_pct_of_medicare,
+      weights = total_beds_scaled * state_claims_percentile_all,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    yupper = wtd.quantile(
+      cash_pct_of_medicare,
+      weights = total_beds_scaled * state_claims_percentile_all,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    ymax = wtd.quantile(
+      cash_pct_of_medicare,
+      weights = total_beds_scaled * state_claims_percentile_all,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    num_rates = sum(num_rates),
+    num_urates = sum(num_urates),
+    num_providers = n_distinct(provider_id)
+  ) |>
+  ungroup() |>
+  mutate(
+    payer_id = "1",
+    payer_name = "Discounted cash rates"
+  )
+
+bswh_inst_tq_comm_agg_df <- bswh_inst_tq_rates_df |>
+  filter(
+    billing_code %in% bswh_inst_sub_df$billing_code,
+  ) |>
+  mutate(total_beds_scaled = total_beds / max(total_beds)) |>
+  summarise(
+    ymin = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = total_beds_scaled * state_claims_percentile_all,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    ylower = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = total_beds_scaled * state_claims_percentile_all,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    ymiddle = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = total_beds_scaled * state_claims_percentile_all,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    yupper = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = total_beds_scaled * state_claims_percentile_all,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    ymax = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = total_beds_scaled * state_claims_percentile_all,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    num_rates = n(),
+    num_urates = n_distinct(billing_code, billing_code_type, canonical_rate),
+    num_providers = n_distinct(provider_id)
+  ) |>
+  ungroup() |>
+  mutate(
+    payer_id = "2",
+    payer_name = "Commercial rates"
+  )
+
+bswh_inst_cpw_cash_agg_df <- bswh_inst_sub_df |>
+  group_by(payer_name, payer_id) |>
+  summarize(
+    ymin = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.10),
+    ylower = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.25),
+    ymiddle = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.50),
+    yupper = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.75),
+    ymax = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.90),
+    num_rates = n(),
+    num_urates = n_distinct(billing_code, billing_code_type, canonical_rate),
+    num_providers = NA_real_
+  ) |>
+  ungroup() |>
+  mutate(payer_name = "Cost Plus rates")
+
+bind_rows(
+  bswh_inst_cpw_cash_agg_df,
+  bswh_inst_tq_comm_agg_df,
+  bswh_inst_tq_cash_agg_df
+) |>
+  mutate(
+    payer_name = factor(
+      payer_name,
+      levels = c("Discounted cash rates", "Commercial rates", "Cost Plus rates")
+    )
+  ) |>
+  arrange(payer_name) |>
+  mutate(
+    payer_name = fct_relabel(
+      payer_name,
+      \(x) {
+        paste0(
+          "**",
+          case_match(
+            payer_name,
+            "Cost Plus rates" ~
+              "<span style='color:#38599b'>Cost Plus rates</span>",
+            .default = x
+          ),
+          "**<br>",
+          "<span style='font-size:12px'>",
+          label_comma_short(num_urates),
+          " unique rates</span><br>",
+          "<span style='font-size:12px'>",
+          case_match(
+            payer_name,
+            "Cost Plus rates" ~ "for BSW providers",
+            .default = paste0(
+              "from ",
+              scales::label_comma()(num_providers),
+              " providers</span>"
+            )
+          )
+        )
+      }
+    )
+  ) |>
+  ggplot() +
+  geom_rect(
+    data = tibble(bill_type = "Inpatient"),
+    mapping = aes(
+      xmin = 2.6,
+      xmax = 3.4,
+      ymin = -0.15,
+      ymax = Inf
+    ),
+    fill = "#38599b",
+    alpha = 0.2
+  ) +
+  geom_boxplot(
+    aes(
+      ymin = ymin,
+      lower = ylower,
+      middle = ymiddle,
+      upper = yupper,
+      ymax = ymax,
+      x = payer_name
+    ),
+    stat = "identity",
+    width = 0.6
+  ) +
+  scale_y_continuous(labels = label_percent()) +
+  labs(
+    x = "",
+    y = "Rate to Medicare ratio",
+    title = paste0(
+      "Cost Plus Wellness",
+      " rates are higher than discounted cash rates"
+    ),
+    subtitle = paste0(
+      "Across Baylor Scott & White (BSW) hospitals and medical centers ",
+      "in Dallas-Fort Worth"
+    ),
+    caption = paste0(
+      "Includes the intersection of CPW's BSW institutional inpatient",
+      "/outpatient rates and discounted cash rates from BSW providers\n",
+      "Medicare denominators for Cost Plus rates are added using ",
+      "provider-adjusted Medicare prices sourced from Turquoise Health\n",
+      "Includes ~",
+      label_comma_short(bswh_inst_tq_cash_agg_df$num_urates),
+      " cash ",
+      "rates sourced from Turquoise Health Clear Rates, weighted by code ",
+      "utilization and provider bed count\n",
+      "Box plots show weighted quantiles of commercial to Medicare rate ",
+      "ratios. Whiskers are 10th and 90th percentiles"
+    )
+  ) +
+  theme_minimal() +
+  coord_cartesian(clip = "off", ylim = c(0.9, 5.5)) +
+  theme(
+    plot.title = element_markdown(
+      size = 17.5,
+      face = "bold",
+      margin = margin(b = 8, l = -36)
+    ),
+    plot.subtitle = element_markdown(
+      size = 14,
+      margin = margin(b = 6, l = -36),
+      lineheight = 1.1
+    ),
+    plot.caption = element_text(
+      size = 9.2,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 12,
+      margin = margin(t = 2),
+      lineheight = 1.1
+    ),
+    axis.text.y = element_markdown(
+      size = 12,
+      face = "bold"
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey85"),
+    panel.grid.minor.y = element_line(color = "grey90")
+  )
+```
+
+```{r inst_payer_boxplot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 6.5
+
+bswh_inst_tq_payer_agg_df <- bswh_inst_tq_rates_df |>
+  mutate(total_beds_scaled = total_beds / max(total_beds)) |>
+  filter(billing_code %in% bswh_inst_sub_df$billing_code) |>
+  group_by(payer_id, payer_name) |>
+  summarise(
+    ymin = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = total_beds_scaled * state_claims_percentile_all,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    ylower = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = total_beds_scaled * state_claims_percentile_all,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    ymiddle = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = total_beds_scaled * state_claims_percentile_all,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    yupper = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = total_beds_scaled * state_claims_percentile_all,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    ymax = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = total_beds_scaled * state_claims_percentile_all,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    num_rates = n(),
+    num_urates = n_distinct(billing_code, billing_code_type, canonical_rate),
+    num_providers = as.character(n_distinct(provider_id))
+  ) |>
+  ungroup()
+
+bswh_inst_cpw_payer_agg_df <- bswh_inst_sub_df |>
+  group_by(payer_name, payer_id) |>
+  summarize(
+    ymin = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.10),
+    ylower = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.25),
+    ymiddle = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.50),
+    yupper = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.75),
+    ymax = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.90),
+    num_rates = n(),
+    num_urates = n_distinct(billing_code, billing_code_type, canonical_rate),
+    num_providers = "BSW"
+  ) |>
+  ungroup()
+
+bind_rows(bswh_inst_tq_payer_agg_df, bswh_inst_cpw_payer_agg_df) |>
+  mutate(
+    payer_name = case_match(
+      payer_name,
+      "CPW" ~ "Cost Plus",
+      "UnitedHealthcare" ~ "UHC",
+      "Baylor Scott & White Health Plan" ~ "BSW Health",
+      "Blue Cross Blue Shield of Texas" ~ "BCBSTX",
+      .default = payer_name
+    ),
+    payer_name = fct_reorder(payer_name, ymiddle)
+  ) |>
+  arrange(payer_name) |>
+  mutate(
+    payer_name = fct_relabel(
+      payer_name,
+      \(x) {
+        paste0(
+          "**",
+          case_match(
+            payer_name,
+            "Cost Plus" ~ "<span style='color:#38599b'>Cost Plus</span>",
+            .default = x
+          ),
+          "**<br>",
+          "<span style='font-size:12px'>",
+          label_comma_short(num_urates),
+          " unique rates</span><br>",
+          "<span style='font-size:12px'>",
+          case_match(
+            payer_name,
+            "Cost Plus" ~ "for",
+            .default = "from"
+          ),
+          " ",
+          num_providers,
+          " providers</span>"
+        )
+      }
+    )
+  ) |>
+  ggplot() +
+  geom_rect(
+    data = tibble(bill_type = "Inpatient"),
+    aes(
+      xmin = 4.5,
+      xmax = 5.5,
+      ymin = -0.15,
+      ymax = Inf
+    ),
+    fill = "#38599b",
+    alpha = 0.2
+  ) +
+  geom_boxplot(
+    aes(
+      ymin = ymin,
+      lower = ylower,
+      middle = ymiddle,
+      upper = yupper,
+      ymax = ymax,
+      x = payer_name
+    ),
+    stat = "identity",
+    width = 0.6
+  ) +
+  scale_y_continuous(labels = label_percent()) +
+  labs(
+    x = "",
+    y = "Commercial to Medicare ratio",
+    title = paste0(
+      "Cost Plus Wellness has higher rates than most Texas insurers"
+    ),
+    subtitle = paste0(
+      "Across Baylor Scott & White (BSW) hospitals and medical centers ",
+      "in Dallas-Fort Worth"
+    ),
+    caption = paste0(
+      "Includes the intersection of CPW's BSW institutional inpatient",
+      "/outpatient rates and commercial PPO rates at BSW providers\n",
+      "Medicare denominators for Cost Plus rates are added using ",
+      "provider-adjusted Medicare prices sourced from Turquoise Health\n",
+      "Includes ~",
+      label_comma_short(nrow(bswh_inst_tq_rates_df)),
+      " commercial ",
+      "rates sourced from Turquoise Health Clear Rates, weighted by code ",
+      "utilization and provider bed count\n",
+      "Box plots show weighted quantiles of commercial to Medicare rate ",
+      "ratios. Whiskers are 10th and 90th percentiles"
+    )
+  ) +
+  theme_minimal() +
+  coord_cartesian(clip = "off", ylim = c(0.9, 5.5)) +
+  theme(
+    plot.title = element_markdown(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 8, l = -36)
+    ),
+    plot.subtitle = element_markdown(
+      size = 14,
+      margin = margin(b = 6, l = -36),
+      lineheight = 1.1
+    ),
+    plot.caption = element_text(
+      size = 9.2,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 12,
+      margin = margin(t = 2),
+      lineheight = 1.1
+    ),
+    axis.text.y = element_markdown(
+      size = 12,
+      face = "bold"
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey85"),
+    panel.grid.minor.y = element_line(color = "grey90")
+  )
+```
+
+```{r inst_payer_ipop_boxplot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 6.5
+
+bswh_inst_tq_payer_ipop_agg_df <- bswh_inst_tq_rates_df |>
+  mutate(total_beds_scaled = total_beds / max(total_beds)) |>
+  filter(billing_code %in% bswh_inst_sub_df$billing_code) |>
+  group_by(payer_id, payer_name, bill_type) |>
+  summarise(
+    ymin = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = total_beds_scaled * state_claims_percentile_sep,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    ylower = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = total_beds_scaled * state_claims_percentile_sep,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    ymiddle = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = total_beds_scaled * state_claims_percentile_sep,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    yupper = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = total_beds_scaled * state_claims_percentile_sep,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    ymax = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = total_beds_scaled * state_claims_percentile_sep,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    num_rates = n(),
+    num_urates = n_distinct(billing_code, billing_code_type, canonical_rate),
+    num_providers = n_distinct(provider_id)
+  ) |>
+  ungroup()
+
+bswh_inst_cpw_payer_ipop_agg_df <- bswh_inst_sub_df |>
+  group_by(payer_name, payer_id, bill_type) |>
+  summarize(
+    ymin = wtd.quantile(pct_of_medicare, state_claims_percentile_sep, 0.10),
+    ylower = wtd.quantile(pct_of_medicare, state_claims_percentile_sep, 0.25),
+    ymiddle = wtd.quantile(pct_of_medicare, state_claims_percentile_sep, 0.50),
+    yupper = wtd.quantile(pct_of_medicare, state_claims_percentile_sep, 0.75),
+    ymax = wtd.quantile(pct_of_medicare, state_claims_percentile_sep, 0.90),
+    num_rates = n(),
+    num_urates = n_distinct(billing_code, billing_code_type, canonical_rate),
+    num_providers = 32 # Count of hospitals listed in the CPW BSW contract
+  ) |>
+  ungroup()
+
+bind_rows(bswh_inst_tq_payer_ipop_agg_df, bswh_inst_cpw_payer_ipop_agg_df) |>
+  mutate(
+    payer_name = case_match(
+      payer_name,
+      "CPW" ~ "Cost Plus",
+      "UnitedHealthcare" ~ "UHC",
+      "Baylor Scott & White Health Plan" ~ "BSW Health",
+      "Blue Cross Blue Shield of Texas" ~ "BCBSTX",
+      .default = payer_name
+    ),
+    payer_name = factor(
+      payer_name,
+      levels = c("Cigna", "BSW Health", "UHC", "Aetna", "Cost Plus", "BCBSTX")
+    ),
+    ymax = pmin(ymax, 5.5)
+  ) |>
+  arrange(payer_name) |>
+  mutate(
+    rate_label = paste0(
+      paste0(
+        paste0(
+          "<span style='font-size:12px;color:",
+          color_values[paste0(bill_type, "-dark")],
+          "'>",
+          label_comma_short(num_urates),
+          "</span>"
+        ),
+        collapse = " / "
+      ),
+      "<span style='font-size:12px'> u. rates</span><br>"
+    ),
+    provider_label = paste0(
+      paste0(
+        paste0(
+          "<span style='font-size:12px;color:",
+          color_values[paste0(bill_type, "-dark")],
+          "'>",
+          paste0(scales::label_comma()(num_providers)),
+          "</span>"
+        ),
+        collapse = " / "
+      ),
+      "<span style='font-size:12px'> providers</span>"
+    ),
+    .by = payer_name
+  ) |>
+  mutate(
+    payer_label = paste0(
+      "**",
+      case_match(
+        payer_name,
+        "Cost Plus" ~ "<span style='color:#38599b'>Cost Plus</span>",
+        .default = payer_name
+      ),
+      "**<br>",
+      "<span style='font-size:12px'>",
+      rate_label,
+      "</span>",
+      "<span style='font-size:12px'>",
+      case_match(
+        payer_name,
+        "Cost Plus" ~ "for BSW providers",
+        .default = provider_label
+      ),
+      "</span>"
+    ),
+    payer_name = fct_relabel(payer_name, \(x) unique(payer_label))
+  ) |>
+  ggplot() +
+  geom_rect(
+    data = tibble(bill_type = "Inpatient"),
+    aes(
+      xmin = 4.5,
+      xmax = 5.5,
+      ymin = -0.15,
+      ymax = Inf
+    ),
+    fill = "#38599b",
+    alpha = 0.2
+  ) +
+  geom_boxplot(
+    aes(
+      ymin = ymin,
+      lower = ylower,
+      middle = ymiddle,
+      upper = yupper,
+      ymax = ymax,
+      x = payer_name,
+      fill = bill_type
+    ),
+    stat = "identity",
+    width = 0.6
+  ) +
+  scale_y_continuous(labels = label_percent()) +
+  scale_fill_manual(values = color_values[1:2]) +
+  guides(fill = "none") +
+  labs(
+    x = "",
+    y = "Commercial to Medicare ratio",
+    title = paste0(
+      "Cost Plus has much less rate variability than large insurers"
+    ),
+    subtitle = paste0(
+      "It also has one of the smallest gaps ",
+      "between **<span style='color:",
+      color_values["Inpatient-dark"],
+      "'>inpatient</span>**",
+      " and **<span style='color:",
+      color_values["Outpatient-dark"],
+      "'>outpatient</span>**",
+      " rates"
+    ),
+    caption = paste0(
+      "Includes the intersection of CPW's BSW institutional inpatient",
+      "/outpatient rates and commercial PPO rates at BSW providers\n",
+      "Medicare denominators for Cost Plus rates are added using ",
+      "provider-adjusted Medicare prices sourced from Turquoise Health\n",
+      "Includes ~",
+      label_comma_short(nrow(bswh_inst_tq_rates_df)),
+      " commercial ",
+      "rates sourced from Turquoise Health Clear Rates, weighted by code ",
+      "utilization and provider bed count\n",
+      "Box plots show weighted quantiles of commercial to Medicare rate ",
+      "ratios. Whiskers are 10th and 90th percentiles"
+    )
+  ) +
+  theme_minimal() +
+  coord_cartesian(clip = "off", ylim = c(0.9, 5.5)) +
+  theme(
+    plot.title = element_markdown(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 8, l = -36)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 6, l = -36),
+      lineheight = 1.1
+    ),
+    plot.caption = element_text(
+      size = 9.2,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 12,
+      margin = margin(t = 2),
+      lineheight = 1.1
+    ),
+    axis.text.y = element_markdown(
+      size = 12,
+      face = "bold"
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey85"),
+    panel.grid.minor.y = element_line(color = "grey90")
+  )
+```
+
+```{r pro_payer_boxplot, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 6.5
+
+bswh_pro_tq_payer_agg_df <- bswh_pro_tq_rates_df |>
+  inner_join(
+    bswh_pro_sub_df |> select(billing_code, facility),
+    by = c("billing_code", "facility")
+  ) |>
+  group_by(payer_id, payer_name) |>
+  summarise(
+    ymin = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = state_claims_percentile_all,
+      probs = 0.10,
+      na.rm = TRUE
+    ),
+    ylower = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = state_claims_percentile_all,
+      probs = 0.25,
+      na.rm = TRUE
+    ),
+    ymiddle = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = state_claims_percentile_all,
+      probs = 0.50,
+      na.rm = TRUE
+    ),
+    yupper = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = state_claims_percentile_all,
+      probs = 0.75,
+      na.rm = TRUE
+    ),
+    ymax = wtd.quantile(
+      canonical_rate / medicare_rate,
+      weights = state_claims_percentile_all,
+      probs = 0.90,
+      na.rm = TRUE
+    ),
+    num_rates = n(),
+    num_urates = n_distinct(
+      billing_code,
+      billing_code_type,
+      canonical_rate,
+      facility
+    ),
+    num_providers = n_distinct(provider_id)
+  ) |>
+  ungroup()
+
+bswh_pro_cpw_payer_agg_df <- bswh_pro_sub_df |>
+  group_by(payer_name, payer_id) |>
+  summarize(
+    ymin = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.10),
+    ylower = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.25),
+    ymiddle = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.50),
+    yupper = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.75),
+    ymax = wtd.quantile(pct_of_medicare, state_claims_percentile_all, 0.90),
+    num_rates = n(),
+    num_urates = n_distinct(billing_code, billing_code_type, canonical_rate),
+    num_providers = 6 # Count of hospitals listed in the CPW BSW contract
+  ) |>
+  ungroup()
+
+bind_rows(bswh_pro_tq_payer_agg_df, bswh_pro_cpw_payer_agg_df) |>
+  mutate(
+    payer_name = case_match(
+      payer_name,
+      "CPW" ~ "Cost Plus",
+      "UnitedHealthcare" ~ "UHC",
+      "Baylor Scott & White Health Plan" ~ "BSW Health",
+      "Blue Cross Blue Shield of Texas" ~ "BCBSTX",
+      .default = payer_name
+    ),
+    payer_name = fct_reorder(payer_name, ymiddle)
+  ) |>
+  arrange(payer_name) |>
+  mutate(
+    payer_name = fct_relabel(
+      payer_name,
+      \(x) {
+        paste0(
+          "**",
+          case_match(
+            payer_name,
+            "Cost Plus" ~ "<span style='color:#38599b'>Cost Plus</span>",
+            .default = x
+          ),
+          "**<br>",
+          "<span style='font-size:12px'>",
+          label_comma_short(num_urates),
+          " unique rates</span><br>",
+          "<span style='font-size:12px'>",
+          case_match(
+            payer_name,
+            "Cost Plus" ~ "for",
+            .default = "from"
+          ),
+          " ",
+          scales::label_comma()(num_providers),
+          " providers</span>"
+        )
+      }
+    ),
+  ) |>
+  ggplot() +
+  geom_rect(
+    data = tibble(bill_type = "Inpatient"),
+    aes(
+      xmin = 2.5,
+      xmax = 3.5,
+      ymin = -0.15,
+      ymax = Inf
+    ),
+    fill = "#38599b",
+    alpha = 0.2
+  ) +
+  geom_boxplot(
+    aes(
+      ymin = ymin,
+      lower = ylower,
+      middle = ymiddle,
+      upper = yupper,
+      ymax = ymax,
+      x = payer_name
+    ),
+    stat = "identity",
+    width = 0.6
+  ) +
+  scale_y_continuous(labels = label_percent()) +
+  labs(
+    x = "",
+    y = "Commercial to Medicare ratio",
+    title = paste0(
+      "Cost Plus has ",
+      "professional rates comparable to large insurers"
+    ),
+    subtitle = paste0(
+      "Includes only Baylor Scott & White physician groups. Anesthesia ",
+      "codes are excluded"
+    ),
+    caption = paste0(
+      "Includes the intersection of CPW's BSW professional ",
+      "rates and commercial PPO rates at BSW physician groups\n",
+      "Medicare denominators for Cost Plus rates are added using ",
+      "provider-adjusted Medicare prices sourced from Turquoise Health\n",
+      "Professional rates include both facility (roughly 66% of total) ",
+      "and non-facility (33%) rates. If a code has both types, then ",
+      "both are included\n",
+      "Box plots show weighted (by utilization) quantiles of commercial ",
+      "to Medicare rate ratios. Whiskers are 10th and 90th percentiles"
+    )
+  ) +
+  theme_minimal() +
+  coord_cartesian(clip = "off", ylim = c(0.5, 3.3)) +
+  theme(
+    plot.title = element_markdown(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 8, l = -36)
+    ),
+    plot.subtitle = element_markdown(
+      size = 14,
+      margin = margin(b = 6, l = -36),
+      lineheight = 1.1
+    ),
+    plot.caption = element_text(
+      size = 9.2,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 12,
+      margin = margin(t = 2),
+      lineheight = 1.1
+    ),
+    axis.text.y = element_markdown(
+      size = 12,
+      face = "bold"
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey85"),
+    panel.grid.minor.y = element_line(color = "grey90")
+  )
+```
+
+```{r dfw_provider_counts, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 6.5
+
+dfw_provider_counts_df |>
+  mutate(
+    payer_name = case_match(
+      payer_name,
+      "CostPlus" ~ "Cost Plus",
+      "UnitedHealthcare" ~ "UHC",
+      "Baylor Scott & White Health Plan" ~ "BSW Health",
+      "Blue Cross Blue Shield of Texas" ~ "BCBSTX",
+      .default = payer_name
+    ),
+    payer_name = fct_reorder(payer_name, provider_count)
+  ) |>
+  arrange(payer_name) |>
+  mutate(
+    payer_name = fct_relabel(
+      payer_name,
+      \(x) {
+        paste0(
+          "**",
+          case_match(
+            payer_name,
+            "Cost Plus" ~ "<span style='color:#38599b'>Cost Plus</span>",
+            .default = x
+          ),
+          "**<br>",
+          "<span style='font-size:12px'>",
+          label_comma_short(provider_count),
+          " facilities</span>"
+        )
+      }
+    )
+  ) |>
+  ggplot() +
+  geom_rect(
+    data = tibble(bill_type = "Inpatient"),
+    aes(
+      xmin = 1.5,
+      xmax = 2.5,
+      ymin = -40,
+      ymax = Inf
+    ),
+    fill = "#38599b",
+    alpha = 0.2
+  ) +
+  geom_col(
+    aes(
+      x = payer_name,
+      y = provider_count
+    ),
+    width = 0.8
+  ) +
+  labs(
+    x = "",
+    y = "Facility count",
+    title = "Cost Plus has a narrower network than most large TX insurers",
+    subtitle = paste0(
+      "Within the DFW Metroplex, Cost Plus has the second lowest number ",
+      "of unique facilities"
+    ),
+    caption = paste0(
+      "Cost Plus facility count reflects number from their website: ",
+      "https://www.costpluswellness.com/directory\n",
+      "Other payers' facility counts are unique provider ",
+      "locations within their Transparency in Coverage pricing files ",
+      "(within the DFW CBSA only)"
+    )
+  ) +
+  coord_cartesian(clip = "off", ylim = c(0.0, 360)) +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 8, l = -36)
+    ),
+    plot.subtitle = element_markdown(
+      size = 14,
+      margin = margin(b = 6, l = -36),
+      lineheight = 1.1
+    ),
+    plot.caption = element_text(
+      size = 9.2,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 12,
+      margin = margin(t = -14),
+      lineheight = 1.1
+    ),
+    axis.text.y = element_markdown(
+      size = 12,
+      face = "bold"
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey85"),
+    panel.grid.minor.y = element_line(color = "grey90")
+  )
+```
