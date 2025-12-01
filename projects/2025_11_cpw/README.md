@@ -79,6 +79,9 @@ in the comparison to Cost Plus Wellness:
 - Aetna
 - Baylor Scott & White Health Plan
 
+These are essentially the BUCA payers plus BSWH's own health plan,
+and represent the vast majority of covered lives in the state.
+
 ### Plans
 
 Only each payer's main commercial PPO plan is included. HMO and other plan types
@@ -167,8 +170,8 @@ And the analysis has a number of limitations:
   are analyzed. CPW's rates with other professional providers aren't compared.
 - **Sample selection**: Only rates that can be matched between CPW and other
   payers are included, which may introduce selection bias.
-- **Point-in-time**: Rates reflect published data as of late 2025 and may not
-  reflect later pricing or contract terms.
+- **Point-in-time**: Rates reflect published data as of September 2025 and
+  may not reflect later pricing or contract terms.
 
 ## Replication
 

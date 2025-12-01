@@ -279,7 +279,7 @@ bind_rows(
   scale_y_continuous(labels = label_percent()) +
   labs(
     x = "",
-    y = "Commercial to Medicare ratio",
+    y = "Rate to Medicare ratio",
     title = paste0(
       "Cost Plus Wellness",
       " rates are higher than discounted cash rates"
