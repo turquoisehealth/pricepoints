@@ -39,3 +39,6 @@ venv/
 .Rprofile
 .Rproj.user/
 rosm.cache/
+
+# Ignore internal notes files
+notes.md
