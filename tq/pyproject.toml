@@ -90,8 +90,5 @@ uv_resolution = highest
 """
 
 # Linting and type checking tool configs inherited from the root pyproject.toml
-[tool.pyright]
-extends = "../pyproject.toml"
-
 [tool.ruff]
 extend = "../pyproject.toml"
