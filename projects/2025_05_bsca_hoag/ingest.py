@@ -1,4 +1,3 @@
-# type: ignore
 # %% Import Python libraries and set up Trino
 import logging
 
