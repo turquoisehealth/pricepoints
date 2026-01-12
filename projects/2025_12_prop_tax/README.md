@@ -1,1 +1,0 @@
-# Property taxes after acquisition
