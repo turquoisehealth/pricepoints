@@ -8,10 +8,11 @@ repos:
       - id: ruff-format
   - repo: local
     hooks:
-      - id: ty
-        name: ty check
-        entry: uvx -q ty check . --ignore unresolved-import --ignore unresolved-attribute
+      - id: ty-check
+        name: ty-check
+        entry: uvx -q ty check .
         language: system
+        pass_filenames: false
   - repo: https://github.com/adrienverge/yamllint.git
     rev: v1.37.1
     hooks:

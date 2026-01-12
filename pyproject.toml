@@ -16,6 +16,10 @@ extend-select = ["I"]
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 
+[tool.ty.rules]
+unresolved-import = "ignore"
+unresolved-attribute = "ignore"
+
 [tool.sqlfluff.core]
 dialect = "trino"
 exclude_rules = "ambiguous.column_count, structure.column_order, RF04, ST05"
