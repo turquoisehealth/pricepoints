@@ -1,6 +1,7 @@
 *.bak
 *.csv
 *.dat
+*.db
 *.duckdb
 *.egg-info/
 *.html
@@ -33,12 +34,17 @@ plan
 venv/
 *_cache/
 
+# Created by Quarto on preview
+*_files/
+
 # Ignore all R files
 .Renvignore
 .Rhistory
 .Rprofile
 .Rproj.user/
 rosm.cache/
+**/renv/
+!**/renv/activate.R
 
 # Ignore internal notes files
 notes.md
