@@ -13,6 +13,7 @@ dependencies = [
   "pyarrow>=22.0.0",
   "requests>=2.32.5",
   "tq @ file:///${PROJECT_ROOT}/../../tq",
+  "ty>=0.0.11",
 ]
 
 [project.optional-dependencies]
@@ -20,7 +21,7 @@ dev = [
   "pre-commit>=4.3.0",
   "ruff>=0.14.3",
   "sqlfluff>=3.5.0",
-  "ty>=0.0.1a25",
+  "ty>=0.0.11",
 ]
 
 # Linting and type checking tool configs inherited from the root pyproject.toml
