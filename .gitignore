@@ -39,7 +39,6 @@ venv/
 # Ignore all R files
 .Renvignore
 .Rhistory
-.Rprofile
 .Rproj.user/
 rosm.cache/
 **/renv/
