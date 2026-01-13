@@ -1,4 +1,3 @@
-# type: ignore
 # %% Import Python libraries and set up Trino
 import logging
 
@@ -191,7 +190,7 @@ class CenDataFrame:
 cen_df_state = (
     pl.DataFrame(cen.acs5.state(list(cen_vars.keys()), state_fips="*"))
     .rename({**cen_vars, "state": "geoid"})
-    .cen.ins_agg()  # type: ignore
+    .cen.ins_agg()
 )
 
 # County

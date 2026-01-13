@@ -325,13 +325,13 @@ rates_code_clean_df = (
         pl.col("mean_rate").mean().alias("mean_rate"),
         pl.col("mean_medicare").mean().alias("mean_medicare"),
         pl.col("mean_pct_of_medicare").mean().alias("mean_pct_of_medicare"),
-        pl.col("wtd_mean_rate")  # ty: ignore[unresolved-attribute]
+        pl.col("wtd_mean_rate")
         .util.wmean("total_beds")
         .alias("wtd_mean_rate"),
-        pl.col("wtd_mean_medicare")  # ty: ignore[unresolved-attribute]
+        pl.col("wtd_mean_medicare")
         .util.wmean("total_beds")
         .alias("wtd_mean_medicare"),
-        pl.col("wtd_mean_pct_of_medicare")  # ty: ignore[unresolved-attribute]
+        pl.col("wtd_mean_pct_of_medicare")
         .util.wmean("total_beds")
         .alias("wtd_mean_pct_of_medicare"),
     )

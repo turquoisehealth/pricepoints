@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.3
+    rev: v0.14.11
     hooks:
       - id: ruff-check
         args:
@@ -8,16 +8,17 @@ repos:
       - id: ruff-format
   - repo: local
     hooks:
-      - id: ty
-        name: ty check
-        entry: uvx ty check . --ignore unresolved-import --ignore unresolved-attribute
+      - id: ty-check
+        name: ty-check
+        entry: uvx -q ty check .
         language: system
+        files: \.(py|ipynb)$
   - repo: https://github.com/adrienverge/yamllint.git
-    rev: v1.36.2
+    rev: v1.37.1
     hooks:
       - id: yamllint
   - repo: https://github.com/sqlfluff/sqlfluff
-    rev: 3.4.0
+    rev: 3.5.0
     hooks:
       - id: sqlfluff-lint
         args: [--dialect=trino]

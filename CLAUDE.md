@@ -1,69 +1,59 @@
-# Price Points monorepo
+# Price Points Research Monorepo
 
-This is a healthcare price transparency research monorepo containing
-the code and data for the Price Points research publication. Price Points
-creates novel, quantitative, public research using Turquoise Health price
-data and other healthcare datasets.
+## What This Is
 
-## Repository structure
+Price Points creates quantitative, public research on healthcare pricing using Turquoise Health's healthcare price transparency data. This research helps illuminate actual healthcare costs, pricing variation, and market dynamics (e.g., 340B drug pricing, delivery costs, regional disparities).
 
-- **`projects/`** - Time-stamped research projects based on the template
-  at `0000_00_proj_template/` (e.g., `2025_04_delivery_costs`, `2025_06_il_340b`)
-- **`analyses/`** - Exploratory and one-off research code
-- **`tq/`** - Custom Python package with database connectors and utilities
+**Monorepo structure:**
 
-Each project follows a standardized structure:
+- [**projects/**](projects/) - Time-stamped research projects (e.g., `2025_04_delivery_costs`) following the template at [0000_00_proj_template/](projects/0000_00_proj_template/)
+- [**analyses/**](analyses/) - One-off exploratory analyses
+- [**tq/**](tq/) - Shared Python package for database access and utilities
 
-- `pyproject.toml` - Python dependencies and configuration
-- `analysis.qmd` - Main Quarto analysis notebook
-- `ingest.py` - Data ingestion scripts
-- `queries/` - SQL queries for data extraction
-- `data/` - Input and output data files
+**Standard project layout:**
 
-## Development guidelines
+```bash
+projects/YYYY_MM_project_name/
+├── pyproject.toml         # Dependencies
+├── analysis.qmd           # Main Quarto notebook
+├── ingest.py              # Data ingestion
+├── queries/               # SQL files
+└── data/                  # Input/output data
+```
 
-### Package management
+## Tech Stack
 
-- **Always use `uv`** - Never use `pip`, `poetry`, or similar tools
-- Each project has its own `pyproject.toml` with dependencies
-- The `tq/` helper package is referenced as a local dependency
+- **Python** - Version in `.python-version` (managed with `uv`, never pip/poetry)
+- **Data** - Polars ONLY (never pandas or numpy)
+- **Database** - Trino via `tq` package connectors
+- **Analysis** - Quarto (`.qmd`) for R-based visualization
+- **SQL** - Trino dialect (uppercase keywords, explicit aliases)
 
-### Code quality
+## Critical Rules
 
-- **Code style**: Follow PEP 8 standards enforced by ruff
-- **Pre-commit hooks**: ruff runs automatically on every commit
-- **Type checking**: pyright configuration inherited from root `pyproject.toml`
-- **SQL linting**: sqlfluff for Trino dialect SQL queries
+1. **Polars only** - Do not import or suggest pandas/numpy for data manipulation
+2. **Use `uv`** - For all dependency management (`uv sync`, `uv add`, etc.)
+3. **Minimal file creation** - Only create files when absolutely necessary
+4. **No documentation** - Never proactively create README or .md files
+5. **Pre-commit handles linting** - Don't worry about code style, it's automated
 
-### Technology stack
+## Development Workflow
 
-- **Python**: Version specified in a `.python-version` file
-- **Core libraries**: _Only_ use polars for data manipulation. Do not use
-  pandas or numpy.
-- **Databases**: Trino connections via helpers in the `tq` package
-- **Analysis**: Quarto documents (`.qmd`) for creating plots with R
-- **SQL**: Trino dialect with uppercase keywords and explicit aliasing
-
-### Testing
-
-- **TQ Package**: Run `pytest` in the `tq/` directory for unit tests
-  when necessary
-- **Projects**: No specific testing framework required beyond validation
-  in notebooks
-
-### Development workflow
-
-1. Install dependencies with `uv sync`
-2. Use pre-commit hooks for automatic linting
+1. Navigate to project directory
+2. Run `uv sync` to install dependencies
 3. Write SQL queries in `queries/` folder
-4. Implement data ingestion in `ingest.py`
-5. Conduct analysis in Quarto notebooks
-6. Organize output data in `data/output/`
+4. Implement data ingestion in `ingest.py` (uses `tq` package for Trino)
+5. Analyze in `analysis.qmd` (Quarto notebook)
+6. Let pre-commit hooks handle formatting on commit
 
-## Important instructions
+## Common Patterns
 
-- Do what has been asked; nothing more, nothing less
-- NEVER create files unless absolutely necessary for achieving your goal
-- ALWAYS prefer editing an existing file to creating a new one
-- NEVER proactively create documentation files (*.md) or
-  README files unless explicitly requested
+1. **Database access:**
+
+    ```python
+    from tq.db import get_trino_connection
+    conn = get_trino_connection()
+    ```
+
+2. **Starting a new project:** Copy [0000_00_proj_template/](projects/0000_00_proj_template/) to `projects/YYYY_MM_name/`
+3. **Testing:** Run `pytest` in [tq/](tq/) directory when modifying shared utilities

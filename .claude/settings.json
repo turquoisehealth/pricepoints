@@ -1,0 +1,21 @@
+{
+    "hooks": {
+        "PostToolUse": [
+            {
+                "matcher": "Edit|Write",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "git ls-files -m -o --exclude-standard '*.py' '*.ipynb' | xargs -r ruff format",
+                        "description": "Run ruff on modified Python and Jupyter files",
+                    },
+                    {
+                        "type": "command",
+                        "command": "git ls-files -m -o --exclude-standard '*.R' '*.r' | xargs -r air format",
+                        "description": "Run air on modified R files",
+                    },
+                ],
+            }
+        ]
+    }
+}

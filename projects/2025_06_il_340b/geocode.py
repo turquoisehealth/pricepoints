@@ -1,4 +1,3 @@
-# type: ignore
 # %% Import Python libraries and set up geocoder
 import polars as pl
 from dotenv import dotenv_values
