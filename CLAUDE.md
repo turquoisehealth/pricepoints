@@ -35,7 +35,8 @@ projects/YYYY_MM_project_name/
 2. **Use `uv`** - For all dependency management (`uv sync`, `uv add`, etc.)
 3. **Minimal file creation** - Only create files when absolutely necessary
 4. **No documentation** - Never proactively create README or .md files
-5. **Pre-commit handles linting** - Don't worry about code style, it's automated
+5. **Use Claude plugins** - When working with Python, invoke the relevant /astral:<skill> for uv, ty, and ruff to ensure best practices are followed
+6. **Pre-commit handles linting** - Don't worry about code style, it's automated
 
 ## Development Workflow
 
