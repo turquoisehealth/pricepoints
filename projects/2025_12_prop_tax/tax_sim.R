@@ -28,6 +28,9 @@ eq_df <- DBI::dbGetQuery(
   "
 )
 
+
+##### MacNeal tax simulation ###################################################
+
 # Load MacNeal hospital PINs pulled from Socrata API
 macneal_pins_lst <- read_csv(
   "data/intermediate/macneal_pins_confirmed.csv",
@@ -46,6 +49,9 @@ macneal_bills_actual_df <- tax_bill(
   pin_vec = macneal_pins_lst,
   simplify = TRUE
 )
+
+macneal_bills_actual_df |>
+  write_parquet("data/output/macneal_tax_bills.parquet")
 
 # Grab all the PINs in Berwyn township, excluding MacNeal.These are the used
 # for our counterfactual i.e. the PINs most affected by the MacNeal sale
@@ -158,6 +164,30 @@ bill_diff_df <- berwyn_bills_actual_df |>
       summarize(counter_tax = sum(final_tax, na.rm = TRUE))
   ) |>
   mutate(diff = actual_tax - counter_tax) |>
-  filter(actual_tax > 0) |>
-  group_by(year) |>
-  summarize(avg_bill_diff = mean(diff))
+  filter(actual_tax > 0)
+
+bill_diff_df |>
+  write_parquet("data/output/tax_bill_diff.parquet")
+
+
+##### Grab PIN shapes ##########################################################
+
+berwyn_pin_geos <- lookup_pin10_geometry(
+  year = 2023,
+  pin10 = substr(c(berwyn_pins_lst, macneal_pins_lst), 1, 10)
+) |>
+  mutate(macneal_pin = pin10 %in% substr(macneal_pins_lst, 1, 10)) |>
+  left_join(
+    macneal_bills_actual_df |>
+      filter(year %in% 2019:2020) |>
+      mutate(pin10 = substr(pin, 1, 10)) |>
+      group_by(pin10, year) |>
+      summarize(final_tax = sum(final_tax)) |>
+      pivot_wider(names_from = year, values_from = final_tax) |>
+      mutate(became_exempt = `2019` != 0 & `2020` == 0) |>
+      select(pin10, became_exempt),
+    by = "pin10"
+  )
+
+berwyn_pin_geos |>
+  write_parquet("data/output/berwyn_pin_geos.parquet")

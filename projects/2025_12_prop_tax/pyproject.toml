@@ -10,6 +10,7 @@ classifiers = [
 requires-python = "==3.14.0"
 dependencies = [
   "polars>=1.35.1",
+  "polars-readstat>=0.10.0",
   "pyarrow>=22.0.0",
   "requests>=2.32.5",
   "tq @ file:///${PROJECT_ROOT}/../../tq",
@@ -30,3 +31,6 @@ extend = "../../pyproject.toml"
 
 [tool.setuptools.packages.find]
 include = ["src*"]
+
+[tool.sqlfluff.templater.jinja.context]
+provider_ids = ""
