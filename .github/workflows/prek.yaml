@@ -1,0 +1,23 @@
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+name: prek
+
+jobs:
+  prek:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # Used to install ty locally for prek
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-suffix: "prek"
+
+      - name: Run prek
+        uses: j178/prek-action@v1

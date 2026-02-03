@@ -16,7 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "pre-commit>=4.3.0",
+  "prek>=0.3.1",
   "ruff>=0.14.3",
   "sqlfluff>=3.5.0",
   "ty>=0.0.11",

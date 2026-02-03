@@ -1,7 +1,7 @@
 # tq
 
 [![python-build-and-test](https://github.com/turquoisehealth/pricepoints/actions/workflows/python-build-and-test.yaml/badge.svg)](https://github.com/turquoisehealth/pricepoints/actions/workflows/python-build-and-test.yaml)
-[![pre-commit](https://github.com/turquoisehealth/pricepoints/actions/workflows/pre-commit.yaml/badge.svg)](https://github.com/turquoisehealth/pricepoints/actions/workflows/pre-commit.yaml)
+[![prek](https://github.com/turquoisehealth/pricepoints/actions/workflows/prek.yaml/badge.svg)](https://github.com/turquoisehealth/pricepoints/actions/workflows/prek.yaml)
 
 **tq** is a Python software package developed to support the
 [Price Points](../README.md) research effort. It contains helper functions,

@@ -1,10 +1,9 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.11
+    rev: v0.14.14
     hooks:
       - id: ruff-check
-        args:
-          - --fix
+        args: [--fix]
       - id: ruff-format
   - repo: local
     hooks:
@@ -26,3 +25,19 @@ repos:
       - id: sqlfluff-fix
         args: [--dialect=trino]
         files: \.sql$
+  - repo: local
+    hooks:
+      - id: forbid-to-commit
+        name: Don't commit common R artifacts
+        entry: Cannot commit .Rhistory, .RData, .Rds or .rds.
+        language: fail
+        files: '\.(Rhistory|RData|Rds|rds)$'
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: mixed-line-ending
