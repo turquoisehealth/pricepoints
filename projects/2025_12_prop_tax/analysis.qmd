@@ -64,7 +64,7 @@ label_comma_short <- function(x) {
 }
 ```
 
-```{r load_data, message=FALSE, warning=FALSE}
+```{r load_data, message=FALSE, warning=FALSE, results='hide'}
 macneal_tax_bills_df <- read_parquet("data/output/macneal_tax_bills.parquet")
 tax_bill_diff_df <- read_parquet("data/output/tax_bill_diff.parquet")
 cost_reports_df <- read_parquet("data/output/cost_reports.parquet")
@@ -108,6 +108,185 @@ hospital_info_df <- read_parquet("data/output/hospital_info.parquet") |>
 state_il_df <- tigris::states(cb = TRUE, year = 2020) |>
   filter(GEOID == "17") |>
   select(name = NAME)
+```
+
+```{r status_timeline, message=FALSE, warning=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 9
+
+status_timeline_color = "grey40"
+
+hospital_info_df |>
+  mutate(
+    acquiring_nonprofit_short = ifelse(
+      acquiring_nonprofit_short %in%
+        c(
+          "Tenet Healthcare → SSM Health",
+          "CTCA → City of Hope"
+        ),
+      paste0(
+        "<span style='color:white'>□□□□□□□□□□</span>",
+        acquiring_nonprofit_short
+      ),
+      acquiring_nonprofit_short
+    )
+  ) |>
+  mutate(
+    acquiring_nonprofit_short = fct_reorder(
+      acquiring_nonprofit_short,
+      acquired_date,
+      .desc = FALSE
+    ),
+    hospital_name_short = fct_reorder(
+      hospital_name_short,
+      acquired_date,
+      .desc = TRUE
+    ),
+    closed_date_inf = as_date(
+      ifelse(is.na(closed_date), make_date(2027), NA_Date_)
+    )
+  ) |>
+  ggplot() +
+  geom_segment(
+    aes(x = acquired_date, xend = closed_date, y = hospital_name_short),
+    color = status_timeline_color
+  ) +
+  geom_segment(
+    aes(x = acquired_date, xend = closed_date_inf, y = hospital_name_short),
+    arrow = arrow(type = "closed", length = unit(0.15, "cm")),
+    color = status_timeline_color
+  ) +
+  geom_point(
+    aes(
+      x = acquired_date,
+      y = hospital_name_short,
+      shape = "Acquired",
+      color = "Acquired",
+      fill = "Acquired"
+    ),
+    size = 2
+  ) +
+  geom_point(
+    aes(
+      x = hospital_340b_date_start,
+      y = hospital_name_short,
+      shape = "Joined 340B",
+      color = "Joined 340B",
+      fill = "Joined 340B"
+    ),
+    size = 3.5
+  ) +
+  geom_point(
+    aes(
+      x = closed_date,
+      y = hospital_name_short,
+      shape = "Closed",
+      color = "Closed",
+      fill = "Closed"
+    ),
+    size = 3.5
+  ) +
+  labs(
+    title = "Hospitals acquired by nonprofit systems quickly join 340B",
+    subtitle = paste0(
+      "They also typically become property tax exempt a ",
+      "year or two after acquisiton *"
+    ),
+    x = "",
+    y = "",
+    caption = paste0(
+      "Data sourced manually from hospital acquisition news coverage; ",
+      "340B enrollment data comes from the HRSA 340B OPAIS database<br>",
+      "* Property tax exemptions and data availability vary signficantly ",
+      "by state/county. As a result, it is not possible to get the exact date ",
+      "<br>each hospital *became* tax-exempt, but nearly all of them are ",
+      "paying reduced or zero property taxes as of 2026"
+    )
+  ) +
+  lims(x = c(make_date(2015), make_date(2027))) +
+  scale_x_datetime(expand = expansion(mult = c(0.03, 0.01))) +
+  scale_color_manual(
+    name = "",
+    values = c(
+      "Acquired" = status_timeline_color,
+      "Joined 340B" = status_timeline_color,
+      "Closed" = "indianred"
+    ),
+    breaks = c("Acquired", "Joined 340B", "Closed")
+  ) +
+  scale_fill_manual(
+    name = "",
+    values = c(
+      "Acquired" = status_timeline_color,
+      "Joined 340B" = "dodgerblue3",
+      "Closed" = "indianred"
+    ),
+    breaks = c("Acquired", "Joined 340B", "Closed")
+  ) +
+  scale_shape_manual(
+    name = "",
+    values = c(
+      "Acquired" = 16,
+      "Joined 340B" = 21,
+      "Closed" = 4
+    ),
+    breaks = c("Acquired", "Joined 340B", "Closed")
+  ) +
+  facet_wrap(
+    vars(acquiring_nonprofit_short),
+    ncol = 1,
+    scales = "free_y",
+    space = "free_y",
+    strip.position = "left"
+  ) +
+  coord_cartesian(clip = "off") +
+  theme_minimal() +
+  theme(
+    strip.clip = "off",
+    strip.placement = "outside",
+    strip.text.y.left = element_markdown(
+      angle = 0,
+      margin = margin(r = -154, t = -10),
+      face = "bold",
+      size = 10,
+      hjust = 1,
+      vjust = 1,
+      lineheight = 1.1
+    ),
+    panel.spacing.y = unit(0.8, "cm")
+  ) +
+  theme(
+    plot.title = element_markdown(
+      size = 19,
+      face = "bold",
+      margin = margin(b = 8, l = -220)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 6, l = -220),
+      lineheight = 1.1
+    ),
+    plot.caption = element_markdown(
+      size = 9.5,
+      lineheight = 1.1,
+      margin = margin(t = 8)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 14,
+      margin = margin(t = 12),
+      lineheight = 1.1
+    ),
+    panel.grid.minor.x = element_blank(),
+    legend.position = "top",
+    legend.text = element_text(size = 12)
+  )
 ```
 
 ```{r macneal_map, message=FALSE, warning=FALSE}
@@ -510,185 +689,6 @@ tax_bill_diff_df |>
       size = 14,
       margin = margin(r = 8)
     )
-  )
-```
-
-```{r status_timeline, message=FALSE}
-#| column: page
-#| out-width: 100%
-#| fig-width: 8
-#| fig-height: 9
-
-status_timeline_color = "grey40"
-
-hospital_info_df |>
-  mutate(
-    acquiring_nonprofit_short = ifelse(
-      acquiring_nonprofit_short %in%
-        c(
-          "Tenet Healthcare → SSM Health",
-          "CTCA → City of Hope"
-        ),
-      paste0(
-        "<span style='color:white'>□□□□□□□□□□</span>",
-        acquiring_nonprofit_short
-      ),
-      acquiring_nonprofit_short
-    )
-  ) |>
-  mutate(
-    acquiring_nonprofit_short = fct_reorder(
-      acquiring_nonprofit_short,
-      acquired_date,
-      .desc = FALSE
-    ),
-    hospital_name_short = fct_reorder(
-      hospital_name_short,
-      acquired_date,
-      .desc = TRUE
-    ),
-    closed_date_inf = as_date(
-      ifelse(is.na(closed_date), make_date(2027), NA_Date_)
-    )
-  ) |>
-  ggplot() +
-  geom_segment(
-    aes(x = acquired_date, xend = closed_date, y = hospital_name_short),
-    color = status_timeline_color
-  ) +
-  geom_segment(
-    aes(x = acquired_date, xend = closed_date_inf, y = hospital_name_short),
-    arrow = arrow(type = "closed", length = unit(0.15, "cm")),
-    color = status_timeline_color
-  ) +
-  geom_point(
-    aes(
-      x = acquired_date,
-      y = hospital_name_short,
-      shape = "Acquired",
-      color = "Acquired",
-      fill = "Acquired"
-    ),
-    size = 2
-  ) +
-  geom_point(
-    aes(
-      x = hospital_340b_date_start,
-      y = hospital_name_short,
-      shape = "Joined 340B",
-      color = "Joined 340B",
-      fill = "Joined 340B"
-    ),
-    size = 3.5
-  ) +
-  geom_point(
-    aes(
-      x = closed_date,
-      y = hospital_name_short,
-      shape = "Closed",
-      color = "Closed",
-      fill = "Closed"
-    ),
-    size = 3.5
-  ) +
-  labs(
-    title = "Hospitals acquired by nonprofit systems quickly join 340B",
-    subtitle = paste0(
-      "They also typically become property tax exempt a ",
-      "year or two after acquisiton *"
-    ),
-    x = "",
-    y = "",
-    caption = paste0(
-      "Data sourced manually from hospital acquisition news coverage; ",
-      "340B enrollment data comes from the HRSA 340B OPAIS database<br>",
-      "* Property tax exemptions and data availability vary signficantly ",
-      "by state/county. As a result, it is not possible to get the exact date ",
-      "<br>each hospital *became* tax-exempt, but nearly all of them are ",
-      "paying reduced or zero property taxes as of 2026"
-    )
-  ) +
-  lims(x = c(make_date(2015), make_date(2027))) +
-  scale_x_datetime(expand = expansion(mult = c(0.03, 0.01))) +
-  scale_color_manual(
-    name = "",
-    values = c(
-      "Acquired" = status_timeline_color,
-      "Joined 340B" = status_timeline_color,
-      "Closed" = "indianred"
-    ),
-    breaks = c("Acquired", "Joined 340B", "Closed")
-  ) +
-  scale_fill_manual(
-    name = "",
-    values = c(
-      "Acquired" = status_timeline_color,
-      "Joined 340B" = "dodgerblue3",
-      "Closed" = "indianred"
-    ),
-    breaks = c("Acquired", "Joined 340B", "Closed")
-  ) +
-  scale_shape_manual(
-    name = "",
-    values = c(
-      "Acquired" = 16,
-      "Joined 340B" = 21,
-      "Closed" = 4
-    ),
-    breaks = c("Acquired", "Joined 340B", "Closed")
-  ) +
-  facet_wrap(
-    vars(acquiring_nonprofit_short),
-    ncol = 1,
-    scales = "free_y",
-    space = "free_y",
-    strip.position = "left"
-  ) +
-  coord_cartesian(clip = "off") +
-  theme_minimal() +
-  theme(
-    strip.clip = "off",
-    strip.placement = "outside",
-    strip.text.y.left = element_markdown(
-      angle = 0,
-      margin = margin(r = -154, t = -10),
-      face = "bold",
-      size = 10,
-      hjust = 1,
-      vjust = 1,
-      lineheight = 1.1
-    ),
-    panel.spacing.y = unit(0.8, "cm")
-  ) +
-  theme(
-    plot.title = element_markdown(
-      size = 19,
-      face = "bold",
-      margin = margin(b = 8, l = -220)
-    ),
-    plot.subtitle = element_markdown(
-      size = 15,
-      margin = margin(b = 6, l = -220),
-      lineheight = 1.1
-    ),
-    plot.caption = element_markdown(
-      size = 9.5,
-      lineheight = 1.1,
-      margin = margin(t = 8)
-    ),
-    axis.title.x = element_markdown(
-      margin = margin(t = 10),
-      size = 16,
-      face = "bold"
-    ),
-    axis.text.x = element_markdown(
-      size = 14,
-      margin = margin(t = 12),
-      lineheight = 1.1
-    ),
-    panel.grid.minor.x = element_blank(),
-    legend.position = "top",
-    legend.text = element_text(size = 12)
   )
 ```
 
