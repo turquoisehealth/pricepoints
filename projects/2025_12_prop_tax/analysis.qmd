@@ -413,7 +413,7 @@ macneal_tax_bills_df |>
 #| fig-width: 8
 #| fig-height: 6.5
 
-tax_bill_diff_df |> 
+tax_bill_diff_df |>
   filter(year == 2020) |>
   ggplot() +
   geom_histogram(aes(x = diff), fill = "grey50") +
@@ -524,10 +524,11 @@ status_timeline_color = "grey40"
 hospital_info_df |>
   mutate(
     acquiring_nonprofit_short = ifelse(
-      acquiring_nonprofit_short %in% c(
-        "Tenet Healthcare → SSM Health",
-        "CTCA → City of Hope"
-      ),
+      acquiring_nonprofit_short %in%
+        c(
+          "Tenet Healthcare → SSM Health",
+          "CTCA → City of Hope"
+        ),
       paste0(
         "<span style='color:white'>□□□□□□□□□□</span>",
         acquiring_nonprofit_short
@@ -562,23 +563,31 @@ hospital_info_df |>
   ) +
   geom_point(
     aes(
-      x = acquired_date, y = hospital_name_short,
-      shape = "Acquired", color = "Acquired",
+      x = acquired_date,
+      y = hospital_name_short,
+      shape = "Acquired",
+      color = "Acquired",
       fill = "Acquired"
     ),
     size = 2
   ) +
   geom_point(
     aes(
-      x = hospital_340b_date_start, y = hospital_name_short,
-      shape = "Joined 340B", color = "Joined 340B", fill = "Joined 340B"
+      x = hospital_340b_date_start,
+      y = hospital_name_short,
+      shape = "Joined 340B",
+      color = "Joined 340B",
+      fill = "Joined 340B"
     ),
     size = 3.5
   ) +
   geom_point(
     aes(
-      x = closed_date, y = hospital_name_short,
-      shape = "Closed", color = "Closed", fill = "Closed"
+      x = closed_date,
+      y = hospital_name_short,
+      shape = "Closed",
+      color = "Closed",
+      fill = "Closed"
     ),
     size = 3.5
   ) +
@@ -694,22 +703,37 @@ cost_reports_df |>
     hospital_info_df |>
       filter(hospital_id == min(hospital_id), .by = "ccn") |>
       select(
-        ccn, acquiring_nonprofit_short, acquired_date, closed_date,
-        hospital_340b_date_start, hospital_340b_date_end, hospital_name
+        ccn,
+        acquiring_nonprofit_short,
+        acquired_date,
+        closed_date,
+        hospital_340b_date_start,
+        hospital_340b_date_end,
+        hospital_name
       ),
     by = "ccn"
   ) |>
   mutate(
-    time_from_acquisition = time_length(mcr_fy_end_date - acquired_date, "months"),
-    hospital_340b_date_end = replace_na(hospital_340b_date_end, make_date(2028)),
-    is_340B = between(mcr_fy_end_date, hospital_340b_date_start, hospital_340b_date_end),
+    time_from_acquisition = time_length(
+      mcr_fy_end_date - acquired_date,
+      "months"
+    ),
+    hospital_340b_date_end = replace_na(
+      hospital_340b_date_end,
+      make_date(2028)
+    ),
+    is_340B = between(
+      mcr_fy_end_date,
+      hospital_340b_date_start,
+      hospital_340b_date_end
+    ),
     is_340B = ifelse(is_340B, "Part of 340B", NA)
   ) |>
   mutate(
     indexed_drugs_charged = mcr_drug_charged / first(mcr_drug_charged),
     closed = !is.na(closed_date) &
       abs(as.numeric(mcr_fy_end_date - closed_date)) ==
-      min(abs(as.numeric(mcr_fy_end_date - closed_date))),
+        min(abs(as.numeric(mcr_fy_end_date - closed_date))),
     .by = c("ccn", "hospital_id")
   ) |>
   mutate(
@@ -861,4 +885,3 @@ cost_reports_df |>
     legend.spacing = unit(-0.2, "cm")
   )
 ```
-
