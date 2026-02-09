@@ -220,7 +220,7 @@ hospital_info_df |>
     name = "",
     values = c(
       "Acquired" = status_timeline_color,
-      "Joined 340B" = "dodgerblue3",
+      "Joined 340B" = "dodgerblue1",
       "Closed" = "indianred"
     ),
     breaks = c("Acquired", "Joined 340B", "Closed")
@@ -789,7 +789,7 @@ cost_reports_df |>
   scale_color_manual(
     name = "",
     values = c(
-      "Part of 340B" = "dodgerblue3",
+      "Part of 340B" = "dodgerblue1",
       "Closed" = "indianred"
     ),
     breaks = c("Acquisition date", "Part of 340B", "Closed")
@@ -805,7 +805,7 @@ cost_reports_df |>
   scale_fill_manual(
     name = "",
     values = c(
-      "Joined 340B" = "dodgerblue3",
+      "Joined 340B" = "dodgerblue1",
       "Closed" = "indianred"
     ),
     breaks = c("Acquisition date", "Joined 340B", "Closed")
