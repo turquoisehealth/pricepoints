@@ -603,7 +603,7 @@ macneal_tax_bills_df |>
     na.translate = FALSE
   ) +
   labs(
-    title = "MacNeal's property tax bill dropped by ~$2M after acquisition",
+    title = "MacNeal's property tax bill dropped by ~$2.5M after acquisition",
     subtitle = paste0(
       "Other Cook County taxpayers' bills increased to ",
       "compensate for the new shortfall"
