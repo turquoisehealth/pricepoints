@@ -58,4 +58,4 @@ projects/YYYY_MM_project_name/
 
 2. **Starting a new project:** Copy [0000_00_proj_template/](projects/0000_00_proj_template/) to `projects/YYYY_MM_name/`
 3. **Testing:** Run `pytest` in [tq/](tq/) directory when modifying shared utilities
-4. **Exploration:** Use the `trino` Claude skill to explore available data
+4. **Exploration:** Use the `trino` skill to explore available data
