@@ -46,3 +46,6 @@ rosm.cache/
 
 # Ignore internal notes files
 notes.md
+
+# Ignore dedicated worktrees folder
+worktrees/

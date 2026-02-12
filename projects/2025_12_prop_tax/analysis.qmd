@@ -1,0 +1,958 @@
+---
+title: "340B, consolidation, and property taxes"
+subtitle: "By Dan Snow"
+format:
+  html:
+    fig-format: retina
+    fig-dpi: 320
+    toc: false
+    embed-resources: true
+    grid:
+      body-width: 900px
+execute:
+  echo: false
+---
+
+```{r setup, message=FALSE}
+library(arrow)
+library(conflicted)
+library(data.table)
+library(dplyr)
+library(forcats)
+library(ggplot2)
+library(ggspatial)
+library(ggtext)
+library(Hmisc)
+library(lubridate)
+library(patchwork)
+library(prettymapr)
+library(readr)
+library(scales)
+library(sf)
+library(stringr)
+library(tidyr)
+library(tigris)
+
+# Always use dplyr over other packages
+conflict_prefer_all("dplyr", quiet = TRUE)
+sf_use_s2(FALSE)
+
+# Transform numbers into abbreviated amounts
+# 100 becomes 100, 1000 becomes 1K, 1000000 becomes $1M, etc.
+label_comma_short <- function(x) {
+  sapply(
+    x,
+    function(val) {
+      if (is.na(val)) {
+        return(NA_character_)
+      }
+
+      abs_val <- abs(val)
+      sign_str <- ifelse(val < 0, "-", "")
+      if (abs_val >= 1e9) {
+        paste0(sign_str, round(abs_val / 1e9, 0), "B")
+      } else if (abs_val >= 1e6) {
+        paste0(sign_str, round(abs_val / 1e6, 0), "M")
+      } else if (abs_val >= 1e3) {
+        paste0(sign_str, round(abs_val / 1e3, 0), "K")
+      } else {
+        paste0(sign_str, formatC(abs_val, format = "f", digits = 0))
+      }
+    },
+    USE.NAMES = FALSE
+  )
+}
+```
+
+```{r load_data, message=FALSE, warning=FALSE, results='hide'}
+macneal_tax_bills_df <- read_parquet("data/output/macneal_tax_bills.parquet")
+tax_bill_diff_df <- read_parquet("data/output/tax_bill_diff.parquet")
+cost_reports_df <- read_parquet("data/output/cost_reports.parquet")
+berwyn_pin_geos_df <- read_parquet("data/output/berwyn_pin_geos.parquet") |>
+  st_as_sf(wkt = "geometry", crs = 4326)
+hospital_info_df <- read_parquet("data/output/hospital_info.parquet") |>
+  mutate(across(contains("date"), mdy)) |>
+  mutate(
+    acquiring_nonprofit_short = case_match(
+      acquiring_nonprofit_system_name,
+      "SSM Health" ~ "Tenet Healthcare → SSM Health",
+      "Cedars-Sinai Health System" ~ "Westridge Capital → Cedars-Sinai",
+      "Wellstar Health System" ~ "Tenet Healthcare → Wellstar Health System",
+      "Tower Health" ~ "Community Health Systems → Tower Healh",
+      "Loyola Medicine (Trinity Health)" ~ "Tenet Healthcare → Loyola Medicine",
+      "AdventHealth" ~ "Community Health Systems → AdventHealth",
+      "Baptist Health (Arkansas)" ~ "Sparks Health System → Baptist Health",
+      "Singing River Health System" ~ "HCA → Singing River Health System",
+      "Orlando Health" ~ "Community Health Systems → Orlando Health",
+      "MUSC Health" ~ "Providence & KershawHealth → MUSC Health",
+      "City of Hope" ~ "CTCA → City of Hope",
+      "CHRISTUS Health" ~ "Steward Healthcare → CHRISTUS Health",
+      .default = acquiring_nonprofit_system_name
+    ),
+    hospital_name_short = case_match(
+      hospital_name,
+      "SSM Health Saint Louis University Hospital" ~
+        "St. Louis University Hospital",
+      "Cedars-Sinai Marina Del Rey Hospital" ~ "Marina Del Rey Hospital",
+      "Orlando Health Bayfront Hospital" ~ "Bayfront Hospital",
+      "MUSC Health Kershaw Medical Center" ~ "Kershaw Medical Center",
+      "MUSC Health Columbia Medical Center Northeast" ~
+        "Columbia Medical Center Northeast",
+      "MUSC Health Columbia Medical Center Downtown" ~
+        "Columbia Medical Center Downtown",
+      "City of Hope Atlanta cancer hospital" ~ "City of Hope Atlanta",
+      .default = hospital_name
+    )
+  )
+
+state_il_df <- tigris::states(cb = TRUE, year = 2020) |>
+  filter(GEOID == "17") |>
+  select(name = NAME)
+```
+
+```{r status_timeline, message=FALSE, warning=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 9
+
+status_timeline_color = "grey40"
+
+status_timeline_df <- hospital_info_df |>
+  mutate(
+    acquiring_nonprofit_short = ifelse(
+      acquiring_nonprofit_short %in%
+        c(
+          "Tenet Healthcare → SSM Health",
+          "CTCA → City of Hope"
+        ),
+      paste0(
+        "<span style='color:white'>□□□□□□□□□□</span>",
+        acquiring_nonprofit_short
+      ),
+      acquiring_nonprofit_short
+    )
+  ) |>
+  mutate(
+    acquiring_nonprofit_short = fct_reorder(
+      acquiring_nonprofit_short,
+      acquired_date,
+      .desc = FALSE
+    ),
+    hospital_name_short = fct_reorder(
+      hospital_name_short,
+      acquired_date,
+      .desc = TRUE
+    ),
+    closed_date_inf = as_date(
+      ifelse(is.na(closed_date), make_date(2027), NA_Date_)
+    )
+  )
+
+status_timeline_340b_df <- status_timeline_df |>
+  select(
+    hospital_name_short,
+    acquiring_nonprofit_short,
+    ccn,
+    hospital_340b_id,
+    acquired_date,
+    closed_date
+  ) |>
+  left_join(
+    cost_reports_df |>
+      select(ccn, mcr_fy_end_date, mcr_dsh_pct),
+    by = "ccn"
+  ) |>
+  mutate(hospital_340b_type = str_sub(hospital_340b_id, 1, 3)) |>
+  filter(
+    (mcr_dsh_pct >= 0.1175 & hospital_340b_type == "DSH") |
+      (mcr_dsh_pct >= 0.08 & hospital_340b_type == "RRC") |
+      hospital_340b_type == "CAH"
+  ) |>
+  summarize(
+    min_date = min(pmax(mcr_fy_end_date, acquired_date, na.rm = TRUE)),
+    max_date = max(pmin(mcr_fy_end_date, closed_date, na.rm = TRUE)),
+    .by = c(
+      "ccn",
+      "hospital_name_short",
+      "hospital_340b_type",
+      "acquiring_nonprofit_short"
+    )
+  ) |>
+  mutate(
+    max_date = as_date(ifelse(
+      max_date >= make_date(2024, 9),
+      make_date(2026, 11),
+      max_date
+    ))
+  )
+
+status_timeline_df |>
+  ggplot() +
+  geom_segment(
+    aes(x = acquired_date, xend = closed_date, y = hospital_name_short),
+    color = status_timeline_color
+  ) +
+  geom_segment(
+    aes(x = acquired_date, xend = closed_date_inf, y = hospital_name_short),
+    arrow = arrow(type = "closed", length = unit(0.15, "cm")),
+    color = status_timeline_color
+  ) +
+  geom_segment(
+    data = status_timeline_340b_df,
+    aes(
+      x = min_date,
+      xend = max_date,
+      y = hospital_name_short,
+      shape = "340B eligible",
+      color = "340B eligible",
+      fill = "340B eligible"
+    ),
+    linewidth = 1.5,
+    alpha = 0.5
+  ) +
+  geom_point(
+    aes(
+      x = acquired_date,
+      y = hospital_name_short,
+      shape = "Hospital acquired",
+      color = "Hospital acquired",
+      fill = "Hospital acquired"
+    ),
+    size = 2
+  ) +
+  geom_point(
+    aes(
+      x = hospital_340b_date_start,
+      y = hospital_name_short,
+      shape = "Joined 340B",
+      color = "Joined 340B",
+      fill = "Joined 340B"
+    ),
+    size = 3.5
+  ) +
+  geom_point(
+    aes(
+      x = closed_date,
+      y = hospital_name_short,
+      shape = "Hospital closed",
+      color = "Hospital closed",
+      fill = "Hospital closed"
+    ),
+    size = 3.5
+  ) +
+  labs(
+    title = "For-profit hospitals acquired by nonprofits quickly join 340B",
+    x = "",
+    y = "",
+    caption = paste0(
+      "Data sourced from hospital acquisition news coverage; ",
+      "340B enrollment data from the HRSA 340B OPAIS database"
+    )
+  ) +
+  scale_x_datetime(expand = expansion(mult = c(0.05, 0.01))) +
+  scale_color_manual(
+    name = "",
+    values = c(
+      "Hospital acquired" = status_timeline_color,
+      "340B eligible" = "palegreen3",
+      "Joined 340B" = status_timeline_color,
+      "Hospital closed" = "indianred"
+    ),
+    breaks = c(
+      "Hospital acquired",
+      "340B eligible",
+      "Joined 340B",
+      "Hospital closed"
+    )
+  ) +
+  scale_fill_manual(
+    name = "",
+    values = c(
+      "Hospital acquired" = status_timeline_color,
+      "340B eligible" = "palegreen3",
+      "Joined 340B" = "dodgerblue1",
+      "Hospital closed" = "indianred"
+    ),
+    breaks = c(
+      "Hospital acquired",
+      "340B eligible",
+      "Joined 340B",
+      "Hospital closed"
+    )
+  ) +
+  scale_shape_manual(
+    name = "",
+    values = c(
+      "Hospital acquired" = 16,
+      "340B eligible" = 16,
+      "Joined 340B" = 21,
+      "Hospital closed" = 4
+    ),
+    breaks = c(
+      "Hospital acquired",
+      "340B eligible",
+      "Joined 340B",
+      "Hospital closed"
+    )
+  ) +
+  facet_wrap(
+    vars(acquiring_nonprofit_short),
+    ncol = 1,
+    scales = "free_y",
+    space = "free_y",
+    strip.position = "left"
+  ) +
+  coord_cartesian(
+    clip = "off",
+    xlim = as.POSIXct(c(make_date(2016), make_date(2027)))
+  ) +
+  theme_minimal() +
+  theme(
+    strip.clip = "off",
+    strip.placement = "outside",
+    strip.text.y.left = element_markdown(
+      angle = 0,
+      margin = margin(r = -154, t = -10),
+      face = "bold",
+      size = 10,
+      hjust = 1,
+      vjust = 1,
+      lineheight = 1.1
+    ),
+    panel.spacing.y = unit(0.8, "cm")
+  ) +
+  theme(
+    plot.title = element_markdown(
+      size = 19,
+      face = "bold",
+      margin = margin(b = 4, l = -230)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 6, l = -220),
+      lineheight = 1.1
+    ),
+    plot.caption = element_markdown(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 8)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 14,
+      margin = margin(t = 12),
+      lineheight = 1.1
+    ),
+    panel.grid.minor.x = element_blank(),
+    legend.position = "top",
+    legend.text = element_text(size = 12),
+    legend.margin = margin(r = 12, t = 8, b = 8),
+    legend.box.margin = margin(t = 6, b = 12, l = -230),
+    legend.background = element_rect(color = "black"),
+    legend.key.spacing.x = unit(0.7, "cm")
+  )
+```
+
+```{r macneal_map, message=FALSE, warning=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 6
+
+berwyn_inset_bbox <- c(
+  xmin = -87.799,
+  xmax = -87.785,
+  ymin = 41.8285,
+  ymax = 41.8345
+) |>
+  st_bbox(crs = 4326) |>
+  st_as_sfc()
+
+berwyn_map_bbox <- c(
+  xmin = -87.8431,
+  xmax = -87.731021,
+  ymin = 41.787823,
+  ymax = 41.886452
+) |>
+  st_bbox(crs = 4326) |>
+  st_as_sfc()
+
+berwyn_inset_plot <- state_il_df |>
+  st_transform(4326) |>
+  ggplot() +
+  geom_sf(
+    fill = "grey80",
+    color = "grey30"
+  ) +
+  geom_sf(
+    data = berwyn_map_bbox,
+    fill = "transparent",
+    color = "#961e47",
+    linewidth = 1.1
+  ) +
+  annotate(
+    "segment",
+    x = -87.85,
+    xend = -88.0,
+    y = 41.79,
+    yend = 41.7,
+    color = "#961e47",
+    linewidth = 1
+  ) +
+  annotate(
+    "richtext",
+    x = -88.0,
+    y = 41.5,
+    label = "MacNeal<br>Hospital",
+    size = 4,
+    color = "#961e47",
+    fontface = "bold",
+    label.color = "transparent",
+    fill = "transparent",
+    hjust = 1
+  ) +
+  guides(color = "none") +
+  theme_void() +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    panel.border = element_rect(
+      color = "black",
+      linewidth = 1.1,
+      fill = "transparent"
+    ),
+    plot.margin = margin(r = -20)
+  )
+
+berwyn_pin_geos_df |>
+  mutate(
+    became_exempt = case_match(
+      became_exempt,
+      TRUE ~ "Became tax-exempt",
+      FALSE ~ "Remained taxable",
+      .default = NA_character_
+    )
+  ) |>
+  st_intersection(berwyn_inset_bbox) |>
+  ggplot() +
+  annotation_map_tile(
+    "cartolight",
+    zoomin = 0
+  ) +
+  geom_sf(
+    aes(fill = became_exempt),
+    alpha = 0.8,
+    color = "grey90",
+    linewidth = 0.2
+  ) +
+  geom_sf(
+    data = berwyn_inset_bbox,
+    fill = "transparent",
+    color = "transparent"
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Became tax-exempt" = "#961e47",
+      "Remained taxable" = "grey20"
+    ),
+    na.value = "transparent",
+    na.translate = FALSE
+  ) +
+  guides(fill = guide_legend(title = "")) +
+  labs(
+    title = "MacNeal Hospital was acquired by Loyola Medicine in 2018",
+    subtitle = paste0(
+      "Almost all of MacNeal's previously taxable parcels ",
+      "became tax-exempt after the acquisition"
+    ),
+    caption = paste0(
+      "Parcel shapes and tax liability from the ",
+      "Cook County Assessor's Office\n",
+      "Parcel ownership from parcel mailing address data and ",
+      "financial records"
+    )
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(
+      size = 19.75,
+      face = "bold",
+      margin = margin(b = 8, l = 4)
+    ),
+    plot.subtitle = element_markdown(
+      size = 13.75,
+      margin = margin(b = 8, l = 6)
+    ),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 12, b = 6)
+    ),
+    legend.background = element_rect(fill = "white"),
+    legend.margin = margin(t = 10, b = 10, r = 10, l = 6),
+    legend.position = "inside",
+    legend.title.position = "left",
+    legend.position.inside = c(0.87, 0.16),
+    legend.direction = "vertical",
+    legend.key.spacing.y = unit(0.15, "cm"),
+    legend.key.size = unit(0.75, "cm"),
+    legend.text = element_text(size = 12)
+  ) +
+  inset_element(
+    berwyn_inset_plot,
+    left = 0.0,
+    right = 0.18,
+    top = 0.7,
+    bottom = -0.03
+  ) +
+  inset_element(
+    ggplot() +
+      annotate(
+        "text",
+        x = 1,
+        y = 1,
+        label = "Illinois",
+        size = 6,
+        fontface = "bold",
+        color = "grey30"
+      ) +
+      theme_void(),
+    left = 0.0,
+    right = 0.23,
+    top = -0.08,
+    bottom = 0
+  )
+```
+
+```{r macneal_taxes, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 6.5
+
+macneal_tax_bills_df |>
+  group_by(year) |>
+  summarize(final_tax = sum(final_tax)) |>
+  mutate(year = make_date(year)) |>
+  bind_rows(data.frame(year = rep(make_date(2018, 3, 1), 2))) |>
+  arrange(year) |>
+  mutate(
+    final_tax = approx(
+      x = .data$year[!is.na(.data$final_tax)],
+      y = .data$final_tax[!is.na(.data$final_tax)],
+      xout = year,
+      method = "linear"
+    )$y
+  ) |>
+  mutate(
+    after_acquisition = year >= make_date(2018, 3, 1) &
+      row_number() == max(row_number()),
+    .by = year
+  ) |>
+  ggplot() +
+  geom_line(
+    aes(x = year, y = final_tax, color = after_acquisition),
+    linewidth = 1.1
+  ) +
+  geom_vline(
+    xintercept = make_date(2018, 3),
+    color = "grey20",
+    linetype = "dashed"
+  ) +
+  annotate(
+    "richtext",
+    x = make_date(2018, 1),
+    y = 2.75e6,
+    label = paste0(
+      "Loyola acquires MacNeal Hospital<br>",
+      "and applies for tax-exempt status"
+    ),
+    size = 4,
+    hjust = 1,
+    label.color = "transparent",
+    fill = "transparent"
+  ) +
+  annotate(
+    "richtext",
+    x = make_date(2020, 2),
+    y = 1.75e6,
+    label = paste0(
+      "Loyola's property tax bill falls to<br>",
+      "~$1M after most of its previously<br>",
+      "taxable parcels become exempt"
+    ),
+    size = 4,
+    hjust = 0,
+    label.color = "transparent",
+    fill = "transparent"
+  ) +
+  scale_y_continuous(
+    labels = \(x) paste0("$", label_comma_short(x)),
+    limits = c(0, 3.6e6)
+  ) +
+  scale_color_manual(
+    values = c(
+      "TRUE" = "#d52a63",
+      "FALSE" = "grey20"
+    ),
+    na.value = "transparent",
+    na.translate = FALSE
+  ) +
+  labs(
+    title = "MacNeal's property tax bill dropped by ~$2.5M after acquisition",
+    subtitle = paste0(
+      "Other Cook County taxpayers' bills increased to ",
+      "compensate for the new shortfall"
+    ),
+    x = "Date",
+    y = "Total property taxes paid by MacNeal / Loyola",
+    caption = paste0(
+      "Parcel tax liability data pulled from the Cook County Assessor's Office"
+    )
+  ) +
+  guides(color = "none") +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 8, l = -36)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 6, l = -36),
+      lineheight = 1.1
+    ),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 14,
+      margin = margin(t = 8),
+      lineheight = 1.1
+    ),
+    axis.text.y = element_markdown(
+      size = 14,
+      margin = margin(r = 8)
+    )
+  )
+```
+
+```{r berwyn_bills, message=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 6.5
+
+tax_bill_diff_df |>
+  filter(year == 2020) |>
+  ggplot() +
+  geom_histogram(aes(x = diff), fill = "grey50") +
+  geom_vline(
+    xintercept = 107,
+    color = "darkred",
+    linetype = "dashed",
+    linewidth = 0.8
+  ) +
+  annotate(
+    "richtext",
+    x = 500,
+    y = 250,
+    label = paste0(
+      "A long tail of properties had bill increases over $500,<br>",
+      "the largest was $26K for a nearby shopping center"
+    ),
+    size = 4,
+    hjust = 1,
+    vjust = 0,
+    label.color = "transparent",
+    fill = "transparent"
+  ) +
+  annotate(
+    "richtext",
+    x = 500,
+    y = 270,
+    label = paste0(
+      "→"
+    ),
+    size = 8,
+    hjust = 0,
+    vjust = 0,
+    label.color = "transparent",
+    fill = "transparent"
+  ) +
+  scale_x_continuous(
+    labels = \(x) paste0("+", label_dollar()(x)),
+    limits = c(0, 500),
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  scale_y_continuous(
+    labels = label_comma(),
+    expand = expansion(mult = c(0.01, 0.05))
+  ) +
+  labs(
+    title = "Loyola buying MacNeal Hospital increased property tax bills",
+    subtitle = paste0(
+      "Around 15K properties in Berwyn saw an increase, ",
+      "the **<span style='color:darkred'>mean increase</span>** was ~$100"
+    ),
+    x = "Property tax bill increase due to acquisition",
+    y = "Count of properties",
+    caption = paste0(
+      "Counterfactual Berwyn property tax bills were calculated using the ",
+      "Cook County Assessor's PTAXSIM package"
+    )
+  ) +
+  coord_cartesian(clip = "off") +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(
+      size = 19,
+      face = "bold",
+      margin = margin(b = 8, l = -56)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 6, l = -56),
+      lineheight = 1.1
+    ),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 14,
+      margin = margin(t = 8),
+      lineheight = 1.1
+    ),
+    axis.text.y = element_markdown(
+      size = 14,
+      margin = margin(r = 8)
+    )
+  )
+```
+
+```{r npr_over_time, message=FALSE, warning=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 9
+
+cost_reports_df |>
+  left_join(
+    hospital_info_df |>
+      filter(hospital_id == min(hospital_id), .by = "ccn") |>
+      select(
+        ccn,
+        acquiring_nonprofit_short,
+        acquired_date,
+        closed_date,
+        hospital_340b_date_start,
+        hospital_340b_date_end,
+        hospital_name
+      ),
+    by = "ccn"
+  ) |>
+  mutate(
+    time_from_acquisition = time_length(
+      mcr_fy_end_date - acquired_date,
+      "months"
+    ),
+    hospital_340b_date_end = replace_na(
+      hospital_340b_date_end,
+      make_date(2028)
+    ),
+    is_340B = between(
+      mcr_fy_end_date,
+      hospital_340b_date_start,
+      hospital_340b_date_end
+    ),
+    is_340B = ifelse(is_340B, "Part of 340B", NA)
+  ) |>
+  mutate(
+    indexed_drugs_charged = mcr_drug_charged / first(mcr_drug_charged),
+    closed = !is.na(closed_date) &
+      abs(as.numeric(mcr_fy_end_date - closed_date)) ==
+        min(abs(as.numeric(mcr_fy_end_date - closed_date))),
+    .by = c("ccn", "hospital_id")
+  ) |>
+  mutate(
+    hospital_name = fct_reorder(hospital_name, acquired_date),
+    closed = ifelse(closed, "Hospital closed", NA)
+  ) |>
+  filter(!is.na(mcr_net_patient_revenue)) |>
+  filter(mcr_fy_end_date <= closed_date | is.na(closed_date)) |>
+  mutate(
+    acquiring_nonprofit_short = fct_reorder(
+      acquiring_nonprofit_short,
+      acquired_date,
+      .desc = FALSE
+    )
+  ) |>
+  ggplot() +
+  geom_vline(
+    aes(
+      xintercept = 0,
+      color = "Acquisition date",
+      shape = "Acquisition date",
+      linetype = "Acquisition date"
+    )
+  ) +
+  geom_line(
+    aes(
+      x = time_from_acquisition,
+      y = mcr_net_patient_revenue,
+      group = hospital_id,
+      color = is_340B,
+      shape = is_340B,
+      linetype = is_340B
+    )
+  ) +
+  geom_point(
+    aes(
+      x = time_from_acquisition,
+      y = mcr_net_patient_revenue,
+      color = closed,
+      shape = closed,
+      linetype = closed
+    ),
+    size = 3.5
+  ) +
+  scale_x_continuous(
+    name = "Months from acquisition",
+    limits = c(-100, 125)
+  ) +
+  scale_y_continuous(
+    name = "Annual net patient revenue",
+    labels = \(x) paste0("$", label_comma_short(x))
+  ) +
+  scale_linetype_manual(
+    name = "",
+    values = c(
+      "Acquisition date" = "dashed",
+      "Part of 340B" = "solid",
+      "Hospital closed" = "solid"
+    ),
+    breaks = c("Acquisition date", "Part of 340B", "Hospital closed"),
+    na.value = "solid"
+  ) +
+  scale_color_manual(
+    name = "",
+    values = c(
+      "Acquisition date" = "grey10",
+      "Part of 340B" = "dodgerblue1",
+      "Hospital closed" = "indianred"
+    ),
+    breaks = c("Acquisition date", "Part of 340B", "Hospital closed")
+  ) +
+  scale_shape_manual(
+    name = "",
+    values = c(
+      "Acquisition date" = 1,
+      "Part of 340B" = 1,
+      "Hospital closed" = 4
+    ),
+    breaks = c("Acquisition date", "Part of 340B", "Hospital closed")
+  ) +
+  facet_wrap(
+    vars(acquiring_nonprofit_short),
+    ncol = 2,
+    scales = "free_y",
+    dir = "v"
+  ) +
+  labs(
+    title = "Hospital financials generally improve after nonprofit acquisition",
+    subtitle = paste0(
+      "For 340B providers, net patient revenue increases concurrently ",
+      "with drugs charged *"
+    ),
+    caption = paste0(
+      "* Total drug charges are not shown, but closely track net patient ",
+      "revenue for 340B-eligible hospitals\nNet patient revenue data ",
+      "from CMS Cost Reports; ",
+      "340B enrollment data from the HRSA 340B OPAIS database\n",
+      "The dip in revenue near the acquisition date is usually an artifact of ",
+      "providers resetting or moving their fiscal year"
+    )
+  ) +
+  coord_cartesian(clip = "off") +
+  theme_minimal() +
+  theme(
+    strip.clip = "off",
+    strip.placement = "outside",
+    strip.text.x.top = element_markdown(face = "bold", size = 11)
+  ) +
+  theme(
+    plot.title = element_markdown(
+      size = 18.5,
+      face = "bold",
+      margin = margin(b = 8, l = -58)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 6, l = -58),
+      lineheight = 1.1
+    ),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 12)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_markdown(
+      margin = margin(r = 6),
+      size = 14,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 14,
+      margin = margin(t = 12),
+      lineheight = 1.1
+    ),
+    axis.text.y = element_markdown(
+      size = 11
+    ),
+    panel.grid.minor.y = element_blank(),
+    panel.spacing.x = unit(0.5, "cm"),
+    legend.position = "top",
+    legend.text = element_text(size = 12),
+    legend.spacing = unit(-0.2, "cm"),
+    legend.margin = margin(r = 12, t = 8, b = 8),
+    legend.box.margin = margin(t = 6, l = -60),
+    legend.background = element_rect(color = "black"),
+    legend.key.spacing.x = unit(0.7, "cm")
+  )
+```
