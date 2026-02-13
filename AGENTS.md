@@ -58,4 +58,4 @@ projects/YYYY_MM_project_name/
 
 2. **Starting a new project:** Copy [0000_00_proj_template/](projects/0000_00_proj_template/) to `projects/YYYY_MM_name/`
 3. **Testing:** Run `pytest` in [tq/](tq/) directory when modifying shared utilities
-4. **Exploration:** The `trino` CLI is pre-configured. For exploratory queries, write SQL to a file, then use `trino --file $FILENAME` to see the output
+4. **Exploration:** Use the `trino` skill to explore available data
