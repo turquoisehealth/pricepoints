@@ -96,6 +96,7 @@ cost_reports_df = (
         pl.col("prvdr_num").alias("mcr_ccn"),
         pl.col("fy_end_dt").alias("mcr_fy_end_date"),
         pl.col("c_1_c5_73").alias("mcr_drug_cost"),
+        pl.col("s2_1_c1_21").alias("mcr_type_of_control"),
         pl.col("c_1_c6_73").alias("mcr_inpatient_drug_charged"),
         pl.col("c_1_c7_73").alias("mcr_outpatient_drug_charged"),
         (pl.col("c_1_c6_73") + pl.col("c_1_c7_73")).alias("mcr_drug_charged"),
@@ -116,6 +117,14 @@ cost_reports_df = (
         pl.col("year"),
     )
     .collect()
+    .with_columns(
+        pl.when(pl.col("mcr_type_of_control").is_in(["1", "2"]))
+        .then(pl.lit("nonprofit"))
+        .when(pl.col("mcr_type_of_control").is_in(["3", "4", "5", "6"]))
+        .then(pl.lit("forprofit"))
+        .otherwise(pl.lit("government"))
+        .alias("mcr_type_of_control")
+    )
 )
 
 cost_reports_fil_df = cost_reports_df.join(
@@ -126,3 +135,42 @@ cost_reports_fil_df = cost_reports_df.join(
 ).sort(["hospital_id", "year"])
 
 cost_reports_fil_df.write_parquet("data/output/cost_reports.parquet")
+
+
+chow_df = (
+    pl.read_csv(
+        "data/input/Hospital_CHOW_2026.01.02.csv", encoding="utf8-lossy"
+    )
+    .select(
+        pl.col("CCN - BUYER").alias("ccn_buyer"),
+        pl.col("CCN - SELLER").alias("ccn_seller"),
+        pl.col("EFFECTIVE DATE").str.to_date("%m/%d/%Y").alias("date"),
+        pl.col("DOING BUSINESS AS NAME - BUYER").alias("name_buyer"),
+        pl.col("DOING BUSINESS AS NAME - SELLER").alias("name_seller"),
+    )
+    .with_columns(pl.col("date").dt.year().alias("year"))
+)
+
+chow_fp_to_np_df = (
+    chow_df.join(
+        cost_reports_df.with_columns(
+            pl.col("mcr_fy_end_date").dt.year().alias("year"),
+            pl.col("mcr_type_of_control").alias("toc_before"),
+        ).select("mcr_ccn", "year", "toc_before"),
+        left_on=["ccn_seller", "year"],
+        right_on=["mcr_ccn", "year"],
+        how="left",
+    )
+    .join(
+        cost_reports_df.with_columns(
+            pl.col("mcr_fy_end_date").dt.year().alias("year"),
+            pl.col("mcr_type_of_control").alias("toc_after"),
+        ).select("mcr_ccn", "year", "toc_after"),
+        left_on=["ccn_buyer", "year"],
+        right_on=["mcr_ccn", "year"],
+        how="left",
+    )
+    .filter(
+        pl.col("toc_before") == "forprofit", pl.col("toc_after") == "nonprofit"
+    )
+)
