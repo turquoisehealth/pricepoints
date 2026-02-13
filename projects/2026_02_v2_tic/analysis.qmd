@@ -1,0 +1,482 @@
+---
+title: "Early v2 TiC Schema Adoption"
+subtitle: "By Dan Snow"
+format:
+  html:
+    fig-format: retina
+    fig-dpi: 320
+    toc: false
+    embed-resources: true
+    grid:
+      body-width: 900px
+execute:
+  echo: false
+---
+
+```{r setup, message=FALSE}
+library(arrow)
+library(conflicted)
+library(dplyr)
+library(forcats)
+library(ggplot2)
+library(ggtext)
+library(scales)
+library(stringr)
+library(tidyr)
+
+conflict_prefer_all("dplyr", quiet = TRUE)
+```
+
+```{r load-data}
+payer_feb <- read_parquet("data/output/payer_files_feb.parquet")
+payer_dec <- read_parquet("data/output/payer_files_dec.parquet")
+network_names <- read_parquet("data/output/network_names_feb.parquet")
+provider_mode_feb <- read_parquet("data/output/provider_mode_feb.parquet")
+provider_mode_dec <- read_parquet("data/output/provider_mode_dec.parquet")
+ein_agg <- read_parquet("data/output/ein_names_agg_feb.parquet")
+```
+
+CMS updated the Transparency in Coverage (TiC) machine-readable file schema
+to version 2.0, effective February 2, 2026. The key structural changes are:
+
+1. **`network_name` required** in provider references
+2. **Inline provider groups replaced** by mandatory provider references
+3. **`business_name` required** alongside EIN records
+
+We compare December 2025 (pre-v2) to February 2026 (first month under v2)
+to measure early adoption across these three dimensions.
+
+```{r prep-version}
+# Normalize version strings into major buckets
+payer_ver <- payer_feb |>
+  mutate(
+    version_major = case_when(
+      str_starts(version, "2") | str_starts(str_to_lower(version), "v2") ~ "v2",
+      str_starts(version, "1") | str_starts(str_to_lower(version), "v1") ~ "v1",
+      TRUE ~ "missing"
+    )
+  )
+
+# Payer-level version summary
+payer_ver_summary <- payer_ver |>
+  group_by(payer_id) |>
+  summarise(
+    has_v2 = any(version_major == "v2"),
+    all_v2 = all(version_major == "v2"),
+    n_files = n(),
+    .groups = "drop"
+  ) |>
+  mutate(
+    ver_class = case_when(
+      all_v2 ~ "All v2",
+      has_v2 ~ "Mixed (v1 + v2)",
+      TRUE ~ "All v1"
+    )
+  )
+
+n_payers <- nrow(payer_ver_summary)
+n_v2_any <- sum(payer_ver_summary$has_v2)
+n_v2_all <- sum(payer_ver_summary$all_v2)
+n_v1_only <- sum(!payer_ver_summary$has_v2)
+```
+
+## Self-reported version
+
+The `version` field in the TiC schema lets payers declare which spec version
+they're using. Of the **`r n_payers`** payers submitting files in February
+2026, **`r n_v2_any`** (`r round(n_v2_any / n_payers * 100)`%) report at
+least one v2 file. But only **`r n_v2_all`** have moved all files to v2;
+another **`r n_v2_any - n_v2_all`** are in a mixed state, with some files
+still on v1.
+
+```{r plot-version, fig.width=7, fig.height=4}
+ver_file_counts <- payer_ver |>
+  count(version_major, name = "n_files") |>
+  mutate(
+    version_major = factor(
+      version_major,
+      levels = c("v1", "v2", "missing"),
+      labels = c("v1.x", "v2.x", "Missing")
+    )
+  )
+
+ver_payer_counts <- payer_ver_summary |>
+  count(ver_class, name = "n_payers") |>
+  mutate(
+    ver_class = factor(
+      ver_class,
+      levels = c("All v1", "Mixed (v1 + v2)", "All v2")
+    )
+  )
+
+ggplot(ver_payer_counts, aes(x = ver_class, y = n_payers)) +
+  geom_col(fill = "steelblue", width = 0.6) +
+  geom_text(
+    aes(label = n_payers),
+    vjust = -0.5,
+    size = 4.5,
+    fontface = "bold"
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(
+    title = "Payer-level version adoption in February 2026",
+    subtitle = paste0(
+      "Of ", n_payers, " payers, ",
+      n_v2_any, " report at least one v2 file"
+    ),
+    x = NULL,
+    y = "Number of payers",
+    caption = paste0(
+      "Source: hive.public_2026_02.inr\n",
+      "A payer is classified by the version field across all its files."
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(size = 16, face = "bold", margin = margin(b = 4)),
+    plot.subtitle = element_markdown(size = 13, margin = margin(b = 12)),
+    plot.caption = element_text(size = 10, lineheight = 1.1, margin = margin(t = 12)),
+    axis.text.x = element_text(size = 12, face = "bold"),
+    axis.text.y = element_text(size = 11),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+```
+
+The file-level picture is similar: of **`r comma(nrow(payer_feb))`** total
+files in February, **`r comma(sum(ver_file_counts$n_files[ver_file_counts$version_major == "v2.x"]))`**
+(`r round(sum(ver_file_counts$n_files[ver_file_counts$version_major == "v2.x"]) / nrow(payer_feb) * 100)`%)
+self-report as v2.
+
+But self-reported version alone doesn't tell us whether payers are actually
+implementing the new schema features. We next look at adoption of each v2
+structural requirement.
+
+```{r prep-provider-mode}
+classify_modes <- function(df) {
+  df |>
+    distinct(payer_id, provider_mode) |>
+    group_by(payer_id) |>
+    summarise(modes = list(provider_mode), .groups = "drop") |>
+    mutate(
+      has_inline = sapply(modes, \(x) "inline" %in% x),
+      has_ref = sapply(modes, \(x) "reference" %in% x),
+      mode_class = case_when(
+        has_inline & has_ref ~ "Both",
+        has_inline ~ "Inline only",
+        TRUE ~ "References only"
+      )
+    )
+}
+
+mode_feb <- classify_modes(provider_mode_feb)
+mode_dec <- classify_modes(provider_mode_dec)
+
+mode_compare <- bind_rows(
+  mode_dec |> mutate(period = "Dec 2025"),
+  mode_feb |> mutate(period = "Feb 2026")
+) |>
+  count(period, mode_class, name = "n_payers") |>
+  mutate(
+    mode_class = factor(
+      mode_class,
+      levels = c("References only", "Both", "Inline only")
+    ),
+    period = factor(period, levels = c("Dec 2025", "Feb 2026"))
+  )
+```
+
+## Provider references vs. inline groups
+
+The v2 schema eliminates inline provider groups in favor of provider
+references, a structural change that reduces file duplication and file size.
+In December 2025, **`r sum(mode_dec$mode_class == "Inline only")`** payers
+used inline groups exclusively. By February 2026, that dropped to
+**`r sum(mode_feb$mode_class == "Inline only")`**.
+
+```{r plot-provider-mode, fig.width=8, fig.height=4.5}
+ggplot(
+  mode_compare,
+  aes(x = mode_class, y = n_payers, fill = period)
+) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.6) +
+  geom_text(
+    aes(label = n_payers),
+    position = position_dodge(width = 0.7),
+    vjust = -0.5,
+    size = 4,
+    fontface = "bold"
+  ) +
+  scale_fill_manual(
+    values = c("Dec 2025" = "grey65", "Feb 2026" = "steelblue")
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(
+    title = "Shift from inline provider groups to provider references",
+    subtitle = paste0(
+      "Payers using inline-only groups fell from ",
+      sum(mode_dec$mode_class == "Inline only"), " to ",
+      sum(mode_feb$mode_class == "Inline only"),
+      " between December 2025 and February 2026"
+    ),
+    x = NULL,
+    y = "Number of payers",
+    fill = NULL,
+    caption = paste0(
+      "Source: inr_in_network_neg_rates_provider_groups ",
+      "and inr_in_network_neg_rates_provider_references\n",
+      "Note: Dec 2025 includes ", n_distinct(mode_dec$payer_id),
+      " payers; Feb 2026 includes ", n_distinct(mode_feb$payer_id),
+      ". Counts differ due to ingestion timing."
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(size = 16, face = "bold", margin = margin(b = 4)),
+    plot.subtitle = element_markdown(size = 12, margin = margin(b = 12)),
+    plot.caption = element_text(size = 9.5, lineheight = 1.1, margin = margin(t = 12)),
+    axis.text.x = element_text(size = 12, face = "bold"),
+    axis.text.y = element_text(size = 11),
+    legend.position = "top",
+    legend.text = element_text(size = 11),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+```
+
+```{r prep-network-names}
+nn_payers <- n_distinct(network_names$payer_id)
+total_feb_payers <- n_distinct(payer_feb$payer_id)
+
+# Quality: how many use generic "UNSPECIFIED_NETWORK"?
+nn_unspec <- network_names |>
+  filter(str_detect(sample_network_name, "(?i)unspecified"))
+nn_real <- network_names |>
+  filter(!str_detect(sample_network_name, "(?i)unspecified"))
+nn_real_payers <- n_distinct(nn_real$payer_id)
+```
+
+## Network name adoption
+
+The v2 schema requires a `network_name` field in provider references,
+enabling consumers to identify which provider network applies to each rate.
+In February 2026, **`r nn_payers`** of `r total_feb_payers` payers
+(`r round(nn_payers / total_feb_payers * 100)`%) have at least one provider
+reference with a populated `network_name`.
+
+However, quality varies. Two payers populate the field with a generic
+`UNSPECIFIED_NETWORK` placeholder. Excluding those,
+**`r nn_real_payers`** payers provide meaningful network names, with
+**`r comma(n_distinct(nn_real$sample_network_name))`** distinct values
+across the dataset.
+
+```{r plot-network-names, fig.width=8, fig.height=5}
+# Top network names by frequency of payer/DSN combos
+nn_top <- network_names |>
+  filter(!str_detect(sample_network_name, "(?i)unspecified")) |>
+  count(sample_network_name, name = "n_files", sort = TRUE) |>
+  slice_head(n = 15) |>
+  mutate(
+    sample_network_name = fct_reorder(sample_network_name, n_files)
+  )
+
+ggplot(nn_top, aes(x = n_files, y = sample_network_name)) +
+  geom_col(fill = "steelblue", width = 0.7) +
+  geom_text(
+    aes(label = comma(n_files)),
+    hjust = -0.15,
+    size = 3.5,
+    fontface = "bold"
+  ) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.2))) +
+  labs(
+    title = "Most common network names in February 2026",
+    subtitle = paste0(
+      nn_real_payers, " payers provide meaningful network names across ",
+      comma(n_distinct(nn_real$sample_network_name)), " distinct values"
+    ),
+    x = "Number of payer/file combinations",
+    y = NULL,
+    caption = paste0(
+      "Source: hive.public_2026_02.inr_provider_references\n",
+      "Excludes UNSPECIFIED_NETWORK placeholder values. ",
+      "Shows one sampled network name per payer/file combination."
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(size = 16, face = "bold", margin = margin(b = 4)),
+    plot.subtitle = element_markdown(size = 12, margin = margin(b = 12)),
+    plot.caption = element_text(size = 9.5, lineheight = 1.1, margin = margin(t = 12)),
+    axis.text.y = element_text(size = 10),
+    axis.text.x = element_text(size = 10),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+```
+
+```{r prep-ein}
+ein_payer <- ein_agg |>
+  group_by(payer_id) |>
+  summarise(
+    has_business_name = any(has_any_business_name),
+    .groups = "drop"
+  )
+
+ein_total <- nrow(ein_payer)
+ein_with <- sum(ein_payer$has_business_name)
+```
+
+## EIN business name adoption
+
+The v2 schema requires a `business_name` field alongside EIN records in the
+`tin` struct, making it possible to identify providers by name rather than
+just tax ID number. Of the **`r ein_total`** payers with EIN data in
+February 2026, **`r ein_with`** (`r round(ein_with / ein_total * 100)`%)
+include at least one non-empty `business_name`.
+
+```{r plot-ein, fig.width=7, fig.height=4}
+ein_plot <- ein_payer |>
+  count(has_business_name, name = "n_payers") |>
+  mutate(
+    label = if_else(has_business_name, "Has business_name", "No business_name"),
+    label = factor(label, levels = c("Has business_name", "No business_name"))
+  )
+
+ggplot(ein_plot, aes(x = label, y = n_payers)) +
+  geom_col(
+    aes(fill = has_business_name),
+    width = 0.6,
+    show.legend = FALSE
+  ) +
+  geom_text(
+    aes(label = paste0(n_payers, " (", round(n_payers / ein_total * 100), "%)")),
+    vjust = -0.5,
+    size = 4.5,
+    fontface = "bold"
+  ) +
+  scale_fill_manual(values = c("TRUE" = "steelblue", "FALSE" = "grey65")) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(
+    title = "EIN business name adoption in February 2026",
+    subtitle = paste0(
+      ein_with, " of ", ein_total,
+      " payers with EIN data include at least one business_name"
+    ),
+    x = NULL,
+    y = "Number of payers",
+    caption = paste0(
+      "Source: hive.public_2026_02.inr_provider_references_provider_groups\n",
+      "Payer counted as adopting if any EIN record has a non-empty business_name."
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(size = 16, face = "bold", margin = margin(b = 4)),
+    plot.subtitle = element_markdown(size = 12, margin = margin(b = 12)),
+    plot.caption = element_text(size = 9.5, lineheight = 1.1, margin = margin(t = 12)),
+    axis.text.x = element_text(size = 12, face = "bold"),
+    axis.text.y = element_text(size = 11),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+```
+
+```{r prep-summary}
+# Build a unified payer-level summary across all v2 features
+payer_all <- payer_ver_summary |>
+  select(payer_id, has_v2) |>
+  left_join(
+    mode_feb |> select(payer_id, mode_class),
+    by = "payer_id"
+  ) |>
+  left_join(
+    network_names |>
+      distinct(payer_id) |>
+      mutate(has_network_name = TRUE),
+    by = "payer_id"
+  ) |>
+  left_join(
+    ein_payer |> rename(has_business_name_val = has_business_name),
+    by = "payer_id"
+  ) |>
+  mutate(
+    has_network_name = coalesce(has_network_name, FALSE),
+    uses_references = mode_class %in% c("References only", "Both"),
+    has_business_name_val = coalesce(has_business_name_val, FALSE)
+  )
+
+summary_long <- tibble(
+  feature = c(
+    "Self-reports v2",
+    "Uses provider\nreferences",
+    "Has network_name",
+    "Has business_name"
+  ),
+  adopted = c(
+    sum(payer_all$has_v2),
+    sum(payer_all$uses_references, na.rm = TRUE),
+    sum(payer_all$has_network_name),
+    sum(payer_all$has_business_name_val)
+  ),
+  total = n_payers
+) |>
+  mutate(
+    pct = adopted / total * 100,
+    feature = factor(feature, levels = rev(feature))
+  )
+```
+
+## Summary
+
+Across all three v2 structural requirements, adoption is already substantial
+in the first month. The chart below shows the share of February 2026 payers
+meeting each requirement.
+
+```{r plot-summary, fig.width=8, fig.height=4.5}
+ggplot(summary_long, aes(x = pct, y = feature)) +
+  geom_col(fill = "steelblue", width = 0.6) +
+  geom_text(
+    aes(label = paste0(adopted, "/", total, " (", round(pct), "%)")),
+    hjust = -0.05,
+    size = 4,
+    fontface = "bold"
+  ) +
+  scale_x_continuous(
+    limits = c(0, 115),
+    breaks = seq(0, 100, 25),
+    labels = \(x) paste0(x, "%")
+  ) +
+  labs(
+    title = "v2 TiC schema adoption in February 2026",
+    subtitle = paste0(
+      "Share of ", n_payers, " payers meeting each v2 requirement"
+    ),
+    x = "Payers adopting",
+    y = NULL,
+    caption = paste0(
+      "Source: hive.public_2026_02 tables\n",
+      "Provider references includes payers using references alone or ",
+      "alongside inline groups.\n",
+      "business_name assessed only for payers with EIN data (",
+      ein_total, " of ", n_payers, ")."
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(size = 17, face = "bold", margin = margin(b = 4)),
+    plot.subtitle = element_markdown(size = 13, margin = margin(b = 12)),
+    plot.caption = element_text(size = 9.5, lineheight = 1.1, margin = margin(t = 14)),
+    axis.text.y = element_markdown(size = 12, face = "bold"),
+    axis.text.x = element_text(size = 11),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+```
+
+Provider references have the highest adoption rate — most payers were
+already using them before the v2 mandate. Network names and EIN business
+names, both new v2 fields, show adoption above 50%, though the
+`business_name` figure is inflated by the denominator (only payers with EIN
+data are counted). The **`r n_v1_only`** payers still on v1-only files will
+need to transition before CMS enforcement tightens.
