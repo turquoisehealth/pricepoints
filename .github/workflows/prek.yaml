@@ -5,6 +5,9 @@ on:
 
 name: prek
 
+permissions:
+  contents: read
+
 jobs:
   prek:
     runs-on: ubuntu-latest
