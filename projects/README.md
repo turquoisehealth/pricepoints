@@ -13,6 +13,7 @@ project's data, methods, and references.
 | 2025-07-24 | The OBBB may disqualify hundreds of hospitals from the 340B program                | [./2025_06_il_340b](./2025_06_il_340b)               | [/obbb-340b](https://www.pricepoints.health/p/obbb-340b)         |
 | 2025-09-11 | Secretive vendors are exploiting a free money glitch in the U.S. healthcare system | [./2025_07_blues](./2025_07_blues)                   | [/blues](https://www.pricepoints.health/p/blues)                 |
 | 2025-11-03 | Rural hospitals are paid less than urban hospitals                                 | [./2025_05_rural_v_urban](./2025_05_rural_v_urban)   | [/rural-v-urban](https://www.pricepoints.health/p/rural-v-urban) |
+| 2026-02-17 | Property taxes going up? The 340B Program might be partly responsible              | [./2025_12_prop_tax](./2025_12_prop_tax)             | [/prop-tax](https://www.pricepoints.health/p/prop-tax)           |
 
 ## Using the project template
 
