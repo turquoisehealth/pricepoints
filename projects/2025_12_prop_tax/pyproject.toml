@@ -1,7 +1,7 @@
 [project]
 name = "2025_12_prop_tax"
 version = "0.0.1"
-description = "Property taxes after acquisition"
+description = "340B, consolidation, and property taxes"
 classifiers = [
   "Intended Audience :: Developers",
   "Intended Audience :: Science/Research",

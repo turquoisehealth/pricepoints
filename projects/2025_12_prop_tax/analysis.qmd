@@ -78,7 +78,7 @@ hospital_info_df <- read_parquet("data/output/hospital_info.parquet") |>
       "SSM Health" ~ "Tenet Healthcare → SSM Health",
       "Cedars-Sinai Health System" ~ "Westridge Capital → Cedars-Sinai",
       "Wellstar Health System" ~ "Tenet Healthcare → Wellstar Health System",
-      "Tower Health" ~ "Community Health Systems → Tower Healh",
+      "Tower Health" ~ "Community Health Systems → Tower Health",
       "Loyola Medicine (Trinity Health)" ~ "Tenet Healthcare → Loyola Medicine",
       "AdventHealth" ~ "Community Health Systems → AdventHealth",
       "Baptist Health (Arkansas)" ~ "Sparks Health System → Baptist Health",
@@ -102,6 +102,10 @@ hospital_info_df <- read_parquet("data/output/hospital_info.parquet") |>
         "Columbia Medical Center Downtown",
       "City of Hope Atlanta cancer hospital" ~ "City of Hope Atlanta",
       .default = hospital_name
+    ),
+    hospital_name_short = paste0(
+      hospital_name_short,
+      "<span style='font-family:mono'> (", hospital_state, ") </span>"
     )
   )
 
@@ -124,10 +128,14 @@ status_timeline_df <- hospital_info_df |>
       acquiring_nonprofit_short %in%
         c(
           "Tenet Healthcare → SSM Health",
-          "CTCA → City of Hope"
+          "CTCA → City of Hope",
+          "HCA → Singing River Health System",
+          "Tenet Healthcare → Wellstar Health System",
+          "Westridge Capital → Cedars-Sinai",
+          "Tenet Healthcare → Loyola Medicine"
         ),
       paste0(
-        "<span style='color:white'>□□□□□□□□□□</span>",
+        "<span style='color:white'>□□□□□□□□□□□□□□□□□□</span>",
         acquiring_nonprofit_short
       ),
       acquiring_nonprofit_short
@@ -313,7 +321,7 @@ status_timeline_df |>
     strip.placement = "outside",
     strip.text.y.left = element_markdown(
       angle = 0,
-      margin = margin(r = -154, t = -10),
+      margin = margin(r = -174, t = -10),
       face = "bold",
       size = 10,
       hjust = 1,
@@ -326,12 +334,7 @@ status_timeline_df |>
     plot.title = element_markdown(
       size = 19,
       face = "bold",
-      margin = margin(b = 4, l = -230)
-    ),
-    plot.subtitle = element_markdown(
-      size = 15,
-      margin = margin(b = 6, l = -220),
-      lineheight = 1.1
+      margin = margin(b = 4, l = -228)
     ),
     plot.caption = element_markdown(
       size = 11,
@@ -348,11 +351,13 @@ status_timeline_df |>
       margin = margin(t = 12),
       lineheight = 1.1
     ),
+    axis.title.y.left = element_text(margin = margin(l = -100)),
+    axis.text.y.left = element_markdown(),
     panel.grid.minor.x = element_blank(),
     legend.position = "top",
     legend.text = element_text(size = 12),
     legend.margin = margin(r = 12, t = 8, b = 8),
-    legend.box.margin = margin(t = 6, b = 12, l = -230),
+    legend.box.margin = margin(t = 6, b = 12, l = -236),
     legend.background = element_rect(color = "black"),
     legend.key.spacing.x = unit(0.7, "cm")
   )
@@ -909,7 +914,7 @@ cost_reports_df |>
   theme(
     strip.clip = "off",
     strip.placement = "outside",
-    strip.text.x.top = element_markdown(face = "bold", size = 11)
+    strip.text.x.top = element_markdown(face = "bold", size = 10.7)
   ) +
   theme(
     plot.title = element_markdown(
