@@ -13,12 +13,11 @@ QUERIES = [
     "payer_files_feb",
     "payer_files_dec",
     "network_names_feb",
-    "network_names_sample",
     "provider_mode_feb",
     "provider_mode_dec",
-    "file_sizes_feb",
-    "ein_names_feb",
     "ein_names_agg_feb",
+    "ein_fill_rate_feb",
+    "ein_names_sample_feb",
 ]
 
 
