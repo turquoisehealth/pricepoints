@@ -1,5 +1,5 @@
 ---
-title: "Early v2 TiC Schema Adoption"
+title: "Early TiC 2.0 schema adoption"
 subtitle: "By Dan Snow"
 format:
   html:
@@ -20,6 +20,7 @@ library(dplyr)
 library(forcats)
 library(ggplot2)
 library(ggtext)
+library(purrr)
 library(scales)
 library(stringr)
 library(tidyr)
@@ -27,35 +28,165 @@ library(tidyr)
 conflict_prefer_all("dplyr", quiet = TRUE)
 ```
 
-```{r load-data}
-payer_feb <- read_parquet("data/output/payer_files_feb.parquet")
-payer_dec <- read_parquet("data/output/payer_files_dec.parquet")
-network_names <- read_parquet("data/output/network_names_feb.parquet")
-provider_mode_feb <- read_parquet("data/output/provider_mode_feb.parquet")
-provider_mode_dec <- read_parquet("data/output/provider_mode_dec.parquet")
-ein_agg <- read_parquet("data/output/ein_names_agg_feb.parquet")
-ein_fill <- read_parquet("data/output/ein_fill_rate_feb.parquet")
-ein_sample <- read_parquet("data/output/ein_names_sample_feb.parquet")
+```{r load_data}
+DATA_DIR <- "data/output/"
+DATA_DATE <- "2026_02_18"
 
-# Build a payer name lookup from February data
-payer_names <- payer_feb |>
-  distinct(payer_id, reporting_entity_name) |>
+payer_feb <- read_parquet(paste0(
+  DATA_DIR,
+  DATA_DATE,
+  "_payer_files_feb.parquet"
+))
+payer_dec <- read_parquet(paste0(
+  DATA_DIR,
+  DATA_DATE,
+  "_payer_files_dec.parquet"
+))
+files_sizes_dec <- read_parquet(paste0(
+  DATA_DIR,
+  DATA_DATE,
+  "_file_sizes_dec.parquet"
+))
+files_sizes_feb <- read_parquet(paste0(
+  DATA_DIR,
+  DATA_DATE,
+  "_file_sizes_feb.parquet"
+))
+network_names <- read_parquet(paste0(
+  DATA_DIR,
+  DATA_DATE,
+  "_network_names_feb.parquet"
+))
+provider_mode_feb <- read_parquet(paste0(
+  DATA_DIR,
+  DATA_DATE,
+  "_provider_mode_feb.parquet"
+))
+provider_mode_dec <- read_parquet(paste0(
+  DATA_DIR,
+  DATA_DATE,
+  "_provider_mode_dec.parquet"
+))
+ein_agg <- read_parquet(paste0(
+  DATA_DIR,
+  DATA_DATE,
+  "_ein_names_agg_feb.parquet"
+))
+ein_fill <- read_parquet(paste0(
+  DATA_DIR,
+  DATA_DATE,
+  "_ein_fill_rate_feb.parquet"
+))
+ein_sample <- read_parquet(paste0(
+  DATA_DIR,
+  DATA_DATE,
+  "_ein_names_sample_feb.parquet"
+))
+payer_lives <- read_parquet(paste0(
+  DATA_DIR,
+  DATA_DATE,
+  "_payer_lives.parquet"
+))
+
+# Build a payer name lookup for non-Trino data (e.g. S3 file sizes)
+payer_names <- payer_dec |>
+  distinct(payer_id, payer_name) |>
   group_by(payer_id) |>
   slice_head(n = 1) |>
-  ungroup()
+  ungroup() |>
+  left_join(payer_lives, by = c("payer_id" = "tq_payer_payer_id"))
+
+temp <- payer_dec |>
+  summarize(n_dsn_dec = n(), .by = "payer_id") |>
+  left_join(
+    payer_feb |>
+      summarize(n_dsn_feb = n(), .by = "payer_id"),
+    by = "payer_id"
+  ) |>
+  left_join(payer_names, by = "payer_id") |>
+  relocate(payer_id, payer_name, payer_lives = lives) |>
+  left_join(
+    files_sizes_dec |>
+      group_by(payer_id) |>
+      summarise(
+        tot_size_dec = sum(total_size) / 1e9,
+        avg_size_dec = mean(total_size) / 1e9,
+        n_files_dec = sum(n_files),
+        .groups = "drop"
+      ),
+    by = "payer_id"
+  ) |>
+  left_join(
+    files_sizes_feb |>
+      group_by(payer_id) |>
+      summarise(
+        tot_size_feb = sum(total_size) / 1e9,
+        avg_size_feb = mean(total_size) / 1e9,
+        n_files_feb = sum(n_files),
+        .groups = "drop"
+      ),
+    by = "payer_id"
+  )
+  
+
+
 ```
 
+# Network name
+
+    Who is posting this?
+    Does the network name seem helpful, or is it just crappy plan names jammed together / not really market legible?
+    Are they posting multiple networks per file?
+    Did they post less files overall as a result?
+
+```{r network_names_setup}
+
+# Total percent of all payers
+# % adoption by top 10 payers
+# name sample
+# num networks per file by payer
+
+
+network_names_per_file <- payer_feb |>
+  select(payer_id, data_source_name) |>
+  left_join(network_names, by = c("payer_id", "data_source_name")) |>
+  group_by(payer_id, data_source_name) |>
+  summarize(
+    names = list(unique(str_trim(flatten_chr(network_names)))),
+    n_uniq = map_int(names, \(x) length(x))
+  )
+
+temp <- network_names_per_file |>
+  group_by(payer_name, payer_id, lives) |>
+  summarize(
+    file_count = n(),
+    pct_w_network_name = mean(n_uniq > 0),
+  ) |>
+  ungroup()
+  summarize(
+    cnt_payers_w_network_name = sum(pct_w_network_name > 0),
+    pct_payers_w_network_name = mean(pct_w_network_name > 0)
+  )
+
+
+```
+
+
+
+
+
+
 CMS updated the Transparency in Coverage (TiC) machine-readable file schema
-to version 2.0, effective February 2, 2026. The update introduced three
-structural changes:
+to version 2.0, effective February 2, 2026. The update includes several
+categories of changes. Three affect the provider data model directly:
 
 1. **`network_name` required** in provider references
-2. **Inline provider groups replaced** by mandatory provider references
+2. **Provider groups consolidated** into mandatory in-file provider references (eliminating both inline groups and external reference files)
 3. **`business_name` required** alongside EIN records
 
-The v2 schema also adds fields for `severity_of_illness`, `setting`, and
-`issuer_name` at the rate and index levels; this analysis focuses on the
-provider-level structural changes.
+The v2 schema also makes `setting` required on negotiated prices and
+`issuer_name` required in plan metadata; `severity_of_illness` is added as an
+optional field. This analysis focuses on the provider-level structural changes.
 
 We looked at early February 2026 data to measure how quickly payers are
 adopting these changes. This analysis uses raw machine-readable file data, not
@@ -71,6 +202,9 @@ March 13 release). A few caveats:
   v2 files as early as January.
 - **Version is self-reported.** A payer claiming v2 in the `version` field
   doesn't guarantee their files actually conform to the new schema.
+- **v2.x includes minor revisions.** The v2.0.0 schema was finalized October
+  1, 2025; v2.2.0 followed on February 2, 2026 with relaxed constraints for
+  allowed-amounts files. This analysis groups all v2.x versions together.
 
 ```{r prep-version}
 payer_ver <- payer_feb |>
@@ -150,18 +284,27 @@ ggplot(ver_payer_counts, aes(x = ver_class, y = n_payers)) +
   theme_minimal() +
   theme(
     plot.title = element_markdown(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 6, l = -36)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      lineheight = 1.1,
+      margin = margin(b = 12, l = -36)
+    ),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    ),
+    axis.text.x = element_markdown(size = 14, face = "bold"),
+    axis.text.y = element_markdown(size = 14),
+    axis.title.y = element_text(
       size = 16,
       face = "bold",
-      margin = margin(b = 4)
+      margin = margin(r = 10)
     ),
-    plot.subtitle = element_markdown(size = 13, margin = margin(b = 12)),
-    plot.caption = element_text(
-      size = 10,
-      lineheight = 1.1,
-      margin = margin(t = 12)
-    ),
-    axis.text.x = element_text(size = 12, face = "bold"),
-    axis.text.y = element_text(size = 11),
     panel.grid.major.x = element_blank(),
     panel.grid.minor = element_blank()
   )
@@ -233,8 +376,9 @@ transitioned_payers <- inline_dec_payers |>
 
 ## Provider references vs. inline groups
 
-The v2 schema eliminates inline provider groups in favor of provider
-references, a structural change that reduces file duplication and file size.
+The v2 schema eliminates both inline provider groups and external
+provider-reference files in favor of in-file provider references, a structural
+change that reduces file duplication and file size.
 Rather than comparing raw counts across periods (which differ in the number
 of payers ingested), we track individual payer transitions.
 
@@ -270,19 +414,26 @@ ggplot(
   theme_minimal() +
   theme(
     plot.title = element_markdown(
-      size = 16,
+      size = 18,
       face = "bold",
-      margin = margin(b = 4)
+      margin = margin(b = 6, l = -36)
     ),
-    plot.subtitle = element_markdown(size = 12, margin = margin(b = 12)),
-    plot.caption = element_text(
-      size = 9.5,
+    plot.subtitle = element_markdown(
+      size = 15,
       lineheight = 1.1,
-      margin = margin(t = 12)
+      margin = margin(b = 12, l = -36)
     ),
-    axis.text.x = element_text(size = 11, face = "bold"),
-    axis.text.y = element_text(size = 11, face = "bold"),
-    axis.title = element_text(size = 12),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    ),
+    axis.text.x = element_markdown(size = 14, face = "bold"),
+    axis.text.y = element_markdown(size = 14, face = "bold"),
+    axis.title = element_text(
+      size = 16,
+      face = "bold"
+    ),
     panel.grid = element_blank()
   )
 ```
@@ -298,7 +449,7 @@ if (nrow(transitioned_payers) > 0 && nrow(transitioned_payers) <= 20) {
     "Payers that transitioned away from inline-only: ",
     paste0(
       "**",
-      transitioned_payers$reporting_entity_name,
+      transitioned_payers$payer_name,
       "**",
       collapse = ", "
     ),
@@ -307,25 +458,152 @@ if (nrow(transitioned_payers) > 0 && nrow(transitioned_payers) <= 20) {
 }
 ```
 
-File size impact analysis will be possible once February curation completes
-(the `meta_row_count_by_payer_id` table is currently empty for February).
-Anecdotally, [Serif Health](https://www.serifhealth.com/) reports some files
-shrank ~90% after switching to provider references.
+```{r load-file-sizes}
+file_sizes_dec <- read_parquet(paste0(
+  "data/output/", DATA_DATE, "_file_sizes_dec.parquet"
+)) |>
+  group_by(payer_id) |>
+  summarise(
+    size_dec = sum(total_size),
+    n_files_dec = sum(n_files),
+    .groups = "drop"
+  )
+
+file_sizes_feb <- read_parquet(paste0(
+  "data/output/", DATA_DATE, "_file_sizes_feb.parquet"
+)) |>
+  group_by(payer_id) |>
+  summarise(
+    size_feb = sum(total_size),
+    n_files_feb = sum(n_files),
+    .groups = "drop"
+  )
+
+payer_sizes <- file_sizes_dec |>
+  inner_join(file_sizes_feb, by = "payer_id") |>
+  mutate(
+    pct_change = (size_feb - size_dec) / size_dec,
+    size_dec_gb = size_dec / 1e9,
+    size_feb_gb = size_feb / 1e9
+  ) |>
+  left_join(payer_names, by = "payer_id")
+
+n_payers_sized <- nrow(payer_sizes)
+n_shrank <- sum(payer_sizes$pct_change < -0.01)
+n_grew <- sum(payer_sizes$pct_change > 0.01)
+```
+
+### File size changes
+
+Moving provider information from inline groups to a separate
+`provider_references` block should reduce file sizes by eliminating
+duplication. We compare total raw file sizes per payer between December 2025
+and February 2026 using S3 object metadata (no file downloads needed).
+
+Of the **`r n_payers_sized`** payers present in both periods,
+**`r n_shrank`** saw their total file size decrease by more than 1%, while
+**`r n_grew`** saw an increase of more than 1%. The rest remained roughly
+unchanged.
+
+```{r plot-file-sizes, fig.width=8, fig.height=6}
+payer_sizes_top <- payer_sizes |>
+  mutate(abs_change = abs(size_feb - size_dec)) |>
+  slice_max(abs_change, n = 20) |>
+  mutate(
+    name_label = str_trunc(
+      coalesce(payer_name, payer_id),
+      35
+    ),
+    name_label = fct_reorder(name_label, pct_change)
+  )
+
+ggplot(payer_sizes_top, aes(x = pct_change, y = name_label)) +
+  geom_col(
+    aes(fill = pct_change < 0),
+    width = 0.7,
+    show.legend = FALSE
+  ) +
+  geom_text(
+    aes(
+      label = paste0(
+        ifelse(pct_change > 0, "+", ""),
+        round(pct_change * 100),
+        "%"
+      ),
+      hjust = ifelse(pct_change < 0, 1.15, -0.15)
+    ),
+    size = 3.5,
+    fontface = "bold"
+  ) +
+  scale_x_continuous(
+    labels = label_percent(),
+    expand = expansion(mult = c(0.15, 0.15))
+  ) +
+  scale_fill_manual(values = c("TRUE" = "steelblue", "FALSE" = "coral")) +
+  geom_vline(xintercept = 0, linewidth = 0.4, color = "grey30") +
+  labs(
+    title = "Raw file size change: December 2025 to February 2026",
+    subtitle = "Top 20 payers by absolute size change (payers in both periods)",
+    x = "% change in total file size",
+    y = NULL,
+    caption = paste0(
+      "Source: S3 object metadata for in-network-rates files\n",
+      "Covers ",
+      n_payers_sized,
+      " payers present in both Dec 2025 and Feb 2026."
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 6, l = -36)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      lineheight = 1.1,
+      margin = margin(b = 12, l = -36)
+    ),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    ),
+    axis.text.y = element_markdown(size = 12),
+    axis.text.x = element_markdown(size = 14),
+    axis.title.x = element_text(
+      size = 16,
+      face = "bold",
+      margin = margin(t = 10)
+    ),
+    axis.ticks.y = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+```
 
 ```{r prep-network-names}
-# With the rewritten query, network_names includes ALL payers (even those
-# with 0 distinct names)
+# The query returns network_names as an array column. Compute count and
+# unnest for downstream use.
+network_names <- network_names |>
+  mutate(n_distinct_names = lengths(network_names))
+
 nn_with_names <- network_names |>
   filter(n_distinct_names > 0)
 nn_payers_with <- n_distinct(nn_with_names$payer_id)
 total_feb_payers <- n_distinct(payer_feb$payer_id)
 
+# Unnest for per-name analysis
+nn_long <- nn_with_names |>
+  tidyr::unnest(network_names)
+
 # Quality: how many use generic "UNSPECIFIED_NETWORK"?
-nn_unspec <- nn_with_names |>
-  filter(str_detect(sample_network_name, "(?i)unspecified"))
-nn_real <- nn_with_names |>
-  filter(!str_detect(sample_network_name, "(?i)unspecified"))
-nn_real_payers <- n_distinct(nn_real$payer_id)
+nn_unspec_names <- nn_long |>
+  filter(str_detect(network_names, "(?i)unspecified"))
+nn_real_names <- nn_long |>
+  filter(!str_detect(network_names, "(?i)unspecified"))
+nn_real_payers <- n_distinct(nn_real_names$payer_id)
 
 # Multiple networks per file
 nn_multi <- network_names |> filter(n_distinct_names > 1)
@@ -337,7 +615,7 @@ nn_median <- median(network_names$n_distinct_names)
 
 ## Network names
 
-The v2 schema requires a `network_name` field in provider references,
+The v2 schema requires a `network_name` array in provider references,
 enabling consumers to identify which provider network applies to each rate.
 
 ### Who is posting?
@@ -355,15 +633,14 @@ placeholders like `UNSPECIFIED_NETWORK`. Excluding placeholders,
 **`r nn_real_payers`** payers provide meaningful network names.
 
 ```{r plot-network-names, fig.width=8, fig.height=5}
-nn_top <- nn_with_names |>
-  filter(!str_detect(sample_network_name, "(?i)unspecified")) |>
-  count(sample_network_name, name = "n_files", sort = TRUE) |>
+nn_top <- nn_real_names |>
+  count(network_names, name = "n_files", sort = TRUE) |>
   slice_head(n = 15) |>
   mutate(
-    sample_network_name = fct_reorder(sample_network_name, n_files)
+    network_names = fct_reorder(network_names, n_files)
   )
 
-ggplot(nn_top, aes(x = n_files, y = sample_network_name)) +
+ggplot(nn_top, aes(x = n_files, y = network_names)) +
   geom_col(fill = "steelblue", width = 0.7) +
   geom_text(
     aes(label = comma(n_files)),
@@ -381,24 +658,34 @@ ggplot(nn_top, aes(x = n_files, y = sample_network_name)) +
     y = NULL,
     caption = paste0(
       "Source: hive.public_2026_02.inr_provider_references\n",
-      "Shows one sampled network name per payer/file combination."
+      "Counts each distinct network name per payer/file combination."
     )
   ) +
   theme_minimal() +
   theme(
     plot.title = element_markdown(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 6, l = -36)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      lineheight = 1.1,
+      margin = margin(b = 12, l = -36)
+    ),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    ),
+    axis.text.y = element_markdown(size = 12),
+    axis.text.x = element_markdown(size = 14),
+    axis.title.x = element_text(
       size = 16,
       face = "bold",
-      margin = margin(b = 4)
+      margin = margin(t = 10)
     ),
-    plot.subtitle = element_markdown(size = 12, margin = margin(b = 12)),
-    plot.caption = element_text(
-      size = 9.5,
-      lineheight = 1.1,
-      margin = margin(t = 12)
-    ),
-    axis.text.y = element_text(size = 10),
-    axis.text.x = element_text(size = 10),
+    axis.ticks.y = element_blank(),
     panel.grid.major.y = element_blank(),
     panel.grid.minor = element_blank()
   )
@@ -449,18 +736,32 @@ ggplot(nn_hist_data, aes(x = name_bucket, y = n_files)) +
   theme_minimal() +
   theme(
     plot.title = element_markdown(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 8, l = -36)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      lineheight = 1.1,
+      margin = margin(b = 12, l = -36)
+    ),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    ),
+    axis.text.x = element_markdown(size = 14, face = "bold"),
+    axis.text.y = element_markdown(size = 14),
+    axis.title.x = element_text(
       size = 16,
       face = "bold",
-      margin = margin(b = 4)
+      margin = margin(t = 10)
     ),
-    plot.subtitle = element_markdown(size = 12, margin = margin(b = 12)),
-    plot.caption = element_text(
-      size = 9.5,
-      lineheight = 1.1,
-      margin = margin(t = 12)
+    axis.title.y = element_text(
+      size = 16,
+      face = "bold",
+      margin = margin(r = 10)
     ),
-    axis.text.x = element_text(size = 11, face = "bold"),
-    axis.text.y = element_text(size = 11),
     panel.grid.major.x = element_blank(),
     panel.grid.minor = element_blank()
   )
@@ -498,7 +799,7 @@ file_top <- file_compare |>
   mutate(
     period = if_else(period == "n_files_dec", "Dec 2025", "Feb 2026"),
     period = factor(period, levels = c("Dec 2025", "Feb 2026")),
-    name_label = str_trunc(reporting_entity_name, 35),
+    name_label = str_trunc(payer_name, 35),
     name_label = fct_reorder(name_label, n_files, .fun = max)
   )
 
@@ -527,20 +828,32 @@ ggplot(file_top, aes(x = n_files, y = name_label, fill = period)) +
   theme_minimal() +
   theme(
     plot.title = element_markdown(
-      size = 15,
+      size = 18,
       face = "bold",
-      margin = margin(b = 4)
+      margin = margin(b = 8, l = -36)
     ),
-    plot.subtitle = element_markdown(size = 11, margin = margin(b = 12)),
-    plot.caption = element_text(
-      size = 9.5,
+    plot.subtitle = element_markdown(
+      size = 15,
       lineheight = 1.1,
-      margin = margin(t = 12)
+      margin = margin(b = 12, l = -36)
     ),
-    axis.text.y = element_text(size = 9),
-    axis.text.x = element_text(size = 10),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    ),
+    axis.text.y = element_markdown(size = 12),
+    axis.text.x = element_markdown(size = 14),
+    axis.title.x = element_text(
+      size = 16,
+      face = "bold",
+      margin = margin(t = 10)
+    ),
+    axis.ticks.y = element_blank(),
     legend.position = "top",
-    legend.text = element_text(size = 11),
+    legend.text = element_text(size = 12),
+    legend.background = element_rect(color = "black"),
+    legend.key.spacing.x = unit(0.7, "cm"),
     panel.grid.major.y = element_blank(),
     panel.grid.minor = element_blank()
   )
@@ -571,7 +884,7 @@ ein_with <- sum(ein_payer$has_business_name)
 
 ## EIN business names
 
-The v2 schema requires a `business_name` alongside EIN records in the `tin`
+The v2 schema requires a `business_name` for EIN-type TINs in the `tin`
 struct, making it possible to identify providers by name rather than just tax
 ID number. Because `business_name` is a free-text field, the values will
 require standardization before they can be used systematically for provider
@@ -617,17 +930,32 @@ ggplot(ein_fill_payer, aes(x = fill_pct)) +
   theme_minimal() +
   theme(
     plot.title = element_markdown(
+      size = 18,
+      face = "bold",
+      margin = margin(b = 8, l = -36)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      lineheight = 1.1,
+      margin = margin(b = 12, l = -36)
+    ),
+    plot.caption = element_text(
+      size = 11,
+      lineheight = 1.1,
+      margin = margin(t = 16)
+    ),
+    axis.text.x = element_markdown(size = 14),
+    axis.text.y = element_markdown(size = 14),
+    axis.title.x = element_text(
       size = 16,
       face = "bold",
-      margin = margin(b = 4)
+      margin = margin(t = 10)
     ),
-    plot.subtitle = element_markdown(size = 12, margin = margin(b = 12)),
-    plot.caption = element_text(
-      size = 9.5,
-      lineheight = 1.1,
-      margin = margin(t = 12)
+    axis.title.y = element_text(
+      size = 16,
+      face = "bold",
+      margin = margin(r = 10)
     ),
-    axis.text = element_text(size = 11),
     panel.grid.minor = element_blank()
   )
 ```
@@ -639,9 +967,8 @@ with populated `business_name` values:
 
 ```{r table-ein-sample}
 ein_sample |>
-  left_join(payer_names, by = "payer_id") |>
   select(
-    Payer = reporting_entity_name,
+    Payer = payer_name,
     EIN = tin_value,
     `Business Name` = business_name
   ) |>
@@ -693,7 +1020,7 @@ summary_tbl <- tibble(
     "Self-reported; doesn't guarantee compliance",
     "Most already used references pre-v2",
     "Quality varies; some placeholders",
-    "Bimodal: all-or-nothing fill"
+    "Of payers with EIN data; bimodal fill"
   )
 ) |>
   mutate(
@@ -717,5 +1044,6 @@ names, both new v2 fields, show adoption above 50%, though the
 Looking ahead: the **`r n_v1_only`** payers still on v1-only files need to
 transition before CMS enforcement tightens. Network name quality needs
 improvement --- placeholder values like `UNSPECIFIED_NETWORK` don't help
-consumers identify provider networks. And file size impact analysis will
-be possible once February curation completes.
+consumers identify provider networks. And while early file size data shows
+some payers achieving significant reductions from the v2 provider reference
+structure, most payers' total sizes haven't changed meaningfully yet.

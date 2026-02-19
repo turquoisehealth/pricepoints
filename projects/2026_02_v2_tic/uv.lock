@@ -660,7 +660,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.3.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
-    { name = "setuptools", specifier = ">=75.0.0" },
+    { name = "setuptools", specifier = ">=78.1.1" },
     { name = "trino", specifier = ">=0.333.0" },
 ]
 provides-extras = ["dev"]

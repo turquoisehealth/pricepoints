@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 
 import polars as pl
@@ -5,6 +6,7 @@ import tq
 
 trino_conn = tq.get_trino_connection()
 
+DATE_STAMP = date.today().strftime("%Y_%m_%d")
 QUERY_DIR = Path("queries")
 OUTPUT_DIR = Path("data/output")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -13,6 +15,7 @@ QUERIES = [
     "payer_files_feb",
     "payer_files_dec",
     "network_names_feb",
+    "payer_lives",
     "provider_mode_feb",
     "provider_mode_dec",
     "ein_names_agg_feb",
@@ -25,7 +28,7 @@ QUERIES = [
 
 for name in QUERIES:
     sql_path = QUERY_DIR / f"{name}.sql"
-    out_path = OUTPUT_DIR / f"{name}.parquet"
+    out_path = OUTPUT_DIR / f"{DATE_STAMP}_{name}.parquet"
 
     print(f"Running {name}...")
     query = sql_path.read_text()

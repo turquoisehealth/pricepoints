@@ -1,7 +1,7 @@
 [project]
 name = "2026_02_v2_tic"
 version = "0.0.1"
-description = "V2 TIC schema"
+description = "Early TiC 2.0 schema adoption"
 classifiers = [
   "Intended Audience :: Developers",
   "Intended Audience :: Science/Research",
