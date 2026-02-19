@@ -1,8 +1,15 @@
+import logging
 from datetime import date
 from pathlib import Path
 
 import polars as pl
 import tq
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 trino_conn = tq.get_trino_connection()
 
@@ -12,15 +19,17 @@ OUTPUT_DIR = Path("data/output")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 QUERIES = [
-    "payer_files_feb",
-    "payer_files_dec",
-    "network_names_feb",
-    "payer_lives",
-    "provider_mode_feb",
-    "provider_mode_dec",
-    "ein_names_agg_feb",
     "ein_fill_rate_feb",
+    "ein_names_agg_feb",
     "ein_names_sample_feb",
+    "network_names_feb",
+    "parsing_status_dec",
+    "parsing_status_feb",
+    "payer_files_dec",
+    "payer_files_feb",
+    "payer_lives",
+    "provider_mode_dec",
+    "provider_mode_feb",
 ]
 
 
@@ -30,7 +39,7 @@ for name in QUERIES:
     sql_path = QUERY_DIR / f"{name}.sql"
     out_path = OUTPUT_DIR / f"{DATE_STAMP}_{name}.parquet"
 
-    print(f"Running {name}...")
+    logger.info("Running %s...", name)
     query = sql_path.read_text()
 
     # Strip trailing semicolons since pl.read_database doesn't want them
@@ -38,6 +47,8 @@ for name in QUERIES:
 
     df = pl.read_database(query, trino_conn)
     df.write_parquet(out_path)
-    print(f"  -> {out_path} ({df.shape[0]:,} rows, {df.shape[1]} cols)")
+    logger.info(
+        "  -> %s (%s rows, %d cols)", out_path, f"{df.shape[0]:,}", df.shape[1]
+    )
 
-print("\nDone.")
+logger.info("Done.")

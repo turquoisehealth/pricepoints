@@ -12,14 +12,14 @@ WITH modes AS (
         data_source_name,
         'reference' AS provider_mode
     FROM
-        tq_production.public_2025_12.inr_in_network_neg_rates_provider_references
+        tq_production.public_2025_12.inr_in_network_neg_rates_provider_references -- noqa: LT05
 )
 
 SELECT
-    m.payer_id,
+    mo.payer_id,
     sp.payer_name,
-    m.data_source_name,
-    m.provider_mode
-FROM modes AS m
+    mo.data_source_name,
+    mo.provider_mode
+FROM modes AS mo
 LEFT JOIN tq_production.spines.spines_payer AS sp
-    ON CAST(m.payer_id AS VARCHAR) = sp.payer_id;
+    ON CAST(mo.payer_id AS VARCHAR) = sp.payer_id;

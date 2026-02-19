@@ -18,6 +18,7 @@ library(arrow)
 library(conflicted)
 library(dplyr)
 library(forcats)
+library(fuzzyjoin)
 library(ggplot2)
 library(ggtext)
 library(purrr)
@@ -29,132 +30,175 @@ conflict_prefer_all("dplyr", quiet = TRUE)
 ```
 
 ```{r load_data}
-DATA_DIR <- "data/output/"
-DATA_DATE <- "2026_02_18"
+DATA_DIR <- "data/output"
 
-payer_feb <- read_parquet(paste0(
-  DATA_DIR,
-  DATA_DATE,
-  "_payer_files_feb.parquet"
-))
-payer_dec <- read_parquet(paste0(
-  DATA_DIR,
-  DATA_DATE,
-  "_payer_files_dec.parquet"
-))
-files_sizes_dec <- read_parquet(paste0(
-  DATA_DIR,
-  DATA_DATE,
-  "_file_sizes_dec.parquet"
-))
-files_sizes_feb <- read_parquet(paste0(
-  DATA_DIR,
-  DATA_DATE,
-  "_file_sizes_feb.parquet"
-))
-network_names <- read_parquet(paste0(
-  DATA_DIR,
-  DATA_DATE,
-  "_network_names_feb.parquet"
-))
-provider_mode_feb <- read_parquet(paste0(
-  DATA_DIR,
-  DATA_DATE,
-  "_provider_mode_feb.parquet"
-))
-provider_mode_dec <- read_parquet(paste0(
-  DATA_DIR,
-  DATA_DATE,
-  "_provider_mode_dec.parquet"
-))
-ein_agg <- read_parquet(paste0(
-  DATA_DIR,
-  DATA_DATE,
-  "_ein_names_agg_feb.parquet"
-))
-ein_fill <- read_parquet(paste0(
-  DATA_DIR,
-  DATA_DATE,
-  "_ein_fill_rate_feb.parquet"
-))
-ein_sample <- read_parquet(paste0(
-  DATA_DIR,
-  DATA_DATE,
-  "_ein_names_sample_feb.parquet"
-))
-payer_lives <- read_parquet(paste0(
-  DATA_DIR,
-  DATA_DATE,
-  "_payer_lives.parquet"
-))
+# Load each parquet file in data/output/, stripping the date prefix to
+# create the variable name (e.g. 2026_02_18_payer_files_feb.parquet
+# becomes payer_files_feb).
+for (path in list.files(DATA_DIR, pattern = "\\.parquet$", full.names = TRUE)) {
+  name <- sub("^\\d{4}_\\d{2}_\\d{2}_", "", tools::file_path_sans_ext(basename(path)))
+  assign(
+    name,
+    read_parquet(path) |>
+      mutate(across(any_of("payer_id"), \(x) as.character(x))) |>
+      mutate(across(
+        any_of("version"),
+        \(x) str_extract(version, "\\d+"),
+        .names = "{.col}_parsed"
+      ))
+  )
+}
 
-# Build a payer name lookup for non-Trino data (e.g. S3 file sizes)
-payer_names <- payer_dec |>
+# Build a payer name lookup table w/ covered lives
+payer_names <- payer_files_dec |>
   distinct(payer_id, payer_name) |>
   group_by(payer_id) |>
   slice_head(n = 1) |>
   ungroup() |>
-  left_join(payer_lives, by = c("payer_id" = "tq_payer_payer_id"))
+  left_join(payer_lives, by = c("payer_id" = "tq_payer_payer_id")) |>
+  select(payer_id, payer_name, payer_lives = lives)
 
-temp <- payer_dec |>
-  summarize(n_dsn_dec = n(), .by = "payer_id") |>
+# Attach S3-derived file sizes to the parsing status data
+parsing_status_dec_fil <- parsing_status_dec |>
+  filter(!is_skipped, is_parsed, is_in_trino, schema == "in-network-rates") |>
   left_join(
-    payer_feb |>
-      summarize(n_dsn_feb = n(), .by = "payer_id"),
-    by = "payer_id"
-  ) |>
-  left_join(payer_names, by = "payer_id") |>
-  relocate(payer_id, payer_name, payer_lives = lives) |>
-  left_join(
-    files_sizes_dec |>
-      group_by(payer_id) |>
-      summarise(
-        tot_size_dec = sum(total_size) / 1e9,
-        avg_size_dec = mean(total_size) / 1e9,
-        n_files_dec = sum(n_files),
-        .groups = "drop"
-      ),
-    by = "payer_id"
-  ) |>
-  left_join(
-    files_sizes_feb |>
-      group_by(payer_id) |>
-      summarise(
-        tot_size_feb = sum(total_size) / 1e9,
-        avg_size_feb = mean(total_size) / 1e9,
-        n_files_feb = sum(n_files),
-        .groups = "drop"
-      ),
-    by = "payer_id"
+    file_sizes_dec |>
+      rename(s3_total_size_bytes = total_size),
+    by = c("payer_id", "data_source_name")
   )
-  
+parsing_status_feb_fil <- parsing_status_feb |>
+  filter(!is_skipped, is_parsed, is_in_trino, schema == "in-network-rates") |>
+  left_join(
+    file_sizes_feb |>
+      rename(s3_total_size_bytes = total_size),
+    by = c("payer_id", "data_source_name")
+  )
 
-
-```
-
-# Network name
-
-    Who is posting this?
-    Does the network name seem helpful, or is it just crappy plan names jammed together / not really market legible?
-    Are they posting multiple networks per file?
-    Did they post less files overall as a result?
-
-```{r network_names_setup}
-
-# Total percent of all payers
-# % adoption by top 10 payers
-# name sample
-# num networks per file by payer
-
-
-network_names_per_file <- payer_feb |>
+# Grab the unique network names + count per data source/file
+network_names_per_file_feb <- payer_files_feb |>
+  inner_join(
+    parsing_status_feb_fil |>
+      select(payer_id, data_source_name),
+    by = c("payer_id", "data_source_name")
+  ) |>
   select(payer_id, data_source_name) |>
-  left_join(network_names, by = c("payer_id", "data_source_name")) |>
+  left_join(network_names_feb, by = c("payer_id", "data_source_name")) |>
   group_by(payer_id, data_source_name) |>
   summarize(
-    names = list(unique(str_trim(flatten_chr(network_names)))),
-    n_uniq = map_int(names, \(x) length(x))
+    network_name_lst_feb = list(unique(str_trim(flatten_chr(network_names)))),
+    network_name_n_uniq_feb = map_int(network_name_lst_feb, \(x) length(x))
   )
+
+# Join various payer datasets to make our main working table
+payer_df <- payer_files_dec |>
+  distinct(payer_id, data_source_name, version_parsed) |>
+  summarize(
+    n_dsn_dec = n(),
+    n_dsn_v1_dec = sum(version_parsed == 1),
+    n_dsn_v2_dec = sum(version_parsed == 2),
+    .by = "payer_id"
+  ) |>
+  left_join(
+    payer_files_feb |>
+      distinct(payer_id, data_source_name, version_parsed) |>
+      summarize(
+        n_dsn_feb = n(),
+        n_dsn_v1_feb = sum(version_parsed == 1),
+        n_dsn_v2_feb = sum(version_parsed == 2),
+        .by = "payer_id"
+      ),
+    by = "payer_id"
+  ) |>
+  left_join(
+    parsing_status_dec_fil |>
+      group_by(payer_id) |>
+      summarize(
+        num_files_dec = n(),
+        tot_file_bytes_dec = sum(raw_file_size_bytes, na.rm = TRUE),
+        avg_file_bytes_dec = mean(raw_file_size_bytes, na.rm = TRUE),
+        tot_file_bytes_s3_dec = sum(s3_total_size_bytes, na.rm = TRUE),
+        avg_file_bytes_s3_dec = mean(s3_total_size_bytes, na.rm = TRUE)
+      ),
+    by = "payer_id"
+  ) |>
+  left_join(
+    parsing_status_feb_fil |>
+      group_by(payer_id) |>
+      summarize(
+        num_files_feb = n(),
+        tot_file_bytes_feb = sum(raw_file_size_bytes, na.rm = TRUE),
+        avg_file_bytes_feb = mean(raw_file_size_bytes, na.rm = TRUE),
+        tot_file_bytes_s3_feb = sum(s3_total_size_bytes, na.rm = TRUE),
+        avg_file_bytes_s3_feb = mean(s3_total_size_bytes, na.rm = TRUE)
+      ),
+    by = "payer_id"
+  ) |>
+  mutate(
+    diff_files = num_files_feb - num_files_dec,
+    diff_bytes = tot_file_bytes_feb - tot_file_bytes_dec,
+    across(
+      contains("bytes"),
+      \(x) case_when(
+        abs(x) >= 1099511627776 ~ paste(round(x / 1099511627776.0, 2), "TB"),
+        abs(x) >= 1073741824 ~ paste(round(x / 1073741824.0, 2), "GB"),
+        abs(x) >= 1048576 ~ paste(round(x / 1048576.0, 2), "MB"),
+        abs(x) >= 1024 ~ paste(round(x / 1024.0, 2), "KB")
+      ),
+      .names = "{.col}_parsed"
+    )
+  ) |>
+  left_join(payer_names, by = "payer_id") |>
+  relocate(payer_id, payer_name, payer_lives) |>
+  left_join(
+    network_names_per_file_feb |>
+      group_by(payer_id) |>
+      summarize(
+        pct_file_w_network_name = mean(network_name_n_uniq_feb > 0, na.rm = TRUE),
+        uniq_network_name_lst = list(unique(flatten_chr(network_name_lst_feb))),
+        uniq_network_name_cnt = map_int(uniq_network_name_lst, length)
+      ),
+    by = c("payer_id")
+  ) |>
+  left_join(
+    provider_mode_dec |>
+      group_by(payer_id) |>
+      summarize(
+        num_dsn_pg_inline_dec = sum(provider_mode == "inline"),
+        num_dsn_pg_reference_dec = sum(provider_mode == "reference")
+      ),
+    by = "payer_id"
+  )
+```
+
+```{r}
+temp <- provider_mode_dec |>
+  filter(provider_mode == "inline") |>
+  select(payer_id, dsn_dec = data_source_name) |>
+  left_join(
+    parsing_status_dec |>
+      select(payer_id, data_source_name, bytes_dec = raw_file_size_bytes),
+    by = c("payer_id", "dsn_dec" = "data_source_name")
+  ) |>
+  mutate(
+  ) |>
+  left_join(
+    provider_mode_feb |>
+      filter(provider_mode == "reference") |>
+      select(payer_id, dsn_feb = data_source_name) |>
+      left_join(
+        parsing_status_feb |>
+          select(payer_id, data_source_name, bytes_feb = raw_file_size_bytes),
+        by = c("payer_id", "dsn_feb" = "data_source_name")
+      ) |>
+      mutate(
+      ),
+    by = c("payer_id", "dsn_dec" = "dsn_feb")
+  )
+
+
+temp2 <- temp |>
+  group_by(data_source_name_dec) |>
+  filter(dsn_dist == min(dsn_dist))
 
 temp <- network_names_per_file |>
   group_by(payer_name, payer_id, lives) |>
@@ -167,13 +211,41 @@ temp <- network_names_per_file |>
     cnt_payers_w_network_name = sum(pct_w_network_name > 0),
     pct_payers_w_network_name = mean(pct_w_network_name > 0)
   )
-
-
 ```
 
+```{r network_names_plot_pct_payer}
 
+# % adoption by top 10 payers
+# num networks per file by payer
+# name sample
 
-
+payer_df |>
+  summarize(
+    n_payers = n(),
+    n_payers_w_nn = sum(uniq_network_name_cnt > 0, na.rm = TRUE),
+    pct_payers_w_nn = n_payers_w_nn / n_payers,
+    tot_lives = sum(payer_lives, na.rm = TRUE),
+    tot_lives_w_nn = sum(payer_lives * (uniq_network_name_cnt > 0), na.rm = TRUE),
+    pct_tot_lives_w_nn = tot_lives_w_nn / tot_lives
+  ) |>
+ggplot() +
+  geom_col(
+    aes(x = "Percent of payers", y = 1),
+    fill = "grey50"
+  ) +
+  geom_col(
+    aes(x = "Percent of payers", y = pct_payers_w_nn),
+    fill = "lightblue"
+  ) +
+  geom_col(
+    aes(x = "Percent of lives", y = 1),
+    fill = "grey50"
+  ) +
+  geom_col(
+    aes(x = "Percent of lives", y = pct_tot_lives_w_nn),
+    fill = "lightblue"
+  )
+```
 
 
 CMS updated the Transparency in Coverage (TiC) machine-readable file schema
@@ -194,8 +266,8 @@ TQ's compressed schema (which incorporates the new v2 fields starting with the
 March 13 release). A few caveats:
 
 - **February ingestion is still in progress.** Our February data covers
-  `r n_distinct(payer_feb$payer_id)` payers compared to
-  `r n_distinct(payer_dec$payer_id)` in December 2025. Some payers haven't
+  `r n_distinct(payer_files_feb$payer_id)` payers compared to
+  `r n_distinct(payer_files_dec$payer_id)` in December 2025. Some payers haven't
   been ingested yet, so adoption rates will shift.
 - **The v2 effective date is February 2, not February 1.** Payers that posted
   files dated 2/1/2026 using v1 are technically compliant. Some payers posted
@@ -207,7 +279,7 @@ March 13 release). A few caveats:
   allowed-amounts files. This analysis groups all v2.x versions together.
 
 ```{r prep-version}
-payer_ver <- payer_feb |>
+payer_ver <- payer_files_feb |>
   mutate(
     version_major = case_when(
       str_starts(version, "2") | str_starts(str_to_lower(version), "v2") ~ "v2",
@@ -592,7 +664,7 @@ network_names <- network_names |>
 nn_with_names <- network_names |>
   filter(n_distinct_names > 0)
 nn_payers_with <- n_distinct(nn_with_names$payer_id)
-total_feb_payers <- n_distinct(payer_feb$payer_id)
+total_feb_payers <- n_distinct(payer_files_feb$payer_id)
 
 # Unnest for per-name analysis
 nn_long <- nn_with_names |>
@@ -775,9 +847,9 @@ publishing separate files per network. We compare per-payer file counts
 between December 2025 and February 2026 for payers present in both periods.
 
 ```{r plot-file-counts, fig.width=8, fig.height=6}
-file_counts_dec <- payer_dec |>
+file_counts_dec <- payer_files_dec |>
   count(payer_id, name = "n_files_dec")
-file_counts_feb <- payer_feb |>
+file_counts_feb <- payer_files_feb |>
   count(payer_id, name = "n_files_feb")
 
 file_compare <- file_counts_dec |>
