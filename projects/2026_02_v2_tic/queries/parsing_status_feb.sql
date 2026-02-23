@@ -1,6 +1,8 @@
 -- Taken from payer DSN status DAG
 SELECT
     mrf.data_source_name,
+    mrf.state,
+    mrf.is_broken,
     COALESCE(meta.is_parsed, FALSE) AS is_parsed,
     COALESCE(mrf.is_duplicate, FALSE) AS is_skipped,
     CASE
@@ -58,6 +60,8 @@ WHERE mrf.version = '2026-02'
     AND mrf.payer_id <> 510
 GROUP BY
     mrf.data_source_name,
+    mrf.state,
+    mrf.is_broken,
     meta.is_parsed,
     mrf.is_duplicate,
     mrf.duplicate_reason,
@@ -70,6 +74,5 @@ GROUP BY
     meta.started_at,
     meta.finished_at,
     meta.duration_hr,
-    meta.file_size_orc_hr,
-    meta.file_size_orc,
+    meta.file_size_raw,
     mrf.version

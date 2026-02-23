@@ -20,7 +20,6 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 QUERIES = [
     "ein_fill_rate_feb",
-    "ein_names_agg_feb",
     "ein_names_sample_feb",
     "network_names_feb",
     "parsing_status_dec",

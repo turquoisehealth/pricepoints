@@ -9,6 +9,4 @@ LEFT JOIN tq_production.spines.spines_payer AS sp
     ON CAST(pg.payer_id AS VARCHAR) = sp.payer_id
 WHERE tin.type = 'ein'  -- noqa: RF01
     AND tin.business_name IS NOT NULL  -- noqa: RF01
-    AND tin.business_name != ''  -- noqa: RF01
-ORDER BY 1
-LIMIT 500;
+    AND tin.business_name != '';  -- noqa: RF01
