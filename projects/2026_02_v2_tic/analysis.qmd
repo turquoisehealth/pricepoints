@@ -35,7 +35,11 @@ DATA_DIR <- "data/output"
 # create the variable name (e.g. 2026_02_18_payer_files_feb.parquet
 # becomes payer_files_feb).
 for (path in list.files(DATA_DIR, pattern = "\\.parquet$", full.names = TRUE)) {
-  name <- sub("^\\d{4}_\\d{2}_\\d{2}_", "", tools::file_path_sans_ext(basename(path)))
+  name <- sub(
+    "^\\d{4}_\\d{2}_\\d{2}_",
+    "",
+    tools::file_path_sans_ext(basename(path))
+  )
   assign(
     name,
     read_parquet(path) |>
@@ -63,7 +67,9 @@ network_names_per_file_feb <- payer_files_feb |>
   left_join(network_names_feb, by = c("payer_id", "data_source_name")) |>
   group_by(payer_id, data_source_name) |>
   summarize(
-    nn_unique_names_lst_feb = list(unique(str_trim(flatten_chr(network_names)))),
+    nn_unique_names_lst_feb = list(unique(str_trim(flatten_chr(
+      network_names
+    )))),
     nn_unique_names_cnt_feb = map_int(nn_unique_names_lst_feb, \(x) length(x))
   )
 
@@ -103,13 +109,23 @@ payer_df <- payer_files_dec |>
   # Attach expected number of files for each month
   left_join(
     parsing_status_dec |>
-      filter(!is_skipped, !is_broken, !has_error, schema == "in-network-rates") |>
+      filter(
+        !is_skipped,
+        !is_broken,
+        !has_error,
+        schema == "in-network-rates"
+      ) |>
       summarize(num_files_expected_dec = n(), .by = "payer_id"),
     by = "payer_id"
   ) |>
   left_join(
     parsing_status_feb |>
-      filter(!is_skipped, !is_broken, !has_error, schema == "in-network-rates") |>
+      filter(
+        !is_skipped,
+        !is_broken,
+        !has_error,
+        schema == "in-network-rates"
+      ) |>
       summarize(num_files_expected_feb = n(), .by = "payer_id"),
     by = "payer_id"
   ) |>
@@ -145,12 +161,14 @@ payer_df <- payer_files_dec |>
     diff_bytes = tot_file_bytes_feb - tot_file_bytes_dec,
     across(
       contains("bytes"),
-      \(x) case_when(
+      \(x) {
+        case_when(
         abs(x) >= 1099511627776 ~ paste(round(x / 1099511627776.0, 2), "TB"),
         abs(x) >= 1073741824 ~ paste(round(x / 1073741824.0, 2), "GB"),
         abs(x) >= 1048576 ~ paste(round(x / 1048576.0, 2), "MB"),
         abs(x) >= 1024 ~ paste(round(x / 1024.0, 2), "KB")
-      ),
+      )
+      },
       .names = "{.col}_parsed"
     )
   ) |>
@@ -161,8 +179,13 @@ payer_df <- payer_files_dec |>
     network_names_per_file_feb |>
       group_by(payer_id) |>
       summarize(
-        pct_file_w_network_name = mean(nn_unique_names_cnt_feb > 0, na.rm = TRUE),
-        nn_unique_names_lst_feb = list(unique(flatten_chr(nn_unique_names_lst_feb))),
+        pct_file_w_network_name = mean(
+          nn_unique_names_cnt_feb > 0,
+          na.rm = TRUE
+        ),
+        nn_unique_names_lst_feb = list(unique(flatten_chr(
+          nn_unique_names_lst_feb
+        ))),
         nn_unique_names_cnt_feb = map_int(nn_unique_names_lst_feb, length)
       ),
     by = "payer_id"
@@ -186,7 +209,6 @@ payer_df <- payer_files_dec |>
       summarize(
         num_dsn_pg_inline_feb = sum(provider_mode == "inline"),
         num_dsn_pg_ref_int_feb = sum(provider_mode == "reference")
-          
       ),
     by = "payer_id"
   ) |>
@@ -213,10 +235,10 @@ payer_df |>
   ) |>
   summarize(
     v1_dec = sum(n_dsn_v1_dec > 0 & n_dsn_v2_dec == 0, na.rm = TRUE),
-    v2_dec = sum(n_dsn_v2_dec > 0 & n_dsn_v1_dec == 0 , na.rm = TRUE),
+    v2_dec = sum(n_dsn_v2_dec > 0 & n_dsn_v1_dec == 0, na.rm = TRUE),
     v1_v2_dec = sum(n_dsn_v1_dec != 0 & n_dsn_v2_dec != 0, na.rm = TRUE),
     v1_feb = sum(n_dsn_v1_feb > 0 & n_dsn_v2_feb == 0, na.rm = TRUE),
-    v2_feb = sum(n_dsn_v2_feb > 0 & n_dsn_v1_feb == 0 , na.rm = TRUE),
+    v2_feb = sum(n_dsn_v2_feb > 0 & n_dsn_v1_feb == 0, na.rm = TRUE),
     v1_v2_feb = sum(n_dsn_v1_feb != 0 & n_dsn_v2_feb != 0, na.rm = TRUE),
     across(starts_with("v"), \(x) x / 192, .names = "pct_{.col}")
   ) |>
@@ -253,17 +275,21 @@ payer_df |>
     version = factor(
       version,
       levels = c(
-        "All V1<br>files", "Mixed<br>(V1 & V2)",
-        "All V2<br>files", "Missing all<br>Feb. files"
+        "All V1<br>files",
+        "Mixed<br>(V1 & V2)",
+        "All V2<br>files",
+        "Missing all<br>Feb. files"
       )
     ),
     label = paste0(
-      cnt, "<br>",
+      cnt,
+      "<br>",
       "<span style='font-size:12px;color:grey30'>(",
-      label_percent()(pct), ")</span>"
+      label_percent()(pct),
+      ")</span>"
     )
   ) |>
-ggplot() +
+  ggplot() +
   geom_col(
     aes(y = cnt, x = version, fill = version)
   ) +
@@ -365,19 +391,27 @@ payer_df |>
     ),
     n_dsn_v1_feb = replace_values(n_dsn_v1_feb, NA ~ n_dsn_feb),
     n_dsn_v2_feb = replace_values(n_dsn_v2_feb, NA ~ 0),
-    num_files_expected_dec = pmax(replace_values(
-      num_files_expected_dec, NA ~ n_dsn_dec
-    ), n_dsn_dec),
+    num_files_expected_dec = pmax(
+      replace_values(
+        num_files_expected_dec,
+        NA ~ n_dsn_dec
+      ),
+      n_dsn_dec
+    ),
     num_files_expected_feb = replace_values(
-      num_files_expected_feb, NA ~ num_files_expected_dec
+      num_files_expected_feb,
+      NA ~ num_files_expected_dec
     ),
     n_dsn_missing_dec = num_files_expected_dec - n_dsn_dec,
     n_dsn_missing_feb = num_files_expected_feb - n_dsn_feb
   ) |>
   slice_max(order_by = payer_lives, n = 40) |>
   select(
-    payer_id, payer_name, payer_lives,
-    starts_with("n_dsn_v"), starts_with("n_dsn_m"),
+    payer_id,
+    payer_name,
+    payer_lives,
+    starts_with("n_dsn_v"),
+    starts_with("n_dsn_m"),
     starts_with("num_files_exp")
   ) |>
   pivot_longer(
@@ -388,11 +422,12 @@ payer_df |>
   ) |>
   mutate(
     payer_name = fct_reorder(payer_name, payer_lives),
-    pct = count / ifelse(
-      month == "dec",
-      num_files_expected_dec,
-      num_files_expected_feb
-    ),
+    pct = count /
+      ifelse(
+        month == "dec",
+        num_files_expected_dec,
+        num_files_expected_feb
+      ),
     version = fct_rev(factor(
       recode_values(
         version,
@@ -526,25 +561,27 @@ payer_df |>
     ),
     ref_type_fct = fct_relabel(
       ref_type,
-      \(x) recode_values(
-        x,
-        "inline" ~ paste0(
-          "**Inline<br>references**<br>",
-          "<span style='font-size:13px'>(allowed in 1.0)</span>"
-        ),
-        "ref_ext" ~ paste0(
-          "**External<br>references**<br>",
-          "<span style='font-size:13px'>(allowed in 1.0)</span>"
-        ),
-        "ref_int" ~ paste0(
-          "**Internal<br>references**<br>",
-          "<span style='font-size:13px'>(required in 2.0)</span>"
+      \(x) {
+        recode_values(
+          x,
+          "inline" ~ paste0(
+            "**Inline<br>references**<br>",
+            "<span style='font-size:13px'>(allowed in 1.0)</span>"
+          ),
+          "ref_ext" ~ paste0(
+            "**External<br>references**<br>",
+            "<span style='font-size:13px'>(allowed in 1.0)</span>"
+          ),
+          "ref_int" ~ paste0(
+            "**Internal<br>references**<br>",
+            "<span style='font-size:13px'>(required in 2.0)</span>"
+          )
         )
-      )
+      }
     ),
     label = label_percent()(pct)
   ) |>
-ggplot() +
+  ggplot() +
   geom_col(
     aes(y = pct, x = ref_type_fct, fill = ref_type)
   ) +
@@ -636,8 +673,14 @@ ggplot() +
 
 payer_df |>
   mutate(
-    n_dsn_pg_all_dec = rowSums(pick(matches("num_dsn_pg_.*_dec")), na.rm = TRUE),
-    n_dsn_pg_all_feb = rowSums(pick(matches("num_dsn_pg_.*_feb")), na.rm = TRUE),
+    n_dsn_pg_all_dec = rowSums(
+      pick(matches("num_dsn_pg_.*_dec")),
+      na.rm = TRUE
+    ),
+    n_dsn_pg_all_feb = rowSums(
+      pick(matches("num_dsn_pg_.*_feb")),
+      na.rm = TRUE
+    ),
     across(
       starts_with("num_dsn_pg") & ends_with("dec"),
       \(x) x / n_dsn_pg_all_dec
@@ -650,8 +693,11 @@ payer_df |>
   ) |>
   slice_max(order_by = ref_int_diff, n = 36) |>
   select(
-    payer_id, payer_name, payer_lives,
-    starts_with("num_dsn_pg"), ref_int_diff
+    payer_id,
+    payer_name,
+    payer_lives,
+    starts_with("num_dsn_pg"),
+    ref_int_diff
   ) |>
   pivot_longer(
     cols = starts_with("num_dsn_pg"),
@@ -670,12 +716,14 @@ payer_df |>
     ),
     ref_type = fct_relabel(
       ref_type,
-      \(x) recode_values(
-        x,
-        "inline" ~ "Inline references",
-        "ref_ext" ~ "External references",
-        "ref_int" ~ "Internal references"
-      )
+      \(x) {
+        recode_values(
+          x,
+          "inline" ~ "Inline references",
+          "ref_ext" ~ "External references",
+          "ref_int" ~ "Internal references"
+        )
+      }
     ),
     month = recode_values(
       month,
@@ -684,8 +732,12 @@ payer_df |>
     )
   ) |>
   mutate(
-    inline_rank = pct[ref_type == "Inline references" & month == "December 2025"],
-    external_rank = pct[ref_type == "External references" & month == "December 2025"],
+    inline_rank = pct[
+      ref_type == "Inline references" & month == "December 2025"
+    ],
+    external_rank = pct[
+      ref_type == "External references" & month == "December 2025"
+    ],
     .by = "payer_id"
   ) |>
   arrange(inline_rank, desc(external_rank)) |>
@@ -860,10 +912,13 @@ payer_df |>
     n_payers_w_nn = sum(uniq_network_name_cnt > 0, na.rm = TRUE),
     pct_payers_w_nn = n_payers_w_nn / n_payers,
     tot_lives = sum(payer_lives, na.rm = TRUE),
-    tot_lives_w_nn = sum(payer_lives * (uniq_network_name_cnt > 0), na.rm = TRUE),
+    tot_lives_w_nn = sum(
+      payer_lives * (uniq_network_name_cnt > 0),
+      na.rm = TRUE
+    ),
     pct_tot_lives_w_nn = tot_lives_w_nn / tot_lives
   ) |>
-ggplot() +
+  ggplot() +
   geom_col(
     aes(x = "Percent of payers", y = 1),
     fill = "grey50"
@@ -898,8 +953,7 @@ temp <- provider_mode_dec |>
       select(payer_id, data_source_name, bytes_dec = raw_file_size_bytes),
     by = c("payer_id", "dsn_dec" = "data_source_name")
   ) |>
-  mutate(
-  ) |>
+  mutate() |>
   left_join(
     provider_mode_feb |>
       filter(provider_mode == "reference") |>
@@ -909,8 +963,7 @@ temp <- provider_mode_dec |>
           select(payer_id, data_source_name, bytes_feb = raw_file_size_bytes),
         by = c("payer_id", "dsn_feb" = "data_source_name")
       ) |>
-      mutate(
-      ),
+      mutate(),
     by = c("payer_id", "dsn_dec" = "dsn_feb")
   )
 
@@ -926,10 +979,10 @@ temp <- network_names_per_file |>
     pct_w_network_name = mean(n_uniq > 0),
   ) |>
   ungroup()
-  summarize(
-    cnt_payers_w_network_name = sum(pct_w_network_name > 0),
-    pct_payers_w_network_name = mean(pct_w_network_name > 0)
-  )
+summarize(
+  cnt_payers_w_network_name = sum(pct_w_network_name > 0),
+  pct_payers_w_network_name = mean(pct_w_network_name > 0)
+)
 ```
 
 CMS updated the Transparency in Coverage (TiC) machine-readable file schema
@@ -1216,7 +1269,9 @@ if (nrow(transitioned_payers) > 0 && nrow(transitioned_payers) <= 20) {
 
 ```{r load-file-sizes}
 file_sizes_dec <- read_parquet(paste0(
-  "data/output/", DATA_DATE, "_file_sizes_dec.parquet"
+  "data/output/",
+  DATA_DATE,
+  "_file_sizes_dec.parquet"
 )) |>
   group_by(payer_id) |>
   summarise(
@@ -1226,7 +1281,9 @@ file_sizes_dec <- read_parquet(paste0(
   )
 
 file_sizes_feb <- read_parquet(paste0(
-  "data/output/", DATA_DATE, "_file_sizes_feb.parquet"
+  "data/output/",
+  DATA_DATE,
+  "_file_sizes_feb.parquet"
 )) |>
   group_by(payer_id) |>
   summarise(
