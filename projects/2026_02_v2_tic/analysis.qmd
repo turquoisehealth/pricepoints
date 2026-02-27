@@ -730,7 +730,8 @@ payer_df |>
   labs(
     title = paste0(
       "Provider reference schema adoption as of ",
-      format_date_ordinal(DATA_DATE), "*"
+      format_date_ordinal(DATA_DATE),
+      "*"
     ),
     subtitle = paste0(
       "Most payers were already using the internal ",
@@ -756,13 +757,13 @@ payer_df |>
     ),
     plot.subtitle = element_markdown(
       size = 15,
-      margin = margin(b = 10, l = -30),
+      margin = margin(b = 12, l = -30),
       lineheight = 1.1
     ),
     plot.caption = element_markdown(
       size = 9,
       lineheight = 1.1,
-      margin = margin(t = 6)
+      margin = margin(t = 12)
     ),
     axis.title.x = element_markdown(
       margin = margin(t = 10),
@@ -1613,7 +1614,7 @@ payer_df |>
     ),
     plot.subtitle = element_markdown(
       size = 16,
-      margin = margin(b = 16, l = -190),
+      margin = margin(b = 12, l = -190),
       lineheight = 1.1
     ),
     plot.caption = element_markdown(
