@@ -32,10 +32,7 @@
   "permissions": {
     "allow": [
       "Skill(trino)",
-      "Read(//tmp/*.sql)",
-      "Edit(//tmp/*.sql)",
-      "Write(//tmp/*.sql)",
-      "Read(//**)"
+      "Read(/**)"
     ]
   }
 }

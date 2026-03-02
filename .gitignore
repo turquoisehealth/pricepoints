@@ -32,6 +32,7 @@ htmlcov/
 plan
 venv/
 *_cache/
+**/queries/tmp*
 
 # Created by Quarto on preview
 *_files/
