@@ -29,6 +29,8 @@ QUERIES = [
     "payer_lives",
     "provider_mode_dec",
     "provider_mode_feb",
+    "rate_count_dec",
+    "rate_count_feb",
 ]
 
 
