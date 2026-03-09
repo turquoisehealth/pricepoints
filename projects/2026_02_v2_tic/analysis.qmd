@@ -17,6 +17,7 @@ execute:
 library(arrow)
 library(conflicted)
 library(dplyr)
+library(entropy)
 library(forcats)
 library(ggplot2)
 library(ggrepel)
@@ -69,11 +70,18 @@ label_comma_short <- function(x) {
     USE.NAMES = FALSE
   )
 }
+
+# Shannon entropy for string complexity
+calculate_entropy <- function(s) {
+  freqs <- table(strsplit(s, "")[[1]]) / nchar(s)
+  entropy_value <- -sum(freqs * log2(freqs))
+  return(entropy_value)
+}
 ```
 
 ```{r load_data}
 DATA_DIR <- "data/output"
-DATA_DATE <- as.Date("2026-03-03")
+DATA_DATE <- as.Date("2026-03-09")
 
 # Load each parquet file in data/output/, stripping the date prefix to
 # create the dataframe name (e.g. 2026_02_18_payer_files_feb.parquet
@@ -614,7 +622,7 @@ payer_df |>
       "file changes"
     ),
     y = "",
-    x = "Percent of payer files by type"
+    x = "Percent of payer files"
   ) +
   theme_minimal() +
   theme(
@@ -783,7 +791,7 @@ payer_df |>
       "files are added"
     ),
     x = "",
-    y = "Percent of posted payer files by type"
+    y = "Percent of posted payer files"
   ) +
   facet_wrap(vars(month), strip.position = "bottom", scales = "free_x") +
   guides(fill = "none") +
@@ -949,7 +957,7 @@ payer_df |>
       "plot order is by percent adoption of internal provider groups"
     ),
     y = "",
-    x = "Percent of payer files by type"
+    x = "Percent of payer files"
   ) +
   theme_minimal() +
   theme(
@@ -1156,7 +1164,7 @@ payer_df |>
       "files are added"
     ),
     y = "",
-    x = "Percent of posted payer files by type*"
+    x = "Percent of posted payer files*"
   ) +
   theme_minimal() +
   theme(
@@ -1420,11 +1428,11 @@ network_names_per_file_feb |>
   group_by(word = nn_unique_names_lst_feb, payer_id) |>
   summarize(freq = n()) |>
   ungroup() |>
+  mutate(entropy = map_dbl(word, calculate_entropy)) |>
   left_join(payer_names, by = "payer_id") |>
-  arrange(freq, payer_id) |>
   filter(!is.na(payer_name)) |>
-  filter(row_number() <= 1, .by = c("freq", "payer_id")) |>
-  slice_head(n = 50) |>
+  slice_min(entropy, n = 500, with_ties = FALSE) |>
+  distinct(payer_id, .keep_all = TRUE) |>
   mutate(
     payer_name = str_trunc(payer_name, 40),
     word = str_trunc(word, 45)
@@ -1432,7 +1440,7 @@ network_names_per_file_feb |>
   select(
     `Payer` = payer_name,
     `Network name` = word,
-    `Appears in N files` = freq
+    `Network name entropy` = entropy
   ) |>
   gt() |>
   tab_header(
@@ -1441,8 +1449,8 @@ network_names_per_file_feb |>
     ),
     subtitle = md(
       paste0(
-        "Below are the bottom 50 `network_name` values by number of ",
-        "files in February 2026"
+        "Below are the lowest entropy (simplest) network names across ",
+        "all payers"
       )
     )
   ) |>
@@ -1451,13 +1459,13 @@ network_names_per_file_feb |>
       "Names from Turquoise Health payer database of in-network rate files"
     ))
   ) |>
-  fmt_number(columns = "Appears in N files", use_seps = TRUE, decimals = 0) |>
+  fmt_number(columns = "Network name entropy", use_seps = TRUE, decimals = 2) |>
   cols_align(align = "left", columns = c("Payer", "Network name")) |>
-  cols_align(align = "right", columns = "Appears in N files") |>
+  cols_align(align = "right", columns = "Network name entropy") |>
   cols_width(
     "Payer" ~ px(250),
     "Network name" ~ px(340),
-    "Appears in N files" ~ px(50)
+    "Network name entropy" ~ px(50)
   ) |>
   tab_style(
     style = cell_text(weight = "bold", size = px(24)),
@@ -1742,6 +1750,17 @@ payer_df |>
   )
 ```
 
+<br>
+
+```{r plt_file_size_changes_by_pg_groups}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 9
+
+```
+
+
 <br><br><br>
 
 # EIN/TIN business name plots
@@ -1754,7 +1773,7 @@ payer_df |>
 #| fig-width: 8
 #| fig-height: 9
 
-ein_by_payer <- ein_fill_rate_feb |>
+ein_fill_rate_feb |>
   group_by(payer_id) |>
   summarize(
     n_ein_records = sum(n_ein_records),
@@ -1778,9 +1797,7 @@ ein_by_payer <- ein_fill_rate_feb |>
     no_name_pct = 1 - fill_rate,
     payer_name = fct_reorder(payer_name, row_number()),
     sample_name = str_trunc(sample_name, 36)
-  )
-
-ein_by_payer |>
+  ) |>
   pivot_longer(
     cols = c(fill_rate, no_name_pct),
     values_to = "pct",
@@ -1807,7 +1824,7 @@ ein_by_payer |>
   ) +
   geom_text(
     aes(
-      x = 1.03,
+      x = 1.2,
       y = payer_name,
       label = sample_name
     ),
@@ -1816,6 +1833,51 @@ ein_by_payer |>
     check_overlap = TRUE,
     size = 3,
     color = "grey20"
+  ) +
+  annotate(
+    "segment",
+    x = 1.18,
+    xend = 1.18,
+    y = 11.2,
+    yend = 46.5,
+    color = "grey30"
+  ) +
+  annotate(
+    "segment",
+    x = 1.01,
+    xend = 2.23,
+    y = 11.2,
+    yend = 11.2,
+    color = "grey30"
+  ) +
+  annotate(
+    "curve",
+    x = 1.08,
+    xend = 1.14,
+    y = 10.9,
+    yend = 8,
+    curvature = 0.2,
+    color = "grey30",
+    arrow = arrow(length = unit(0.2, "cm"), ends = "first", type = "closed")
+  ) +
+  annotate(
+    "text",
+    x = 1.22,
+    y = 10.35,
+    label = "Most common business name",
+    size = 3.8,
+    fontface = "bold",
+    hjust = 0
+  ) +
+  annotate(
+    "text",
+    x = 1.16,
+    y = 8.1,
+    label = "Number of unique\nbusiness names",
+    size = 3.8,
+    fontface = "bold",
+    hjust = 0,
+    lineheight = 0.9
   ) +
   scale_x_continuous(
     labels = label_percent(),
@@ -1832,21 +1894,24 @@ ein_by_payer |>
   coord_cartesian(xlim = c(0, 1.25)) +
   labs(
     title = paste0(
-      "Most large payers populate EIN ",
+      "Most large payers are populating TiC 2.0's ",
       "<span style='font-family:mono'>business_name</span>"
     ),
     subtitle = paste0(
       "Share of EIN records with a non-empty ",
-      "<span style='font-family:mono'>business_name</span> ",
-      "in February 2026 files"
+      "<span style='font-family:mono'>business_name</span> value ",
+      "in Feb. 2026 files"
     ),
     caption = paste0(
       "Data from Turquoise Health payer database of in-network rate files<br>",
-      "* Shows top 50 payers by number of national covered lives, but ",
-      "plot order is by fill rate. Sample name shown at right"
+      "* Shown as a percentage of *posted* records. Not all files are ",
+      "posted / parsed for February. Percentages may change as more ",
+      "files are added"
     ),
     y = "",
-    x = "Percent of EIN records with business_name"
+    x = paste0(
+      "Percent of posted payer EIN records*"
+    )
   ) +
   theme_minimal() +
   theme(
@@ -1880,7 +1945,9 @@ ein_by_payer |>
       size = 12,
       lineheight = 1.3
     ),
+    panel.grid.minor.x = element_blank(),
     panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_blank(),
     panel.spacing.x = unit(1, "cm"),
     axis.ticks.x = element_line(color = "grey40"),
     strip.text.x.top = element_text(
@@ -1890,7 +1957,7 @@ ein_by_payer |>
     legend.position = "top",
     legend.box.margin = margin(b = -6, l = -140),
     legend.margin = margin(l = -10, r = 8, t = 6, b = 6),
-    legend.text = element_text(
+    legend.text = element_markdown(
       size = 12
     ),
     legend.title = element_text(
@@ -1908,7 +1975,7 @@ ein_by_payer |>
 ```{r plt_ein_sample_names}
 #| column: page
 
-ein_by_payer_table <- ein_fill_rate_feb |>
+ein_fill_rate_feb |>
   group_by(payer_id) |>
   summarize(
     n_ein_records = sum(n_ein_records),
@@ -1937,9 +2004,7 @@ ein_by_payer_table <- ein_fill_rate_feb |>
     `Sample EIN` = tin_value,
     `Sample business_name` = business_name,
     `Fill rate` = fill_rate
-  )
-
-ein_by_payer_table |>
+  ) |>
   gt() |>
   tab_header(
     title = md(
