@@ -580,9 +580,9 @@ payer_df |>
         version,
         "v1" ~ "V1",
         "v2" ~ "V2",
-        "missing" ~ "Missing or not yet parsed"
+        "missing" ~ "Missing version"
       ),
-      levels = c("V2", "V1", "Missing or not yet parsed")
+      levels = c("V2", "V1", "Missing version")
     ))
   ) |>
   filter(month != "dec") |>
@@ -602,7 +602,7 @@ payer_df |>
     values = c(
       "V1" = "#fc8d62",
       "V2" = "#66c2a5",
-      "Missing or not yet parsed" = "grey80"
+      "Missing version" = "grey80"
     )
   ) +
   scale_x_continuous(labels = label_percent(), expand = c(0, 0)) +
@@ -777,21 +777,17 @@ payer_df |>
   labs(
     title = paste0(
       "Provider reference schema adoption as of ",
-      format_date_ordinal(DATA_DATE),
-      "*"
+      format_date_ordinal(DATA_DATE)
     ),
     subtitle = paste0(
       "Most payers were already using the internal ",
       "provider groups required in TiC 2.0"
     ),
     caption = paste0(
-      "Data from Turquoise Health payer database of in-network rate files<br>",
-      "* Shown as a percentage of *posted* files. Not all files are ",
-      "posted / parsed for February. Percentages may change as more ",
-      "files are added"
+      "Data from Turquoise Health payer database of in-network rate files"
     ),
     x = "",
-    y = "Percent of posted payer files"
+    y = "Percent of payer files"
   ) +
   facet_wrap(vars(month), strip.position = "bottom", scales = "free_x") +
   guides(fill = "none") +
@@ -1158,13 +1154,10 @@ payer_df |>
       " in their Feb. provider references"
     ),
     caption = paste0(
-      "Data from Turquoise Health payer database of in-network rate files<br>",
-      "* Shown as a percentage of *posted* files. Not all files are ",
-      "posted / parsed for February. Percentages may change as more ",
-      "files are added"
+      "Data from Turquoise Health payer database of in-network rate files"
     ),
     y = "",
-    x = "Percent of posted payer files*"
+    x = "Percent of payer files*"
   ) +
   theme_minimal() +
   theme(
@@ -1353,7 +1346,7 @@ payer_df |>
   gt() |>
   tab_header(
     title = md(
-      "The most common network names used by payers are sensible"
+      "Payers' most common network names are (mostly) sensible"
     ),
     subtitle = md(
       paste0(
@@ -1522,9 +1515,9 @@ network_names_per_file_feb |>
 #| column: page
 #| out-width: 100%
 #| fig-width: 11
-#| fig-height: 9
+#| fig-height: 11
 
-payer_df |>
+plt_file_sizes_df <- payer_df |>
   mutate(
     pct_posted = n_dsn_feb / num_files_expected_feb
   ) |>
@@ -1538,10 +1531,21 @@ payer_df |>
     diff_n_uniq_rates = n_uniq_rates_feb - n_uniq_rates_dec,
     pct_diff_n_uniq_rates = (n_uniq_rates_feb - n_uniq_rates_dec) /
       n_uniq_rates_dec,
-    nn_added = nn_pct_of_posted >= 0.2,
-    pg_int = ((num_dsn_pg_ref_int_dec / n_dsn_dec) <
-      (num_dsn_pg_ref_int_feb / n_dsn_feb)) &
-      (num_dsn_pg_ref_int_feb / n_dsn_feb) >= 0.2
+    pg_type = case_when(
+      ((num_dsn_pg_ref_ext_dec / n_dsn_dec) -
+         (num_dsn_pg_ref_ext_feb / n_dsn_feb)) >= 0.15 ~ "ext_to_int",
+      ((num_dsn_pg_inline_dec / n_dsn_dec) -
+         (num_dsn_pg_inline_feb / n_dsn_feb)) >= 0.15 ~ "inl_to_int",
+      .default = "same"
+    ),
+    pg_type = factor(
+      pg_type,
+      levels = c(
+        "ext_to_int",
+        "inl_to_int",
+        "same"
+      )
+    )
   ) |>
   filter(
     payer_id %in% top_n_payer_ids,
@@ -1558,27 +1562,12 @@ payer_df |>
     diff_avg_bytes_parsed,
     diff_n_uniq_rates,
     pct_diff_n_uniq_rates,
-    nn_added,
-    pg_int
+    pg_type
   ) |>
   mutate(
     payer_name = replace_values(
       payer_name,
       "BCBS of Pennsylvania (Independence)" ~ "BCBS of Penn. (Independence)"
-    ),
-    payer_name = paste0(
-      payer_name,
-      " **<span style='font-family:mono'>(",
-      case_when(
-        nn_added & pg_int ~ "N,R",
-        nn_added ~ "N,<span style='color:white'>□</span>",
-        pg_int ~ "<span style='color:white'>□</span>,R",
-        .default = paste0(
-          "<span style='color:white'>□</span>,",
-          "<span style='color:white'>□</span>"
-        )
-      ),
-      ")</span>**"
     )
   ) |>
   pivot_longer(
@@ -1644,7 +1633,9 @@ payer_df |>
   mutate(
     payer_name = fct_reorder(payer_name, pct_sort),
     pct = pmin(pct, 1)
-  ) |>
+  )
+
+plt_file_sizes_df |>
   ggplot() +
   geom_col(
     aes(
@@ -1653,6 +1644,30 @@ payer_df |>
       fill = pct > 0
     ),
     width = 0.8
+  ) +
+  geom_richtext(
+    data = tibble(
+      "diff_type" = unique(plt_file_sizes_df$diff_type)[1],
+      "pg_type" = unique(plt_file_sizes_df$pg_type),
+      "txt" = c(
+        "Payers that made no major change to provider references*",
+        "Payers that switched from external references to internal references",
+        "Payers that switched from inline references to internal references"
+      ),
+      "pos" = c(32.5, 5.5, 13.5)
+    ),
+    aes(
+      x = -1.6,
+      y = pos,
+      label = txt,
+    ),
+    vjust = 0,
+    hjust = 0,
+    size = 5.3,
+    fontface = "bold",
+    color = "grey10",
+    label.colour = "transparent",
+    fill = "transparent"
   ) +
   geom_richtext(
     aes(
@@ -1670,12 +1685,18 @@ payer_df |>
     label.colour = "transparent",
     fill = "transparent"
   ) +
-  facet_wrap(vars(diff_type), ncol = 3, strip.position = "bottom") +
+  facet_grid(
+    cols = vars(diff_type),
+    rows = vars(pg_type),
+    scales = "free_y",
+    space = "free_y",
+    switch = "both"
+  ) +
   scale_x_continuous(
     name = NULL,
     labels = label_percent(),
     expand = expansion(mult = c(0.35, 0.3)),
-    breaks = c(-1, -0.5, 0, 0.5, 1)
+    breaks = c(-1, -0.5, 0, 0.5, 1),
   ) +
   scale_fill_manual(
     name = NULL,
@@ -1686,35 +1707,33 @@ payer_df |>
   ) +
   labs(
     title = paste0(
-      "File sizes and rate counts are a mixed bag following TiC 2.0 schema changes"
+      "Changes to provider references had a big impact on payer file sizes"
     ),
     subtitle = paste0(
-      "Tracking payers that add <span style='font-family:mono'>network_name</span> ",
-      "(**N**), switch to internal provider groups (**R**), or do both (**N,R**)"
+      "Switching from inline to internal refs decreased file sizes, ",
+      "while moving external refs into files increased file sizes"
     ),
     caption = paste0(
-      "**N** means >= 20% of posted Feb. files have a network name. ",
-      "**R** means the percentage of files using internal references increased ",
-      "from Dec. 2025 to >= 20% in Feb. 2026<br>",
-      "Data from Turquoise Health database of in-network rate files. ",
-      "Only payers with >= 95% of their Feb. files posted / ",
-      "processed are included. Numbers may change as more files are added"
+      "*A \"major\" change here means a payer switched at least 15 percent ",
+      " of their files to internal references. ",
+      "Small and unrelated (e.g. adding network_name) changes
+      can still affect file size"
     ),
     x = NULL,
     y = NULL
   ) +
   guides(fill = "none") +
-  coord_cartesian(clip = "off") +
+  coord_cartesian(clip = "off", xlim = c(-1, 1)) +
   theme_minimal() +
   theme(
     plot.title = element_markdown(
-      size = 20,
+      size = 22,
       face = "bold",
-      margin = margin(b = 8, l = -170)
+      margin = margin(b = 8, l = -136)
     ),
     plot.subtitle = element_markdown(
-      size = 15.7,
-      margin = margin(b = 12, l = -170),
+      size = 15.5,
+      margin = margin(b = 32, l = -136),
       lineheight = 1.1
     ),
     plot.caption = element_markdown(
@@ -1737,12 +1756,17 @@ payer_df |>
       hjust = c(0.75, 0.5, 0.5, 0.5, 0.3)
     ),
     axis.text.y.left = element_markdown(
-      size = 9
+      size = 9,
+      margin = margin(r = -4)
     ),
     panel.spacing.x = unit(-0.4, "cm"),
+    panel.spacing.y = unit(1, "cm"),
+    strip.text.y.left = element_blank(),
     strip.text.x.bottom = element_text(
       size = 14,
-      face = "bold"
+      face = "bold",
+      vjust = 0,
+      angle = 0
     ),
     panel.grid.minor.x = element_blank(),
     panel.grid.major.y = element_blank(),
@@ -1750,18 +1774,12 @@ payer_df |>
   )
 ```
 
-<br>
+<br><br><br>
 
-```{r plt_file_size_changes_by_pg_groups}
-#| column: page
-#| out-width: 100%
-#| fig-width: 8
-#| fig-height: 9
-
+```{r}
+knitr::knit_exit()
 ```
 
-
-<br><br><br>
 
 # EIN/TIN business name plots
 
@@ -1910,7 +1928,7 @@ ein_fill_rate_feb |>
     ),
     y = "",
     x = paste0(
-      "Percent of posted payer EIN records*"
+      "Percent of payer EIN records"
     )
   ) +
   theme_minimal() +
