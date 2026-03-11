@@ -1,9 +1,22 @@
-WITH payer_eins AS (
+WITH payer_eins_named AS (
     SELECT DISTINCT
         pg.payer_id,
-        LPAD(tin.value, 9, '0') AS tin_value  -- noqa: RF01
-    FROM hive.public_2026_02.inr_provider_references_provider_groups AS pg
+        LPAD(
+            REGEXP_REPLACE(tin.value, '[^0-9]', ''),  -- noqa: RF01
+            9,
+            '0'
+        ) AS tin_value
+    FROM
+        tq_production.public_2026_02.inr_provider_references_provider_groups
+            AS pg
     WHERE tin.type = 'ein'  -- noqa: RF01
+        AND tin.value IS NOT NULL  -- noqa: RF01
+        AND REGEXP_REPLACE(tin.value, '[^0-9]', '') != ''  -- noqa: RF01
+        AND LPAD(
+            REGEXP_REPLACE(tin.value, '[^0-9]', ''),  -- noqa: RF01
+            9,
+            '0'
+        ) != '000000000'  -- noqa: RF01
         AND tin.business_name IS NOT NULL  -- noqa: RF01
         AND tin.business_name != ''  -- noqa: RF01
 ),
@@ -16,26 +29,32 @@ ref_eins AS (
         AND tin_name != ''
 ),
 
-counts AS (
+new_ein_counts AS (
     SELECT
         pe.payer_id,
         APPROX_DISTINCT(CASE
             WHEN re.tin IS NULL THEN pe.tin_value
-        END) AS new_ein_names,
-        APPROX_DISTINCT(CASE
-            WHEN re.tin IS NOT NULL THEN pe.tin_value
-        END) AS existing_ein_names
-    FROM payer_eins AS pe
-    LEFT JOIN ref_eins AS re
-        ON pe.tin_value = re.tin
+        END) AS new_ein_names
+    FROM payer_eins_named AS pe
+    LEFT JOIN ref_eins AS re ON pe.tin_value = re.tin
+    GROUP BY pe.payer_id
+),
+
+existing_ein_counts AS (
+    SELECT
+        pe.payer_id,
+        APPROX_DISTINCT(pe.tin_value) AS existing_ein_names
+    FROM payer_eins_named AS pe
+    INNER JOIN ref_eins AS re ON pe.tin_value = re.tin
     GROUP BY pe.payer_id
 )
 
 SELECT
-    ct.payer_id,
+    COALESCE(nc.payer_id, ec.payer_id) AS payer_id,
     sp.payer_name,
-    ct.new_ein_names,
-    ct.existing_ein_names
-FROM counts AS ct
+    COALESCE(nc.new_ein_names, 0) AS new_ein_names,
+    COALESCE(ec.existing_ein_names, 0) AS existing_ein_names
+FROM new_ein_counts AS nc
+FULL JOIN existing_ein_counts AS ec ON nc.payer_id = ec.payer_id
 LEFT JOIN tq_production.spines.spines_payer AS sp
-    ON CAST(ct.payer_id AS VARCHAR) = sp.payer_id;
+    ON COALESCE(nc.payer_id, ec.payer_id) = sp.payer_id;

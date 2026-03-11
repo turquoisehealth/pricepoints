@@ -17,14 +17,13 @@ execute:
 library(arrow)
 library(conflicted)
 library(dplyr)
-library(entropy)
 library(forcats)
 library(ggplot2)
 library(ggrepel)
 library(ggtext)
-library(gt)
 library(lubridate)
 library(purrr)
+library(readr)
 library(scales)
 library(stringr)
 library(tidyr)
@@ -69,13 +68,6 @@ label_comma_short <- function(x) {
     },
     USE.NAMES = FALSE
   )
-}
-
-# Shannon entropy for string complexity
-calculate_entropy <- function(s) {
-  freqs <- table(strsplit(s, "")[[1]]) / nchar(s)
-  entropy_value <- -sum(freqs * log2(freqs))
-  return(entropy_value)
 }
 ```
 
@@ -130,12 +122,19 @@ payer_names <- payer_files_dec |>
       "Healthcare Management Administrators (HMA)" ~ "HMA",
       "Ventura County Health Care Plan (VCHCP)" ~ "VCHCP",
       "Innovation Health Insurance Company" ~ "Innovation"
+    ),
+    # Fill covered lives for United and Aetna TPAs
+    payer_lives = case_when(
+      payer_id == "861" ~ payer_lives[payer_id == "7"],
+      payer_id == "953" ~ payer_lives[payer_id == "643"],
+      .default = payer_lives
     )
   )
 
 top_n_payer_ids <- payer_names |>
-  slice_max(payer_lives, n = 50) |>
-  pull(payer_id)
+  slice_max(payer_lives, n = 46) |>
+  pull(payer_id) |>
+  c("108", "978", "947", "111")
 
 # Grab the unique network names + count per data source/file
 network_names_per_file_feb <- payer_files_feb |>
@@ -147,20 +146,6 @@ network_names_per_file_feb <- payer_files_feb |>
       network_names
     )))),
     nn_unique_names_cnt_feb = map_int(nn_unique_names_lst_feb, \(x) length(x))
-  )
-
-# Grab the most common network name by payer + count of that name across all
-# files from that payer
-network_names_ranked_per_payer_feb <- network_names_per_file_feb |>
-  unnest(cols = nn_unique_names_lst_feb) |>
-  ungroup() |>
-  count(payer_id, nn_unique_names_lst_feb) |>
-  arrange(payer_id, desc(n)) |>
-  filter(row_number() <= 1, .by = payer_id) |>
-  select(
-    payer_id,
-    nn_most_common_name_feb = nn_unique_names_lst_feb,
-    nn_most_common_name_feb_file_count = n
   )
 
 # Join various payer datasets to make our main working table. One row per payer.
@@ -283,10 +268,6 @@ payer_df <- payer_files_dec |>
       ),
     by = "payer_id"
   ) |>
-  left_join(
-    network_names_ranked_per_payer_feb,
-    by = "payer_id"
-  ) |>
   # Attach provider_group mode stats (i.e. inline, external, internal provider
   # groups). External vs internal provider group (PG) references aren't
   # differentiated in the INR schema itself. Instead, we get the number of
@@ -373,15 +354,18 @@ payer_df <- payer_files_dec |>
 version_adoption_df <- payer_df |>
   mutate(
     n_dsn_v1_dec = replace_values(n_dsn_v1_dec, NA ~ n_dsn_dec),
-    n_dsn_v2_dec = replace_values(n_dsn_v2_dec, NA ~ 0)
+    across(
+      c(n_dsn_v2_dec, n_dsn_v1_feb, n_dsn_v2_feb),
+      \(x) replace_values(x, NA ~ 0)
+    )
   ) |>
   summarize(
-    v1_dec = sum(n_dsn_v1_dec > 0 & n_dsn_v2_dec == 0, na.rm = TRUE),
-    v2_dec = sum(n_dsn_v2_dec > 0 & n_dsn_v1_dec == 0, na.rm = TRUE),
-    v1_v2_dec = sum(n_dsn_v1_dec != 0 & n_dsn_v2_dec != 0, na.rm = TRUE),
-    v1_feb = sum(n_dsn_v1_feb > 0 & n_dsn_v2_feb == 0, na.rm = TRUE),
-    v2_feb = sum(n_dsn_v2_feb > 0 & n_dsn_v1_feb == 0, na.rm = TRUE),
-    v1_v2_feb = sum(n_dsn_v1_feb != 0 & n_dsn_v2_feb != 0, na.rm = TRUE),
+    v1_dec = sum(n_dsn_v1_dec & !n_dsn_v2_dec, na.rm = TRUE),
+    v2_dec = sum(n_dsn_v2_dec & !n_dsn_v1_dec, na.rm = TRUE),
+    v1_v2_dec = sum(n_dsn_v1_dec & n_dsn_v2_dec, na.rm = TRUE),
+    v1_feb = sum(n_dsn_v1_feb & !n_dsn_v2_feb, na.rm = TRUE),
+    v2_feb = sum(n_dsn_v2_feb & !n_dsn_v1_feb, na.rm = TRUE),
+    v1_v2_feb = sum(n_dsn_v1_feb & n_dsn_v2_feb, na.rm = TRUE),
     vmissing_dec = n() - v1_dec - v2_dec - v1_v2_dec,
     vmissing_feb = n() - v1_feb - v2_feb - v1_v2_feb,
     across(starts_with("v"), \(x) x / n(), .names = "pct_{.col}")
@@ -568,7 +552,6 @@ payer_df |>
     names_pattern = "n_dsn_(missing|v1|v2)_(dec|feb)"
   ) |>
   mutate(
-    payer_name = fct_reorder(payer_name, payer_lives),
     pct = count /
       ifelse(
         month == "dec",
@@ -622,18 +605,18 @@ payer_df |>
       "file changes"
     ),
     y = "",
-    x = "Percent of payer files"
+    x = "Percent of February payer files"
   ) +
   theme_minimal() +
   theme(
     plot.title = element_markdown(
       size = 20,
       face = "bold",
-      margin = margin(b = 8, l = -150)
+      margin = margin(b = 8, l = -140)
     ),
     plot.subtitle = element_markdown(
       size = 15,
-      margin = margin(b = 12, l = -150),
+      margin = margin(b = 12, l = -140),
       lineheight = 1.1
     ),
     plot.caption = element_markdown(
@@ -787,7 +770,7 @@ payer_df |>
       "Data from Turquoise Health payer database of in-network rate files"
     ),
     x = "",
-    y = "Percent of payer files"
+    y = "Percent of February payer files"
   ) +
   facet_wrap(vars(month), strip.position = "bottom", scales = "free_x") +
   guides(fill = "none") +
@@ -858,8 +841,6 @@ payer_df |>
       pick(matches("num_dsn_pg_.*_feb")),
       na.rm = TRUE
     ),
-    num_dsn_pg_missing_dec = num_files_expected_dec - n_dsn_pg_all_dec,
-    num_dsn_pg_missing_feb = num_files_expected_feb - n_dsn_pg_all_feb,
     across(
       starts_with("num_dsn_pg") & ends_with("dec"),
       \(x) x / num_files_expected_dec
@@ -887,7 +868,6 @@ payer_df |>
     ref_type = factor(
       ref_type,
       levels = c(
-        "missing",
         "inline",
         "ref_ext",
         "ref_int"
@@ -898,7 +878,6 @@ payer_df |>
       \(x) {
         recode_values(
           x,
-          "missing" ~ "Missing or not yet parsed",
           "inline" ~ "Inline references",
           "ref_ext" ~ "External references",
           "ref_int" ~ "Internal references"
@@ -949,22 +928,22 @@ payer_df |>
     ),
     caption = paste0(
       "Data from Turquoise Health payer database of in-network rate files<br>",
-      "* Shows top 50 payers by number of national covered lives, but ",
+      "Shows top 50 payers by number of national covered lives, but ",
       "plot order is by percent adoption of internal provider groups"
     ),
     y = "",
-    x = "Percent of payer files"
+    x = "Percent of February payer files"
   ) +
   theme_minimal() +
   theme(
     plot.title = element_markdown(
       size = 19,
       face = "bold",
-      margin = margin(b = 8, l = -150)
+      margin = margin(b = 8, l = -140)
     ),
     plot.subtitle = element_markdown(
       size = 15,
-      margin = margin(b = 12, l = -150),
+      margin = margin(b = 12, l = -140),
       lineheight = 1.1
     ),
     plot.caption = element_markdown(
@@ -995,8 +974,8 @@ payer_df |>
       face = "bold"
     ),
     legend.position = "top",
-    legend.box.margin = margin(b = -6, l = -140),
-    legend.margin = margin(l = -10, r = 8, t = 6, b = 6),
+    legend.box.margin = margin(b = -6),
+    legend.margin = margin(l = -4, r = 16, t = 6, b = 6),
     legend.text = element_text(
       size = 12
     ),
@@ -1043,9 +1022,7 @@ payer_df |>
         "nn_pct_of_posted" ~ "Has <span style='font-family:mono'>network_name</span>",
         "nn_pct_inv" ~ "No <span style='font-family:mono'>network_name</span>"
       )
-    })),
-    nn_unique_names_cnt_feb = na_if(nn_unique_names_cnt_feb, 0),
-    nn_most_common_name_feb = str_trunc(nn_most_common_name_feb, 36)
+    }))
   ) |>
   ggplot() +
   geom_col(
@@ -1056,79 +1033,10 @@ payer_df |>
     ),
     width = 0.8
   ) +
-  annotate(
-    "segment",
-    x = 1.18,
-    xend = 1.18,
-    y = 12.2,
-    yend = 50.5,
-    color = "grey30"
-  ) +
-  annotate(
-    "segment",
-    x = 1.01,
-    xend = 2.23,
-    y = 12.2,
-    yend = 12.2,
-    color = "grey30"
-  ) +
-  annotate(
-    "curve",
-    x = 1.08,
-    xend = 1.14,
-    y = 12,
-    yend = 8.9,
-    curvature = 0.2,
-    color = "grey30",
-    arrow = arrow(length = unit(0.2, "cm"), ends = "first", type = "closed")
-  ) +
-  geom_text(
-    aes(
-      x = 1.03,
-      y = payer_name,
-      label = nn_unique_names_cnt_feb
-    ),
-    hjust = 0,
-    family = "mono",
-    check_overlap = TRUE,
-    size = 3,
-    color = "grey20"
-  ) +
-  geom_text(
-    aes(
-      x = 1.22,
-      y = payer_name,
-      label = nn_most_common_name_feb
-    ),
-    hjust = 0,
-    family = "mono",
-    check_overlap = TRUE,
-    size = 3,
-    color = "grey20"
-  ) +
-  annotate(
-    "text",
-    x = 1.22,
-    y = 11.35,
-    label = "Most common network name",
-    size = 3.8,
-    fontface = "bold",
-    hjust = 0
-  ) +
-  annotate(
-    "text",
-    x = 1.16,
-    y = 8.1,
-    label = "Number of unique\nnetwork names",
-    size = 3.8,
-    fontface = "bold",
-    hjust = 0,
-    lineheight = 0.9
-  ) +
   scale_x_continuous(
     labels = label_percent(),
-    expand = expansion(add = c(0, 1)),
-    breaks = c(0, 0.25, 0.5, 0.75, 1)
+    breaks = c(0, 0.25, 0.5, 0.75, 1),
+    expand = c(0, 0)
   ) +
   scale_fill_manual(
     values = c(
@@ -1137,7 +1045,6 @@ payer_df |>
     )
   ) +
   guides(fill = guide_legend(title = "", reverse = TRUE)) +
-  coord_cartesian(xlim = c(0, 1.25)) +
   labs(
     title = paste0(
       "Adoption of TiC 2.0's ",
@@ -1151,30 +1058,30 @@ payer_df |>
         filter(nn_unique_names_cnt_feb > 0) |>
         nrow(),
       " posted a <span style='font-family:mono'>network_name</span>",
-      " in their Feb. provider references"
+      " in their February provider references"
     ),
     caption = paste0(
       "Data from Turquoise Health payer database of in-network rate files"
     ),
     y = "",
-    x = "Percent of payer files*"
+    x = "Percent of February payer files"
   ) +
   theme_minimal() +
   theme(
     plot.title = element_markdown(
-      size = 19,
+      size = 20,
       face = "bold",
-      margin = margin(b = 8, l = -150)
+      margin = margin(b = 8, l = -140)
     ),
     plot.subtitle = element_markdown(
-      size = 14.8,
-      margin = margin(b = 12, l = -150),
+      size = 15,
+      margin = margin(b = 12, l = -140),
       lineheight = 1.1
     ),
     plot.caption = element_markdown(
       size = 9,
       lineheight = 1.1,
-      margin = margin(t = 12, b = 4)
+      margin = margin(t = 12, b = 4, r = -15)
     ),
     axis.title.x = element_markdown(
       margin = margin(t = 10),
@@ -1191,17 +1098,11 @@ payer_df |>
       size = 12,
       lineheight = 1.3
     ),
-    panel.grid.minor.x = element_blank(),
     panel.grid.major.x = element_blank(),
-    panel.grid.major.y = element_blank(),
     panel.spacing.x = unit(1, "cm"),
     axis.ticks.x = element_line(color = "grey40"),
-    strip.text.x.top = element_text(
-      size = 14,
-      face = "bold"
-    ),
     legend.position = "top",
-    legend.box.margin = margin(b = -6, l = -234),
+    legend.box.margin = margin(b = -6),
     legend.margin = margin(l = -10, r = 8, t = 6, b = 6),
     legend.text = element_markdown(
       size = 12
@@ -1212,13 +1113,13 @@ payer_df |>
       margin = margin(r = 20)
     ),
     legend.background = element_rect(color = "grey20"),
-    plot.margin = margin(l = -20, r = 8, t = 6)
+    plot.margin = margin(l = -20, r = 20, t = 6)
   )
 ```
 
 <br>
 
-```{r plt_nn_cnt_per_file}
+```{r plt_nn_cnt_per_file, warning=FALSE}
 #| column: page
 #| out-width: 100%
 #| fig-width: 8
@@ -1327,182 +1228,37 @@ payer_df |>
 
 <br>
 
-```{r plt_nn_cnt_per_file_top}
-#| column: page
-
-payer_df |>
-  filter(payer_id %in% top_n_payer_ids) |>
-  filter(!is.na(nn_most_common_name_feb_file_count)) |>
-  arrange(desc(nn_most_common_name_feb_file_count)) |>
-  mutate(
-    payer_name = str_trunc(payer_name, 40),
-    nn_most_common_name_feb = str_trunc(nn_most_common_name_feb, 45)
-  ) |>
-  select(
-    `Payer` = payer_name,
-    `Network name` = nn_most_common_name_feb,
-    `Appears in N files` = nn_most_common_name_feb_file_count
-  ) |>
-  gt() |>
-  tab_header(
-    title = md(
-      "Payers' most common network names are (mostly) sensible"
-    ),
-    subtitle = md(
-      paste0(
-        "`network_name` from the top 50 payers generally corresponds ",
-        "to recognizable products"
-      )
-    )
-  ) |>
-  tab_source_note(
-    source_note = md(paste0(
-      "Names from Turquoise Health payer database of in-network rate files"
-    ))
-  ) |>
-  fmt_number(columns = "Appears in N files", use_seps = TRUE, decimals = 0) |>
-  cols_align(align = "left", columns = c("Payer", "Network name")) |>
-  cols_align(align = "right", columns = "Appears in N files") |>
-  cols_width(
-    "Payer" ~ px(250),
-    "Network name" ~ px(320),
-    "Appears in N files" ~ px(50)
-  ) |>
-  tab_style(
-    style = cell_text(weight = "bold", size = px(24)),
-    locations = cells_title(groups = "title")
-  ) |>
-  tab_style(
-    style = cell_text(size = px(20), color = "grey40"),
-    locations = cells_title(groups = "subtitle")
-  ) |>
-  tab_style(
-    style = cell_text(
-      weight = "bold",
-      size = px(15),
-      color = "grey30"
-    ),
-    locations = cells_column_labels()
-  ) |>
-  tab_style(
-    style = cell_text(size = px(13)),
-    locations = cells_body()
-  ) |>
-  tab_style(
-    style = cell_text(size = px(10), color = "grey50"),
-    locations = cells_source_notes()
-  ) |>
-  tab_style(
-    style = list(
-      cell_borders(sides = "bottom", color = "#66c2a5", weight = px(3))
-    ),
-    locations = cells_column_labels()
-  ) |>
-  tab_options(
-    heading.align = "left",
-    heading.border.bottom.style = "hidden",
-    table.border.top.style = "hidden",
-    table.border.bottom.style = "hidden",
-    table_body.border.bottom.color = "grey80",
-    column_labels.border.top.style = "hidden",
-    column_labels.padding = px(4),
-    row.striping.include_table_body = TRUE,
-    row.striping.background_color = "#f9f9f9",
-    data_row.padding = px(6),
-    source_notes.padding = px(10)
-  )
-```
-
-```{r plt_nn_cnt_per_file_bottom}
-#| column: page
-
+```{r tbl_nn_cnt_per_file_top}
+# Grab the most common network name by payer + count of that name across all
+# files from that payer
 network_names_per_file_feb |>
-  unnest(nn_unique_names_lst_feb) |>
-  group_by(word = nn_unique_names_lst_feb, payer_id) |>
-  summarize(freq = n()) |>
+  unnest(cols = nn_unique_names_lst_feb) |>
   ungroup() |>
-  mutate(entropy = map_dbl(word, calculate_entropy)) |>
-  left_join(payer_names, by = "payer_id") |>
-  filter(!is.na(payer_name)) |>
-  slice_min(entropy, n = 500, with_ties = FALSE) |>
-  distinct(payer_id, .keep_all = TRUE) |>
+  count(payer_id, nn_unique_names_lst_feb) |>
+  arrange(payer_id, desc(n)) |>
+  filter(row_number() <= 5, .by = payer_id) |>
+  summarize(
+    net_names = paste(nn_unique_names_lst_feb, collapse = ", "),
+    .by = c("payer_id")
+  ) |>
+  right_join(payer_names, by = "payer_id") |>
+  left_join(
+    payer_df |>
+      select(payer_id, nn_unique_names_cnt_feb),
+    by = "payer_id"
+  ) |>
   mutate(
     payer_name = str_trunc(payer_name, 40),
-    word = str_trunc(word, 45)
+    nn_unique_names_cnt_feb = replace_na(nn_unique_names_cnt_feb, 0),
+    net_names = replace_na(net_names, "No networks posted")
   ) |>
+  arrange(payer_name) |>
   select(
-    `Payer` = payer_name,
-    `Network name` = word,
-    `Network name entropy` = entropy
+    `Payer name` = payer_name,
+    `# of unique net. names` = nn_unique_names_cnt_feb,
+    `Top 5 most common network names by file count` = net_names
   ) |>
-  gt() |>
-  tab_header(
-    title = md(
-      "The long tail of network names gets messy and less useful"
-    ),
-    subtitle = md(
-      paste0(
-        "Below are the lowest entropy (simplest) network names across ",
-        "all payers"
-      )
-    )
-  ) |>
-  tab_source_note(
-    source_note = md(paste0(
-      "Names from Turquoise Health payer database of in-network rate files"
-    ))
-  ) |>
-  fmt_number(columns = "Network name entropy", use_seps = TRUE, decimals = 2) |>
-  cols_align(align = "left", columns = c("Payer", "Network name")) |>
-  cols_align(align = "right", columns = "Network name entropy") |>
-  cols_width(
-    "Payer" ~ px(250),
-    "Network name" ~ px(340),
-    "Network name entropy" ~ px(50)
-  ) |>
-  tab_style(
-    style = cell_text(weight = "bold", size = px(24)),
-    locations = cells_title(groups = "title")
-  ) |>
-  tab_style(
-    style = cell_text(size = px(20), color = "grey40"),
-    locations = cells_title(groups = "subtitle")
-  ) |>
-  tab_style(
-    style = cell_text(
-      weight = "bold",
-      size = px(15),
-      color = "grey30"
-    ),
-    locations = cells_column_labels()
-  ) |>
-  tab_style(
-    style = cell_text(size = px(13)),
-    locations = cells_body()
-  ) |>
-  tab_style(
-    style = cell_text(size = px(10), color = "grey50"),
-    locations = cells_source_notes()
-  ) |>
-  tab_style(
-    style = list(
-      cell_borders(sides = "bottom", color = "#66c2a5", weight = px(3))
-    ),
-    locations = cells_column_labels()
-  ) |>
-  tab_options(
-    heading.align = "left",
-    heading.border.bottom.style = "hidden",
-    table.border.top.style = "hidden",
-    table.border.bottom.style = "hidden",
-    table_body.border.bottom.color = "grey80",
-    column_labels.border.top.style = "hidden",
-    column_labels.padding = px(4),
-    row.striping.include_table_body = TRUE,
-    row.striping.background_color = "#f9f9f9",
-    data_row.padding = px(6),
-    source_notes.padding = px(10)
-  )
+  write_csv("data/publish/tbl_nn_cnt_top.csv")
 ```
 
 <br><br><br>
@@ -1654,10 +1410,10 @@ plt_file_sizes_df |>
         "Payers that switched from external references to internal references",
         "Payers that switched from inline references to internal references"
       ),
-      "pos" = c(32.5, 5.5, 13.5)
+      "pos" = c(33.5, 5.5, 12.5)
     ),
     aes(
-      x = -1.6,
+      x = -1.65,
       y = pos,
       label = txt,
     ),
@@ -1714,7 +1470,7 @@ plt_file_sizes_df |>
       "while moving external refs into files increased file sizes"
     ),
     caption = paste0(
-      "*A \"major\" change here means a payer switched at least 15 percent ",
+      "\\* A \"major\" change here means a payer switched at least 15 percent ",
       " of their files to internal references. ",
       "Small and unrelated (e.g. adding network_name) changes
       can still affect file size"
@@ -1776,11 +1532,6 @@ plt_file_sizes_df |>
 
 <br><br><br>
 
-```{r}
-knitr::knit_exit()
-```
-
-
 # EIN/TIN business name plots
 
 ---
@@ -1801,20 +1552,10 @@ ein_fill_rate_feb |>
   left_join(payer_names, by = "payer_id") |>
   filter(payer_id %in% top_n_payer_ids) |>
   filter(!is.na(fill_rate)) |>
-  left_join(
-    ein_names_sample_feb |>
-      distinct(payer_id, business_name) |>
-      group_by(payer_id) |>
-      slice_head(n = 1) |>
-      ungroup() |>
-      select(payer_id, sample_name = business_name),
-    by = "payer_id"
-  ) |>
   arrange(fill_rate) |>
   mutate(
     no_name_pct = 1 - fill_rate,
-    payer_name = fct_reorder(payer_name, row_number()),
-    sample_name = str_trunc(sample_name, 36)
+    payer_name = fct_reorder(payer_name, row_number())
   ) |>
   pivot_longer(
     cols = c(fill_rate, no_name_pct),
@@ -1840,66 +1581,9 @@ ein_fill_rate_feb |>
     ),
     width = 0.8
   ) +
-  geom_text(
-    aes(
-      x = 1.2,
-      y = payer_name,
-      label = sample_name
-    ),
-    hjust = 0,
-    family = "mono",
-    check_overlap = TRUE,
-    size = 3,
-    color = "grey20"
-  ) +
-  annotate(
-    "segment",
-    x = 1.18,
-    xend = 1.18,
-    y = 11.2,
-    yend = 46.5,
-    color = "grey30"
-  ) +
-  annotate(
-    "segment",
-    x = 1.01,
-    xend = 2.23,
-    y = 11.2,
-    yend = 11.2,
-    color = "grey30"
-  ) +
-  annotate(
-    "curve",
-    x = 1.08,
-    xend = 1.14,
-    y = 10.9,
-    yend = 8,
-    curvature = 0.2,
-    color = "grey30",
-    arrow = arrow(length = unit(0.2, "cm"), ends = "first", type = "closed")
-  ) +
-  annotate(
-    "text",
-    x = 1.22,
-    y = 10.35,
-    label = "Most common business name",
-    size = 3.8,
-    fontface = "bold",
-    hjust = 0
-  ) +
-  annotate(
-    "text",
-    x = 1.16,
-    y = 8.1,
-    label = "Number of unique\nbusiness names",
-    size = 3.8,
-    fontface = "bold",
-    hjust = 0,
-    lineheight = 0.9
-  ) +
   scale_x_continuous(
     labels = label_percent(),
-    expand = expansion(add = c(0, 1)),
+    expand = c(0, 0),
     breaks = c(0, 0.25, 0.5, 0.75, 1)
   ) +
   scale_fill_manual(
@@ -1909,7 +1593,6 @@ ein_fill_rate_feb |>
     )
   ) +
   guides(fill = guide_legend(title = "", reverse = TRUE)) +
-  coord_cartesian(xlim = c(0, 1.25)) +
   labs(
     title = paste0(
       "Most large payers are populating TiC 2.0's ",
@@ -1921,10 +1604,7 @@ ein_fill_rate_feb |>
       "in Feb. 2026 files"
     ),
     caption = paste0(
-      "Data from Turquoise Health payer database of in-network rate files<br>",
-      "* Shown as a percentage of *posted* records. Not all files are ",
-      "posted / parsed for February. Percentages may change as more ",
-      "files are added"
+      "Data from Turquoise Health payer database of in-network rate files"
     ),
     y = "",
     x = paste0(
@@ -1936,11 +1616,11 @@ ein_fill_rate_feb |>
     plot.title = element_markdown(
       size = 19,
       face = "bold",
-      margin = margin(b = 8, l = -150)
+      margin = margin(b = 8, l = -140)
     ),
     plot.subtitle = element_markdown(
       size = 15,
-      margin = margin(b = 12, l = -150),
+      margin = margin(b = 12, l = -140),
       lineheight = 1.1
     ),
     plot.caption = element_markdown(
@@ -1973,7 +1653,7 @@ ein_fill_rate_feb |>
       face = "bold"
     ),
     legend.position = "top",
-    legend.box.margin = margin(b = -6, l = -140),
+    legend.box.margin = margin(b = -6),
     legend.margin = margin(l = -10, r = 8, t = 6, b = 6),
     legend.text = element_markdown(
       size = 12
@@ -1990,106 +1670,42 @@ ein_fill_rate_feb |>
 
 <br>
 
-```{r plt_ein_sample_names}
+```{r plt_ein_overlap_by_payer}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 9
+
+
+
+```
+
+<br>
+
+```{r tbl_ein_sample_names}
 #| column: page
 
-ein_fill_rate_feb |>
-  group_by(payer_id) |>
-  summarize(
-    n_ein_records = sum(n_ein_records),
-    n_with_business_name = sum(n_with_business_name)
-  ) |>
-  mutate(fill_rate = n_with_business_name / n_ein_records) |>
-  left_join(payer_names, by = "payer_id") |>
-  filter(!is.na(fill_rate), fill_rate > 0) |>
-  left_join(
-    ein_names_sample_feb |>
-      distinct(payer_id, tin_value, business_name) |>
-      group_by(payer_id) |>
-      slice_head(n = 1) |>
-      ungroup(),
-    by = "payer_id"
-  ) |>
-  filter(!is.na(business_name)) |>
-  arrange(desc(payer_lives)) |>
-  slice_head(n = 30) |>
+ein_names_common_feb |>
+  select(-payer_name) |>
+  right_join(payer_names, by = "payer_id") |>
   mutate(
     payer_name = str_trunc(payer_name, 40),
-    business_name = str_trunc(business_name, 40)
-  ) |>
-  select(
-    `Payer` = payer_name,
-    `Sample EIN` = tin_value,
-    `Sample business_name` = business_name,
-    `Fill rate` = fill_rate
-  ) |>
-  gt() |>
-  tab_header(
-    title = md(
-      "Sample EIN `business_name` values from major payers"
+    business_name_value = map_chr(
+      business_name_value,
+      \(x) paste(str_trunc(x[1:3], 50), collapse = ", ")
     ),
-    subtitle = md(
-      paste0(
-        "Top 30 payers by covered lives that have at least one ",
-        "`business_name` populated in February 2026"
-      )
+    business_name_n_uniq = replace_na(business_name_n_uniq, 0),
+    business_name_value = replace_values(
+      business_name_value,
+      NA ~ "No business names posted",
+      "" ~ "No business names posted"
     )
   ) |>
-  tab_source_note(
-    source_note = md(paste0(
-      "Names from Turquoise Health payer database of in-network rate files"
-    ))
-  ) |>
-  fmt_percent(columns = "Fill rate", decimals = 1) |>
-  cols_align(align = "left", columns = c("Payer", "Sample EIN", "Sample business_name")) |>
-  cols_align(align = "right", columns = "Fill rate") |>
-  cols_width(
-    "Payer" ~ px(250),
-    "Sample EIN" ~ px(100),
-    "Sample business_name" ~ px(250),
-    "Fill rate" ~ px(80)
-  ) |>
-  tab_style(
-    style = cell_text(weight = "bold", size = px(24)),
-    locations = cells_title(groups = "title")
-  ) |>
-  tab_style(
-    style = cell_text(size = px(20), color = "grey40"),
-    locations = cells_title(groups = "subtitle")
-  ) |>
-  tab_style(
-    style = cell_text(
-      weight = "bold",
-      size = px(15),
-      color = "grey30"
-    ),
-    locations = cells_column_labels()
-  ) |>
-  tab_style(
-    style = cell_text(size = px(13)),
-    locations = cells_body()
-  ) |>
-  tab_style(
-    style = cell_text(size = px(10), color = "grey50"),
-    locations = cells_source_notes()
-  ) |>
-  tab_style(
-    style = list(
-      cell_borders(sides = "bottom", color = "#66c2a5", weight = px(3))
-    ),
-    locations = cells_column_labels()
-  ) |>
-  tab_options(
-    heading.align = "left",
-    heading.border.bottom.style = "hidden",
-    table.border.top.style = "hidden",
-    table.border.bottom.style = "hidden",
-    table_body.border.bottom.color = "grey80",
-    column_labels.border.top.style = "hidden",
-    column_labels.padding = px(4),
-    row.striping.include_table_body = TRUE,
-    row.striping.background_color = "#f9f9f9",
-    data_row.padding = px(6),
-    source_notes.padding = px(10)
-  )
+  arrange(payer_name) |>
+  select(
+    `Payer name` = payer_name,
+    `# of unique bus. names` = business_name_n_uniq,
+    `Top 3 most common business names by record count` = business_name_value
+  ) |> 
+  write_csv("data/publish/tbl_bn_cnt_top.csv")
 ```
