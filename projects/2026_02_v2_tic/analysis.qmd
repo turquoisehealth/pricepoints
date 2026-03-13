@@ -1052,7 +1052,8 @@ payer_df |>
       format_date_ordinal(DATA_DATE)
     ),
     subtitle = paste0(
-      "Of ", nrow(payer_df),
+      "Of ",
+      nrow(payer_df),
       " payers, ",
       payer_df |>
         filter(nn_unique_names_cnt_feb > 0) |>
@@ -1380,11 +1381,12 @@ plt_file_sizes_df <- payer_df |>
     .by = payer_name
   ) |>
   filter(
-    diff_type %in% c(
-      "% change in total file size",
-      "% change in total file count",
-      "% change in num. rates"
-    )
+    diff_type %in%
+      c(
+        "% change in total file size",
+        "% change in total file count",
+        "% change in num. rates"
+      )
   ) |>
   mutate(
     payer_name = fct_reorder(payer_name, pct_sort),
@@ -1674,10 +1676,191 @@ ein_fill_rate_feb |>
 #| column: page
 #| out-width: 100%
 #| fig-width: 8
-#| fig-height: 9
+#| fig-height: 7
 
-
-
+ein_names_overlap_feb |>
+  left_join(payer_names, by = "payer_id") |>
+  select(-new_ein_names, -payer_lives) |>
+  pivot_longer(
+    c(existing_ein_names, starts_with("npi_type")),
+    names_to = "ein_type",
+    values_to = "record_count"
+  ) |>
+  mutate(
+    ein_type = fct_rev(factor(
+      ein_type,
+      levels = c(
+        "existing_ein_names",
+        "npi_type_2_only",
+        "npi_type_1_only",
+        "npi_type_mixed",
+        "npi_type_unknown"
+      )
+    )),
+    ein_type = fct_relabel(
+      ein_type,
+      \(x) {
+        replace_values(
+          x,
+          "npi_type_2_only" ~ "Type 2 NPI only",
+          "npi_type_1_only" ~ "Type 1 NPI only",
+          "npi_type_mixed" ~ "Mixed NPI types",
+          "npi_type_unknown" ~ "Unknown NPI types"
+        )
+      }
+    )
+  ) |>
+  mutate(
+    existing_ein_count = record_count[ein_type == "existing_ein_names"],
+    pct = record_count / existing_ein_count,
+    .by = "payer_name"
+  ) |>
+  filter(ein_type != "existing_ein_names") |>
+  mutate(
+    total_pct = sum(pct),
+    total_cnt = sum(record_count),
+    .by = "payer_name"
+  ) |>
+  mutate(
+    payer_name = paste0(
+      "**",
+      payer_name,
+      "**<br>",
+      label_comma()(existing_ein_count)
+    )
+  ) |>
+  mutate(payer_name = fct_reorder(payer_name, total_pct)) |>
+  mutate(total_fmt = paste0("+", label_comma()(total_cnt))) |>
+  ggplot() +
+  geom_col(
+    aes(
+      x = pct,
+      y = payer_name,
+      fill = ein_type
+    )
+  ) +
+  geom_text(
+    aes(
+      x = total_pct,
+      y = payer_name,
+      label = total_fmt
+    ),
+    color = "grey30",
+    hjust = -0.1,
+    check_overlap = TRUE
+  ) +
+  annotate(
+    "richtext",
+    x = 1.33,
+    y = 1.5,
+    label = paste0(
+      "BCBSM had ~12K EIN<br>names ",
+      "tracked by Turquoise<br><br>",
+      "<span style='font-family:mono'>business_name</span>",
+      " added 6.5K more,<br>",
+      "but mostly related to Type 1 NPIs"
+    ),
+    hjust = 1,
+    label.color = "transparent"
+  ) +
+  annotate(
+    "curve",
+    x = 0.675,
+    xend = 0.63,
+    y = 1.1,
+    yend = 1.75,
+    curvature = -0.3,
+    arrow = arrow(type = "closed", length = unit(0.2, "cm"))
+  ) +
+  scale_x_continuous(
+    name = "Percent increase from count of existing EINs",
+    labels = label_percent(),
+    expand = expansion(c(0, 0.10)),
+    breaks = c(0, 0.25, 0.5, 0.75, 1.0, 1.25)
+  ) +
+  scale_fill_manual(
+    name = "",
+    values = c(
+      "Type 2 NPI only" = "#66c2a5",
+      "Type 1 NPI only" = "#fc8d62",
+      "Mixed NPI types" = "#e78ac3",
+      "Unknown NPI types" = "#d14749"
+    )
+  ) +
+  guides(
+    fill = guide_legend(reverse = TRUE)
+  ) +
+  coord_cartesian(xlim = c(0, 1.25), clip = "off") +
+  labs(
+    title = paste0(
+      "Payers added new EIN names via TiC 2.0's ",
+      "<span style='font-family:mono'>business_name</span>"
+    ),
+    subtitle = paste0(
+      "However, most of the new names are for ",
+      "individuals (Type 1 NPIs), not businesses"
+    ),
+    caption = paste0(
+      "Data from Turquoise Health payer database of in-network rate files"
+    ),
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(
+      size = 19,
+      face = "bold",
+      margin = margin(b = 8, l = -158)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 12, l = -158),
+      lineheight = 1.1
+    ),
+    plot.caption = element_markdown(
+      size = 9,
+      lineheight = 1.1,
+      margin = margin(t = 12, b = 4, r = -15)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x.bottom = element_markdown(
+      size = 12,
+      lineheight = 1.3
+    ),
+    axis.text.y.left = element_markdown(
+      size = 11,
+      lineheight = 1.1,
+      vjust = 0.4
+    ),
+    panel.grid.major.y = element_blank(),
+    panel.spacing.x = unit(1, "cm"),
+    strip.text.x.top = element_text(
+      size = 14,
+      face = "bold"
+    ),
+    legend.position = "top",
+    legend.box.margin = margin(b = -6, l = -152),
+    legend.margin = margin(l = -10, r = 8, t = 6, b = 6),
+    legend.text = element_markdown(
+      size = 12
+    ),
+    legend.title = element_text(
+      size = 14,
+      face = "bold",
+      margin = margin(r = 20)
+    ),
+    legend.background = element_rect(color = "grey20"),
+    plot.margin = margin(l = -20, r = 20, t = 6)
+  )
 ```
 
 <br>
@@ -1706,6 +1889,6 @@ ein_names_common_feb |>
     `Payer name` = payer_name,
     `# of unique bus. names` = business_name_n_uniq,
     `Top 3 most common business names by record count` = business_name_value
-  ) |> 
+  ) |>
   write_csv("data/publish/tbl_bn_cnt_top.csv")
 ```
