@@ -434,7 +434,7 @@ version_adoption_df <- payer_df |>
       "v1" ~ "All V1<br>files",
       "v1_v2" ~ "Mixed<br>(V1 & V2)",
       "v2" ~ "All V2<br>files",
-      "vmissing" ~ "Missing all<br>Feb. files"
+      "vmissing" ~ "Missing ver.<br>or Feb. files"
     ),
     month = recode_values(
       month,
@@ -450,7 +450,7 @@ version_adoption_df <- payer_df |>
         "All V1<br>files",
         "Mixed<br>(V1 & V2)",
         "All V2<br>files",
-        "Missing all<br>Feb. files"
+        "Missing ver.<br>or Feb. files"
       )
     ),
     label = paste0(
@@ -480,7 +480,7 @@ ggplot(version_adoption_df) +
       "All V1<br>files" = "#fc8d62",
       "Mixed<br>(V1 & V2)" = "#8da0cb",
       "All V2<br>files" = "#66c2a5",
-      "Missing all<br>Feb. files" = "grey80"
+      "Missing ver.<br>or Feb. files" = "grey80"
     )
   ) +
   labs(
@@ -493,7 +493,7 @@ ggplot(version_adoption_df) +
       version_adoption_df |>
         filter(
           month == "February 2026",
-          version != "Missing all<br>Feb. files"
+          version != "Missing ver.<br>or Feb. files"
         ) |>
         summarize(n = sum(cnt)) |>
         pull(n),
