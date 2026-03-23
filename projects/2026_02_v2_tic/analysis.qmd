@@ -278,12 +278,12 @@ payer_df <- payer_files_dec |>
       left_join(
         parsing_status_dec |>
           filter(state == "succeed", schema == "in-network-rates") |>
-          select(payer_id, data_source_name, parsed_location_files),
+          select(payer_id, data_source_name, expected_location_files),
         by = c("payer_id", "data_source_name")
       ) |>
       mutate(
         provider_mode = case_when(
-          parsed_location_files > 0 ~ "external",
+          expected_location_files > 0 ~ "external",
           provider_mode == "reference" ~ "internal",
           .default = provider_mode
         )
@@ -304,12 +304,12 @@ payer_df <- payer_files_dec |>
       left_join(
         parsing_status_feb |>
           filter(state == "succeed", schema == "in-network-rates") |>
-          select(payer_id, data_source_name, parsed_location_files),
+          select(payer_id, data_source_name, expected_location_files),
         by = c("payer_id", "data_source_name")
       ) |>
       mutate(
         provider_mode = case_when(
-          parsed_location_files > 0 ~ "external",
+          expected_location_files > 0 ~ "external",
           provider_mode == "reference" ~ "internal",
           .default = provider_mode
         )
@@ -764,11 +764,11 @@ payer_df |>
           ),
           ref_type == "inline-feb" ~ paste0(
             "**Inline<br>references**<br>",
-            "<span style='font-size:13px'>(banned in 1.0)</span>"
+            "<span style='font-size:13px'>(banned in 2.0)</span>"
           ),
           ref_type == "ref_ext-feb" ~ paste0(
             "**External<br>references**<br>",
-            "<span style='font-size:13px'>(banned in 1.0)</span>"
+            "<span style='font-size:13px'>(banned in 2.0)</span>"
           ),
           ref_type == "ref_int-feb" ~ paste0(
             "**Internal<br>references**<br>",
@@ -1462,7 +1462,7 @@ plt_file_sizes_df |>
         "Payers that switched from external references to internal references",
         "Payers that switched from inline references to internal references"
       ),
-      "pos" = c(33.5, 5.5, 12.5)
+      "pos" = c(34.5, 4.5, 12.5)
     ),
     aes(
       x = -1.65,
