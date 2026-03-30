@@ -5,8 +5,9 @@ WITH top_names AS (
             10, tin.business_name, 5000  -- noqa: RF01
         ) AS name_map,
         APPROX_DISTINCT(tin.business_name) AS unique_name_count  -- noqa: RF01
-    FROM hive.public_2026_02.inr_provider_references_provider_groups AS pg
-    WHERE tin.type = 'ein'  -- noqa: RF01
+    FROM hive.public_2026_03.inr_provider_references_provider_groups AS pg
+    WHERE
+        tin.type = 'ein'  -- noqa: RF01
         AND tin.business_name IS NOT NULL  -- noqa: RF01
         AND tin.business_name != ''  -- noqa: RF01
     GROUP BY pg.payer_id

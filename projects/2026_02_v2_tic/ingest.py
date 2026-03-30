@@ -19,19 +19,17 @@ OUTPUT_DIR = Path("data/output")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 QUERIES = [
-    "ein_fill_rate_feb",
-    "ein_names_common_feb",
-    "ein_names_overlap_feb",
-    "network_names_feb",
+    "ein_fill_rate_mar",
+    "ein_names_common_mar",
+    "ein_names_overlap_mar",
+    "network_names_mar",
     "parsing_status_dec",
-    "parsing_status_feb",
+    "parsing_status_mar",
     "payer_files_dec",
-    "payer_files_feb",
+    "payer_files_mar",
     "payer_lives",
     "provider_mode_dec",
-    "provider_mode_feb",
-    "rate_count_dec",
-    "rate_count_feb",
+    "provider_mode_mar",
 ]
 
 

@@ -3,7 +3,7 @@ WITH modes AS (
         payer_id,
         data_source_name,
         'inline' AS provider_mode
-    FROM hive.public_2026_02.inr_in_network_neg_rates_provider_groups
+    FROM hive.public_2026_03.inr_in_network_neg_rates_provider_groups
 
     UNION ALL
 
@@ -11,7 +11,7 @@ WITH modes AS (
         payer_id,
         data_source_name,
         'reference' AS provider_mode
-    FROM hive.public_2026_02.inr_in_network_neg_rates_provider_references
+    FROM hive.public_2026_03.inr_in_network_neg_rates_provider_references
 )
 
 SELECT

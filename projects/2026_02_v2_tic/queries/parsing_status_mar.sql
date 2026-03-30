@@ -56,7 +56,8 @@ LEFT JOIN aurora.data_bistro.payer_mrf_location AS loc
     ON mrf.id = loc.mrf_id
 LEFT JOIN aurora.data_bistro.payer AS payer
     ON mrf.payer_id = payer.id
-WHERE mrf.version = '2026-02'
+WHERE
+    mrf.version = '2026-03'
     AND mrf.payer_id <> 510
 GROUP BY
     mrf.data_source_name,

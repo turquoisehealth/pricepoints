@@ -5,7 +5,7 @@ WITH payer_eins_named_raw AS (
         pg.data_source_name,
         tin.value AS tin_value  -- noqa: RF01
     FROM
-        tq_production.public_2026_02.inr_provider_references_provider_groups
+        hive.public_2026_03.inr_provider_references_provider_groups
             AS pg
     WHERE
         tin.type = 'ein'  -- noqa: RF01
@@ -89,7 +89,7 @@ npi_type_counts AS (
         ) AS approx_unclassified
     FROM new_ein_rows AS nei
     INNER JOIN
-        tq_production.public_2026_02.inr_provider_references_provider_groups_npi
+        hive.public_2026_03.inr_provider_references_provider_groups_npi
             AS pgn
         ON nei.payer_id = pgn.payer_id
         AND nei.data_source_name = pgn.data_source_name
