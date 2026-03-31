@@ -35,7 +35,7 @@ indented_on_contents = false
 indented_ctes = false
 indented_then = true
 indented_then_contents = false
-allow_implicit_indents = true
+implicit_indents = "allow"
 
 [tool.sqlfluff.rules.aliasing.table]
 aliasing = "explicit"
@@ -57,3 +57,8 @@ extended_capitalisation_policy = "upper"
 
 [tool.sqlfluff.rules.convention.casting_style]
 preferred_type_casting_style = "cast"
+
+[tool.sqlfluff.layout.type.where_clause]
+line_position = "alone"
+keyword_line_position = "leading"
+

@@ -19,14 +19,15 @@ allowed-tools: Bash(trino *), Read, Write, Glob
 
 ## Workflow
 
-1. Write SQL to a file using Claude Write() and Edit() capabilities, then execute:
+1. Write SQL to a file using Claude Write() and Edit() capabilities. Write to the `queries/tmp` directory of a project
+2. Execute the queries with:
 
     ```bash
     trino --file queries/tmp/query_name.sql
     ```
 
-2. Inspect results, refine query, re-run
-3. Run independent queries in parallel using background Bash tasks
+3. Inspect results, refine query, re-run if necessary
+4. Run independent queries in parallel using background Bash tasks
 
 ## Performance
 

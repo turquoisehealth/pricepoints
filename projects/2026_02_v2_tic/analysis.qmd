@@ -1,0 +1,1927 @@
+---
+title: "Early TiC 2.0 schema adoption"
+subtitle: "By Dan Snow"
+format:
+  html:
+    fig-format: retina
+    fig-dpi: 320
+    toc: false
+    embed-resources: true
+    grid:
+      body-width: 900px
+execute:
+  echo: false
+---
+
+```{r setup, message=FALSE}
+library(arrow)
+library(conflicted)
+library(dplyr)
+library(forcats)
+library(ggplot2)
+library(ggrepel)
+library(ggtext)
+library(lubridate)
+library(purrr)
+library(readr)
+library(scales)
+library(stringr)
+library(tidyr)
+
+conflict_prefer_all("dplyr", quiet = TRUE)
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+
+# Add a nice ordinal to a date (e.g. Feb 23rd, 2026)
+format_date_ordinal <- function(d) {
+  day <- as.integer(format(d, "%d"))
+  suffix <- if (day %in% c(11, 12, 13)) {
+    "th"
+  } else {
+    switch(as.character(day %% 10), "1" = "st", "2" = "nd", "3" = "rd", "th")
+  }
+  paste0(format(d, "%b. "), day, suffix, format(d, ", %Y"))
+}
+
+# Transform numbers into abbreviated amounts
+# 100 becomes 100, 1000 becomes 1K, 1000000 becomes $1M, etc.
+label_comma_short <- function(x) {
+  sapply(
+    x,
+    function(val) {
+      if (is.na(val)) {
+        return(NA_character_)
+      }
+
+      abs_val <- abs(val)
+      sign_str <- ifelse(val < 0, "-", "")
+      if (abs_val >= 1e12) {
+        paste0(sign_str, round(abs_val / 1e12, 0), "T")
+      } else if (abs_val >= 1e9) {
+        paste0(sign_str, round(abs_val / 1e9, 0), "B")
+      } else if (abs_val >= 1e6) {
+        paste0(sign_str, round(abs_val / 1e6, 0), "M")
+      } else if (abs_val >= 1e3) {
+        paste0(sign_str, round(abs_val / 1e3, 0), "K")
+      } else {
+        paste0(sign_str, formatC(abs_val, format = "f", digits = 0))
+      }
+    },
+    USE.NAMES = FALSE
+  )
+}
+```
+
+```{r load_data}
+DATA_DIR <- "data/output"
+DATA_DATE <- as.Date("2026-03-30")
+
+# Load each parquet file in data/output/, stripping the date prefix to
+# create the dataframe name (e.g. 2026_02_18_payer_files_mar.parquet
+# becomes payer_files_mar).
+payer_files <- list.files(
+  DATA_DIR,
+  pattern = paste0("^", gsub("-", "_", DATA_DATE), ".*\\.parquet$"),
+  full.names = TRUE
+)
+for (path in payer_files) {
+  name <- sub(
+    "^\\d{4}_\\d{2}_\\d{2}_",
+    "",
+    tools::file_path_sans_ext(basename(path))
+  )
+  assign(
+    name,
+    read_parquet(path) |>
+      # Convert payer_id to char and grab the first number as a version. Most
+      # have a mix of semver and string versions (e.g. 1.0.0, v1, 1.0), so this
+      # correctly grabs just the "1" for version
+      mutate(across(any_of("payer_id"), \(x) as.character(x))) |>
+      mutate(across(
+        any_of("version"),
+        \(x) str_extract(version, "\\d+"),
+        .names = "{.col}_parsed"
+      ))
+  )
+}
+
+# Build a payer name lookup table w/ covered lives. Add a boolean of top 50
+# payers for use between plots
+payer_names <- payer_files_dec |>
+  distinct(payer_id, payer_name) |>
+  group_by(payer_id) |>
+  slice_head(n = 1) |>
+  ungroup() |>
+  left_join(payer_lives, by = c("payer_id" = "tq_payer_payer_id")) |>
+  select(payer_id, payer_name, payer_lives = lives) |>
+  mutate(
+    payer_name = str_replace_all(payer_name, "Blue Cross Blue Shield", "BCBS"),
+    payer_name = replace_values(
+      payer_name,
+      "BCBS of Pennsylvania (Capital Blue Cross)" ~
+        "BCBS of Pennsylvania (CBC)",
+      "Healthcare Management Administrators (HMA)" ~ "HMA",
+      "Ventura County Health Care Plan (VCHCP)" ~ "VCHCP",
+      "Innovation Health Insurance Company" ~ "Innovation"
+    ),
+    # Fill covered lives for United and Aetna TPAs
+    payer_lives = case_when(
+      payer_id == "861" ~ payer_lives[payer_id == "7"],
+      payer_id == "953" ~ payer_lives[payer_id == "643"],
+      .default = payer_lives
+    )
+  )
+
+top_n_payer_ids <- payer_names |>
+  slice_max(payer_lives, n = 46) |>
+  pull(payer_id) |>
+  c("108", "978", "947", "111")
+
+# Grab the unique network names + count per data source/file
+network_names_per_file_mar <- payer_files_mar |>
+  select(payer_id, data_source_name) |>
+  left_join(network_names_mar, by = c("payer_id", "data_source_name")) |>
+  group_by(payer_id, data_source_name) |>
+  summarize(
+    nn_unique_names_lst_mar = list(unique(str_trim(flatten_chr(
+      network_names
+    )))),
+    nn_unique_names_cnt_mar = map_int(nn_unique_names_lst_mar, \(x) length(x))
+  )
+
+# Join various payer datasets to make our main working table. One row per payer.
+# First we grab the count of data source names for each month, plus the count
+# of different TiC schema versions
+payer_df <- payer_files_dec |>
+  distinct(payer_id, data_source_name, version_parsed) |>
+  summarize(
+    n_dsn_dec = n(),
+    n_dsn_v1_dec = sum(version_parsed == 1),
+    n_dsn_v2_dec = sum(version_parsed == 2),
+    .by = "payer_id"
+  ) |>
+  left_join(
+    payer_files_mar |>
+      distinct(payer_id, data_source_name, version_parsed) |>
+      summarize(
+        n_dsn_mar = n(),
+        n_dsn_v1_mar = sum(version_parsed == 1),
+        n_dsn_v2_mar = sum(version_parsed == 2),
+        .by = "payer_id"
+      ),
+    by = "payer_id"
+  ) |>
+  # Attach expected number of INR files for each month, where "expected" means
+  # files that will eventually be ingested / processed. We assume this number
+  # doesn't change within a given month (i.e. once files are posted for March,
+  # the payer won't come back and post more files)
+  left_join(
+    parsing_status_dec |>
+      filter(
+        !is_skipped,
+        !is_broken,
+        !has_error,
+        schema == "in-network-rates"
+      ) |>
+      summarize(num_files_expected_dec = n(), .by = "payer_id"),
+    by = "payer_id"
+  ) |>
+  left_join(
+    parsing_status_mar |>
+      filter(
+        !is_skipped,
+        !is_broken,
+        !has_error,
+        schema == "in-network-rates"
+      ) |>
+      summarize(num_files_expected_mar = n(), .by = "payer_id"),
+    by = "payer_id"
+  ) |>
+  # Attach metadata (size, num external reference files) for parsed files.
+  # Here we only take data for files successfully ingested (no size, ref data
+  # exists for parsing or errored files)
+  left_join(
+    parsing_status_dec |>
+      filter(state == "succeed", schema == "in-network-rates") |>
+      group_by(payer_id) |>
+      summarize(
+        num_files_parsed_dec = n(),
+        tot_file_bytes_dec = sum(raw_file_size_bytes, na.rm = TRUE),
+        avg_file_bytes_dec = mean(raw_file_size_bytes, na.rm = TRUE)
+      ),
+    by = "payer_id"
+  ) |>
+  left_join(
+    parsing_status_mar |>
+      filter(state == "succeed", schema == "in-network-rates") |>
+      group_by(payer_id) |>
+      summarize(
+        num_files_parsed_mar = n(),
+        tot_file_bytes_mar = sum(raw_file_size_bytes, na.rm = TRUE),
+        avg_file_bytes_mar = mean(raw_file_size_bytes, na.rm = TRUE)
+      ),
+    by = "payer_id"
+  ) |>
+  # Diff expected vs parsed files, and convert raw byte values to nice strings
+  mutate(
+    diff_expected_files = num_files_expected_mar - num_files_expected_dec,
+    diff_parsed_files = num_files_parsed_mar - num_files_parsed_dec,
+    diff_bytes = tot_file_bytes_mar - tot_file_bytes_dec,
+    diff_avg_bytes = avg_file_bytes_mar - avg_file_bytes_dec,
+    across(
+      contains("bytes"),
+      \(x) {
+        case_when(
+        abs(x) >= 1099511627776 ~ paste(round(x / 1099511627776.0, 1), "TB"),
+        abs(x) >= 1073741824 ~ paste(round(x / 1073741824.0, 1), "GB"),
+        abs(x) >= 1048576 ~ paste(round(x / 1048576.0, 1), "MB"),
+        abs(x) >= 1024 ~ paste(round(x / 1024.0, 1), "KB"),
+        abs(x) >= 0 ~ paste(round(x / 1.0, 1), "B")
+      )
+      },
+      .names = "{.col}_parsed"
+    )
+  ) |>
+  left_join(payer_names, by = "payer_id") |>
+  relocate(payer_id, payer_name, payer_lives) |>
+  # Attach network_name stats per payer, aggregating from the per payer + data
+  # source name level dataframe
+  left_join(
+    network_names_per_file_mar |>
+      group_by(payer_id) |>
+      summarize(
+        nn_pct_of_posted = mean(
+          nn_unique_names_cnt_mar > 0,
+          na.rm = TRUE
+        ),
+        nn_unique_names_lst_mar = list(unique(flatten_chr(
+          nn_unique_names_lst_mar
+        ))),
+        nn_avg_unique_names_per_file = mean(
+          nn_unique_names_cnt_mar[nn_unique_names_cnt_mar != 0],
+          na.rm = TRUE
+        ),
+        nn_avg_unique_names_per_file = case_when(
+          is.nan(nn_avg_unique_names_per_file) ~ NA,
+          .default = nn_avg_unique_names_per_file
+        ),
+        nn_unique_names_cnt_mar = map_int(nn_unique_names_lst_mar, length)
+      ),
+    by = "payer_id"
+  ) |>
+  # Attach provider_group mode stats (i.e. inline, external, internal provider
+  # groups). External vs internal provider group (PG) references aren't
+  # differentiated in the INR schema itself. Instead, we get the number of
+  # external PGs by seeing if a given data source name had a "location file"
+  # associated with it when parsing
+  left_join(
+    provider_mode_dec |>
+      left_join(
+        parsing_status_dec |>
+          filter(state == "succeed", schema == "in-network-rates") |>
+          select(payer_id, data_source_name, expected_location_files),
+        by = c("payer_id", "data_source_name")
+      ) |>
+      mutate(
+        provider_mode = case_when(
+          expected_location_files > 0 ~ "external",
+          provider_mode == "reference" ~ "internal",
+          .default = provider_mode
+        )
+      ) |>
+      # Drop payers with multiple ref types per file (there are only a few)
+      arrange(desc(provider_mode)) |>
+      distinct(payer_id, data_source_name, .keep_all = TRUE) |>
+      group_by(payer_id) |>
+      summarize(
+        num_dsn_pg_inline_dec = sum(provider_mode == "inline"),
+        num_dsn_pg_ref_ext_dec = sum(provider_mode == "external"),
+        num_dsn_pg_ref_int_dec = sum(provider_mode == "internal")
+      ),
+    by = "payer_id"
+  ) |>
+  left_join(
+    provider_mode_mar |>
+      left_join(
+        parsing_status_mar |>
+          filter(state == "succeed", schema == "in-network-rates") |>
+          select(payer_id, data_source_name, expected_location_files),
+        by = c("payer_id", "data_source_name")
+      ) |>
+      mutate(
+        provider_mode = case_when(
+          expected_location_files > 0 ~ "external",
+          provider_mode == "reference" ~ "internal",
+          .default = provider_mode
+        )
+      ) |>
+      arrange(desc(provider_mode)) |>
+      distinct(payer_id, data_source_name, .keep_all = TRUE) |>
+      group_by(payer_id) |>
+      summarize(
+        num_dsn_pg_inline_mar = sum(provider_mode == "inline"),
+        num_dsn_pg_ref_ext_mar = sum(provider_mode == "external"),
+        num_dsn_pg_ref_int_mar = sum(provider_mode == "internal")
+      ),
+    by = "payer_id"
+  ) |>
+  relocate(starts_with("num_dsn_pg"), .after = everything()) |>
+  relocate(starts_with("num_files"), .after = n_dsn_v2_mar) |>
+  relocate(starts_with("tot_file"), .after = num_files_parsed_mar) |>
+  relocate(starts_with("diff"), .after = avg_file_bytes_mar_parsed)
+```
+
+```{r tbl_summary_by_payer}
+payer_summ_df <- payer_df |>
+  transmute(
+    payer_id,
+    `Payer name` = payer_name,
+    `Has V2 version string` = (n_dsn_v2_mar / n_dsn_mar) * 100,
+    `Uses internal provider groups` = (num_dsn_pg_ref_int_mar / n_dsn_mar) *
+      100,
+    `Added network_name` = nn_pct_of_posted * 100
+  ) |>
+  left_join(
+    ein_fill_rate_mar |>
+      group_by(payer_id) |>
+      summarize(
+        n_ein_records = sum(n_ein_records),
+        n_with_business_name = sum(n_with_business_name)
+      ) |>
+      transmute(
+        payer_id,
+        `Added business_name` = (n_with_business_name / n_ein_records) * 100
+      ),
+    by = "payer_id"
+  ) |>
+  arrange(`Payer name`)
+
+payer_summ_df |>
+  write_csv("data/publish/tbl_summ_by_payer.csv", na = "")
+```
+
+```{r tbl_summary_overall}
+payer_summ_df |>
+  summarize(
+    `Payer group` = "All payers",
+    across(
+      `Has V2 version string`:`Added business_name`,
+      \(x) mean(x >= 90.0, na.rm = TRUE) * 100
+    )
+  ) |>
+  bind_rows(
+    payer_summ_df |>
+      filter(payer_id %in% top_n_payer_ids) |>
+      summarize(
+        `Payer group` = "Top 50 payers",
+        across(
+          `Has V2 version string`:`Added business_name`,
+          \(x) mean(x >= 90.0, na.rm = TRUE) * 100
+        )
+      )
+  ) |>
+  write_csv("data/publish/tbl_summ_overall.csv")
+```
+
+# Version plots
+
+---
+
+```{r plt_version_adoption_overall}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 6.5
+
+version_adoption_df <- payer_df |>
+  mutate(
+    n_dsn_v1_dec = replace_values(n_dsn_v1_dec, NA ~ n_dsn_dec),
+    across(
+      c(n_dsn_v2_dec, n_dsn_v1_mar, n_dsn_v2_mar),
+      \(x) replace_values(x, NA ~ 0)
+    )
+  ) |>
+  summarize(
+    v1_dec = sum(n_dsn_v1_dec & !n_dsn_v2_dec, na.rm = TRUE),
+    v2_dec = sum(n_dsn_v2_dec & !n_dsn_v1_dec, na.rm = TRUE),
+    v1_v2_dec = sum(n_dsn_v1_dec & n_dsn_v2_dec, na.rm = TRUE),
+    v1_mar = sum(n_dsn_v1_mar & !n_dsn_v2_mar, na.rm = TRUE),
+    v2_mar = sum(n_dsn_v2_mar & !n_dsn_v1_mar, na.rm = TRUE),
+    v1_v2_mar = sum(n_dsn_v1_mar & n_dsn_v2_mar, na.rm = TRUE),
+    vmissing_dec = n() - v1_dec - v2_dec - v1_v2_dec,
+    vmissing_mar = n() - v1_mar - v2_mar - v1_v2_mar,
+    across(starts_with("v"), \(x) x / n(), .names = "pct_{.col}")
+  ) |>
+  rename_with(\(x) paste0("cnt_", x), starts_with("v")) |>
+  pivot_longer(
+    cols = everything(),
+    names_to = c("stat", "version", "month"),
+    names_pattern = "(pct|cnt)_(v.*)_(dec|mar)",
+    values_to = "value"
+  ) |>
+  filter_out(version == "vmissing" & month == "dec") |>
+  mutate(
+    version = recode_values(
+      version,
+      "v1" ~ "All V1<br>files",
+      "v1_v2" ~ "Mixed<br>(V1 & V2)",
+      "v2" ~ "All V2<br>files",
+      "vmissing" ~ "Missing ver.<br>or Mar. files"
+    ),
+    month = recode_values(
+      month,
+      "dec" ~ "December 2025",
+      "mar" ~ "March 2026"
+    )
+  ) |>
+  pivot_wider(names_from = "stat", values_from = "value") |>
+  mutate(
+    version = factor(
+      version,
+      levels = c(
+        "All V1<br>files",
+        "Mixed<br>(V1 & V2)",
+        "All V2<br>files",
+        "Missing ver.<br>or Mar. files"
+      )
+    ),
+    label = paste0(
+      cnt,
+      "<br>",
+      "<span style='font-size:12px;color:grey30'>(",
+      label_percent()(pct),
+      ")</span>"
+    )
+  )
+
+ggplot(version_adoption_df) +
+  geom_col(
+    aes(y = cnt, x = version, fill = version)
+  ) +
+  geom_richtext(
+    aes(y = cnt, x = version, label = label),
+    nudge_y = 10,
+    size = 4.5,
+    label.colour = "transparent",
+    fill = "transparent",
+    lineheight = 0.9
+  ) +
+  scale_y_continuous(labels = label_comma()) +
+  scale_fill_manual(
+    values = c(
+      "All V1<br>files" = "#fc8d62",
+      "Mixed<br>(V1 & V2)" = "#8da0cb",
+      "All V2<br>files" = "#66c2a5",
+      "Missing ver.<br>or Mar. files" = "grey80"
+    )
+  ) +
+  labs(
+    title = paste0(
+      "Overall TiC 2.0 schema adoption as of ",
+      format_date_ordinal(DATA_DATE)
+    ),
+    subtitle = paste0(
+      "Of ",
+      version_adoption_df |>
+        filter(
+          month == "March 2026",
+          version != "Missing ver.<br>or Mar. files"
+        ) |>
+        summarize(n = sum(cnt)) |>
+        pull(n),
+      " payers with Mar. files, just ",
+      version_adoption_df |>
+        filter(
+          month == "March 2026",
+          version == "All V2<br>files"
+        ) |>
+        summarize(n = sum(cnt)) |>
+        pull(n),
+      " have fully adopted the ",
+      "TiC 2.0 schema"
+    ),
+    caption = paste0(
+      "Data from Turquoise Health payer database of in-network rate files. ",
+      "Version is self-reported by payers and may not actually reflect ",
+      "file changes<br>Version is the first digit of any posted schema ",
+      "version e.g. 1.0.0 and v1.6.0 equal V1, 2.0.0 and V2.0.0 equal V2, etc."
+    ),
+    x = "",
+    y = "Count of payers"
+  ) +
+  facet_wrap(vars(month), strip.position = "bottom", scales = "free_x") +
+  guides(fill = "none") +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(
+      size = 20,
+      face = "bold",
+      margin = margin(b = 8, l = -26)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 12, l = -26),
+      lineheight = 1.1
+    ),
+    plot.caption = element_markdown(
+      size = 9,
+      lineheight = 1.1,
+      margin = margin(t = 4)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x.bottom = element_markdown(
+      size = 12,
+      margin = margin(t = -8),
+      lineheight = 1.3
+    ),
+    axis.text.y.left = element_markdown(
+      size = 12,
+      lineheight = 1.3
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.spacing.x = unit(1, "cm"),
+    strip.placement = "outside",
+    strip.text.x.bottom = element_markdown(
+      size = 16,
+      face = "bold",
+      margin = margin(t = 10)
+    )
+  )
+```
+
+<br>
+
+```{r plt_version_adoption_by_payer}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 9
+
+payer_df |>
+  filter(payer_id %in% top_n_payer_ids) |>
+  mutate(
+    n_dsn_mar = pmin(replace_values(n_dsn_mar, NA ~ 0), num_files_expected_mar),
+    n_dsn_v1_mar = replace_values(n_dsn_v1_mar, NA ~ n_dsn_mar),
+    n_dsn_v2_mar = replace_values(n_dsn_v2_mar, NA ~ 0),
+    num_files_expected_mar = replace_values(
+      num_files_expected_mar,
+      NA ~ num_files_expected_dec
+    ),
+    n_dsn_missing_mar = num_files_expected_mar - (n_dsn_v1_mar + n_dsn_v2_mar)
+  ) |>
+  select(
+    payer_id,
+    payer_name,
+    payer_lives,
+    starts_with("n_dsn_v"),
+    starts_with("n_dsn_m"),
+    starts_with("num_files_exp")
+  ) |>
+  pivot_longer(
+    cols = starts_with("n_dsn"),
+    names_to = c("version", "month"),
+    values_to = "count",
+    names_pattern = "n_dsn_(missing|v1|v2)_(dec|mar)"
+  ) |>
+  mutate(
+    pct = count /
+      ifelse(
+        month == "dec",
+        num_files_expected_dec,
+        num_files_expected_mar
+      ),
+    version = fct_rev(factor(
+      recode_values(
+        version,
+        "v1" ~ "V1",
+        "v2" ~ "V2",
+        "missing" ~ "Missing version"
+      ),
+      levels = c("V2", "V1", "Missing version")
+    ))
+  ) |>
+  filter(month != "dec") |>
+  mutate(
+    v2_pct = pct[version == "V2"],
+    v1_pct = pct[version == "V1"],
+    .by = "payer_id"
+  ) |>
+  arrange(desc(v2_pct), desc(v1_pct)) |>
+  mutate(payer_name = fct_rev(fct_reorder(payer_name, row_number()))) |>
+  ggplot() +
+  geom_col(
+    aes(y = payer_name, x = pct, fill = version),
+    width = 0.8
+  ) +
+  scale_fill_manual(
+    values = c(
+      "V1" = "#fc8d62",
+      "V2" = "#66c2a5",
+      "Missing version" = "grey80"
+    )
+  ) +
+  scale_x_continuous(labels = label_percent(), expand = c(0, 0)) +
+  guides(fill = guide_legend(title = "", reverse = TRUE)) +
+  labs(
+    title = paste0(
+      "Payer-level TiC 2.0 schema adoption as of ",
+      format_date_ordinal(DATA_DATE)
+    ),
+    subtitle = paste0(
+      "Most of the top 50 payers (by national covered lives) ",
+      "are still transitioning to TiC 2.0"
+    ),
+    caption = paste0(
+      "Data from Turquoise Health payer database of in-network rate files. ",
+      "Version is self-reported by payers and may not actually reflect ",
+      "file changes"
+    ),
+    y = "",
+    x = "Percent of March payer files"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(
+      size = 20,
+      face = "bold",
+      margin = margin(b = 8, l = -140)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 12, l = -140),
+      lineheight = 1.1
+    ),
+    plot.caption = element_markdown(
+      size = 9,
+      lineheight = 1.1,
+      margin = margin(t = 12, b = 4, r = -15)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x.bottom = element_markdown(
+      size = 12,
+      lineheight = 1.3
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.spacing.x = unit(1, "cm"),
+    axis.ticks.x = element_line(color = "grey40"),
+    legend.position = "top",
+    legend.box.margin = margin(b = -6),
+    legend.margin = margin(l = -10, r = 8, t = 6, b = 6),
+    legend.text = element_text(
+      size = 12
+    ),
+    legend.title = element_text(
+      size = 14,
+      face = "bold",
+      margin = margin(r = 20)
+    ),
+    legend.background = element_rect(color = "grey20"),
+    plot.margin = margin(l = -20, r = 20, t = 6)
+  )
+```
+
+<br><br><br>
+
+# Provider group plots
+
+---
+
+```{r plt_pg_overall}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 6.5
+
+payer_df |>
+  summarize(
+    across(
+      c("n_dsn_dec", "n_dsn_mar") | starts_with("num_dsn_pg"),
+      \(x) sum(x, na.rm = TRUE)
+    )
+  ) |>
+  pivot_longer(
+    cols = starts_with("num_dsn_pg"),
+    names_to = c("ref_type", "month"),
+    names_pattern = "num_dsn_pg_(.*)_(dec|mar)",
+    values_to = "count"
+  ) |>
+  mutate(pct = count / ifelse(month == "dec", n_dsn_dec, n_dsn_mar)) |>
+  mutate(
+    ref_type = factor(
+      paste0(ref_type, "-", month),
+      levels = c(
+        "inline-dec",
+        "ref_ext-dec",
+        "ref_int-dec",
+        "inline-mar",
+        "ref_ext-mar",
+        "ref_int-mar"
+      )
+    ),
+    ref_type_fct = fct_relabel(
+      ref_type,
+      \(x) {
+        case_when(
+          ref_type == "inline-dec" ~ paste0(
+            "**Inline<br>references**<br>",
+            "<span style='font-size:13px'>(allowed in 1.0)</span>"
+          ),
+          ref_type == "ref_ext-dec" ~ paste0(
+            "**External<br>references**<br>",
+            "<span style='font-size:13px'>(allowed in 1.0)</span>"
+          ),
+          ref_type == "ref_int-dec" ~ paste0(
+            "**Internal<br>references**<br>",
+            "<span style='font-size:13px'>(allowed in 1.0)</span>"
+          ),
+          ref_type == "inline-mar" ~ paste0(
+            "**Inline<br>references**<br>",
+            "<span style='font-size:13px'>(banned in 2.0)</span>"
+          ),
+          ref_type == "ref_ext-mar" ~ paste0(
+            "**External<br>references**<br>",
+            "<span style='font-size:13px'>(banned in 2.0)</span>"
+          ),
+          ref_type == "ref_int-mar" ~ paste0(
+            "**Internal<br>references**<br>",
+            "<span style='font-size:13px'>(required in 2.0)</span>"
+          )
+        )
+      }
+    ),
+    month = recode_values(
+      month,
+      "dec" ~ "December 2025",
+      "mar" ~ "March 2026"
+    ),
+    label = label_percent()(pct)
+  ) |>
+  ggplot() +
+  geom_col(
+    aes(y = pct, x = ref_type_fct, fill = ref_type)
+  ) +
+  geom_richtext(
+    aes(y = pct, x = ref_type_fct, label = label),
+    nudge_y = 0.025,
+    size = 4.5,
+    label.colour = "transparent",
+    fill = "transparent",
+    lineheight = 0.9
+  ) +
+  scale_y_continuous(labels = label_percent()) +
+  scale_fill_manual(
+    values = c(
+      "inline-dec" = "#fc8d62",
+      "ref_ext-dec" = "#8da0cb",
+      "ref_int-dec" = "#66c2a5",
+      "inline-mar" = "#fc8d62",
+      "ref_ext-mar" = "#8da0cb",
+      "ref_int-mar" = "#66c2a5"
+    )
+  ) +
+  labs(
+    title = paste0(
+      "Provider reference schema adoption as of ",
+      format_date_ordinal(DATA_DATE)
+    ),
+    subtitle = paste0(
+      "Most payers were already using the internal ",
+      "provider groups required in TiC 2.0"
+    ),
+    caption = paste0(
+      "Data from Turquoise Health payer database of in-network rate files"
+    ),
+    x = "",
+    y = "Percent of March payer files"
+  ) +
+  facet_wrap(vars(month), strip.position = "bottom", scales = "free_x") +
+  guides(fill = "none") +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(
+      size = 19,
+      face = "bold",
+      margin = margin(b = 8, l = -30)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 12, l = -30),
+      lineheight = 1.1
+    ),
+    plot.caption = element_markdown(
+      size = 9,
+      lineheight = 1.1,
+      margin = margin(t = 4)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x.bottom = element_markdown(
+      size = 12,
+      margin = margin(t = -8),
+      lineheight = 1.1
+    ),
+    axis.text.y.left = element_markdown(
+      size = 12,
+      lineheight = 1.3
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.spacing.x = unit(1, "cm"),
+    strip.placement = "outside",
+    strip.text.x.bottom = element_markdown(
+      size = 16,
+      face = "bold",
+      margin = margin(t = 10)
+    )
+  )
+```
+
+<br>
+
+```{r plt_pg_by_payer}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 9
+
+payer_df |>
+  filter(payer_id %in% top_n_payer_ids) |>
+  mutate(
+    n_dsn_pg_all_dec = rowSums(
+      pick(matches("num_dsn_pg_.*_dec")),
+      na.rm = TRUE
+    ),
+    n_dsn_pg_all_mar = rowSums(
+      pick(matches("num_dsn_pg_.*_mar")),
+      na.rm = TRUE
+    ),
+    across(
+      starts_with("num_dsn_pg") & ends_with("dec"),
+      \(x) x / num_files_expected_dec
+    ),
+    across(
+      starts_with("num_dsn_pg") & ends_with("mar"),
+      \(x) x / num_files_expected_mar
+    ),
+    ref_int_diff = num_dsn_pg_ref_int_mar - num_dsn_pg_ref_int_dec
+  ) |>
+  select(
+    payer_id,
+    payer_name,
+    payer_lives,
+    starts_with("num_dsn_pg"),
+    ref_int_diff
+  ) |>
+  pivot_longer(
+    cols = starts_with("num_dsn_pg"),
+    names_to = c("ref_type", "month"),
+    names_pattern = "num_dsn_pg_(.*)_(dec|mar)",
+    values_to = "pct"
+  ) |>
+  mutate(
+    ref_type = factor(
+      ref_type,
+      levels = c(
+        "inline",
+        "ref_ext",
+        "ref_int"
+      )
+    ),
+    ref_type = fct_relabel(
+      ref_type,
+      \(x) {
+        recode_values(
+          x,
+          "inline" ~ "Inline references",
+          "ref_ext" ~ "External references",
+          "ref_int" ~ "Internal references"
+        )
+      }
+    ),
+    month = recode_values(
+      month,
+      "dec" ~ "December 2025",
+      "mar" ~ "March 2026"
+    )
+  ) |>
+  mutate(
+    inline_rank = pct[
+      ref_type == "Inline references" & month == "December 2025"
+    ],
+    external_rank = pct[
+      ref_type == "External references" & month == "December 2025"
+    ],
+    .by = "payer_id"
+  ) |>
+  arrange(inline_rank, desc(external_rank)) |>
+  mutate(payer_name = fct_rev(fct_reorder(payer_name, row_number()))) |>
+  ggplot() +
+  geom_col(
+    aes(y = payer_name, x = pct, fill = ref_type),
+    width = 0.8
+  ) +
+  facet_wrap(vars(month)) +
+  scale_fill_manual(
+    values = c(
+      "Missing or not yet parsed" = "grey80",
+      "Inline references" = "#fc8d62",
+      "External references" = "#8da0cb",
+      "Internal references" = "#66c2a5"
+    )
+  ) +
+  scale_x_continuous(labels = label_percent(), expand = c(0, 0)) +
+  guides(fill = guide_legend(title = "", reverse = TRUE)) +
+  labs(
+    title = paste0(
+      "Provider reference schema adoption as of ",
+      format_date_ordinal(DATA_DATE)
+    ),
+    subtitle = paste0(
+      "Between December and March, more ",
+      "payers switched to internal references"
+    ),
+    caption = paste0(
+      "Data from Turquoise Health payer database of in-network rate files<br>",
+      "Shows top 50 payers by number of national covered lives, but ",
+      "plot order is by percent adoption of internal provider groups"
+    ),
+    y = "",
+    x = "Percent of March payer files"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(
+      size = 19,
+      face = "bold",
+      margin = margin(b = 8, l = -140)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 12, l = -140),
+      lineheight = 1.1
+    ),
+    plot.caption = element_markdown(
+      size = 9,
+      lineheight = 1.1,
+      margin = margin(t = 12, b = 4, r = -15)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x.bottom = element_markdown(
+      size = 12,
+      lineheight = 1.3
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.spacing.x = unit(1, "cm"),
+    axis.ticks.x = element_line(color = "grey40"),
+    strip.text.x.top = element_text(
+      size = 14,
+      face = "bold"
+    ),
+    legend.position = "top",
+    legend.box.margin = margin(b = -6),
+    legend.margin = margin(l = -4, r = 16, t = 6, b = 6),
+    legend.text = element_text(
+      size = 12
+    ),
+    legend.title = element_text(
+      size = 14,
+      face = "bold",
+      margin = margin(r = 20)
+    ),
+    legend.background = element_rect(color = "grey20"),
+    plot.margin = margin(l = -20, r = 20, t = 6)
+  )
+```
+
+<br><br><br>
+
+# Network name plots
+
+---
+
+```{r plt_nn_by_payer}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 9
+
+payer_df |>
+  filter(payer_id %in% top_n_payer_ids) |>
+  filter(!is.na(n_dsn_mar)) |>
+  arrange(nn_pct_of_posted) |>
+  mutate(
+    nn_pct_inv = 1 - nn_pct_of_posted,
+    payer_name = fct_reorder(payer_name, row_number())
+  ) |>
+  pivot_longer(
+    cols = starts_with("nn_pct_"),
+    values_to = "pct",
+    names_to = "type"
+  ) |>
+  mutate(
+    type = factor(type, levels = c("nn_pct_of_posted", "nn_pct_inv")),
+    type = fct_rev(fct_relabel(type, \(x) {
+      replace_values(
+        x,
+        "nn_pct_of_posted" ~ "Has <span style='font-family:mono'>network_name</span>",
+        "nn_pct_inv" ~ "No <span style='font-family:mono'>network_name</span>"
+      )
+    }))
+  ) |>
+  ggplot() +
+  geom_col(
+    aes(
+      x = pct,
+      y = payer_name,
+      fill = type
+    ),
+    width = 0.8
+  ) +
+  scale_x_continuous(
+    labels = label_percent(),
+    breaks = c(0, 0.25, 0.5, 0.75, 1),
+    expand = c(0, 0)
+  ) +
+  scale_fill_manual(
+    values = c(
+      "No <span style='font-family:mono'>network_name</span>" = "#fc8d62",
+      "Has <span style='font-family:mono'>network_name</span>" = "#66c2a5"
+    )
+  ) +
+  guides(fill = guide_legend(title = "", reverse = TRUE)) +
+  labs(
+    title = paste0(
+      "Adoption of TiC 2.0's ",
+      "<span style='font-family:mono'>network_name</span> as of ",
+      format_date_ordinal(DATA_DATE)
+    ),
+    subtitle = paste0(
+      "Of ",
+      nrow(payer_df),
+      " payers, ",
+      payer_df |>
+        filter(nn_unique_names_cnt_mar > 0) |>
+        nrow(),
+      " posted a <span style='font-family:mono'>network_name</span>",
+      " in their March provider references"
+    ),
+    caption = paste0(
+      "Data from Turquoise Health payer database of in-network rate files"
+    ),
+    y = "",
+    x = "Percent of March payer files"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(
+      size = 20,
+      face = "bold",
+      margin = margin(b = 8, l = -140)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 12, l = -140),
+      lineheight = 1.1
+    ),
+    plot.caption = element_markdown(
+      size = 9,
+      lineheight = 1.1,
+      margin = margin(t = 12, b = 4, r = -15)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x.bottom = element_markdown(
+      size = 12,
+      lineheight = 1.3
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.spacing.x = unit(1, "cm"),
+    axis.ticks.x = element_line(color = "grey40"),
+    legend.position = "top",
+    legend.box.margin = margin(b = -6),
+    legend.margin = margin(l = -10, r = 8, t = 6, b = 6),
+    legend.text = element_markdown(
+      size = 12
+    ),
+    legend.title = element_text(
+      size = 14,
+      face = "bold",
+      margin = margin(r = 20)
+    ),
+    legend.background = element_rect(color = "grey20"),
+    plot.margin = margin(l = -20, r = 20, t = 6)
+  )
+```
+
+<br>
+
+```{r plt_nn_cnt_per_file, warning=FALSE}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 6.5
+
+payer_df |>
+  ggplot() +
+  geom_point(
+    aes(x = nn_unique_names_cnt_mar, y = nn_avg_unique_names_per_file)
+  ) +
+  geom_text_repel(
+    data = payer_df |>
+      mutate(
+        top_uniq_cnt = row_number(nn_unique_names_cnt_mar),
+        top_uniq_per_file = row_number(nn_avg_unique_names_per_file),
+        payer_name = replace_values(
+          payer_name,
+          "Employee Benefit Management Services, Inc. (MT)" ~ "EBMS",
+          "Health Alliance Plan (HAP)" ~ "HAP"
+        )
+      ) |>
+      filter(
+        (top_uniq_cnt >= max(top_uniq_cnt, na.rm = TRUE) - 9) |
+          (top_uniq_per_file >= max(top_uniq_per_file, na.rm = TRUE) - 3)
+      ),
+    aes(
+      x = nn_unique_names_cnt_mar,
+      y = nn_avg_unique_names_per_file,
+      label = payer_name
+    ),
+    min.segment.length = 0.2,
+    color = "grey40"
+  ) +
+  scale_x_log10(labels = label_comma()) +
+  scale_y_log10(labels = label_comma()) +
+  labs(
+    title = paste0(
+      "Most payers post one unique ",
+      "<span style='font-family:mono'>network_name</span> ",
+      "per file"
+    ),
+    subtitle = paste0(
+      "Others post hundreds of networks in a single large file. ",
+      "Each dot is a payer"
+    ),
+    caption = paste0(
+      "Data from Turquoise Health payer database of in-network rate files"
+    ),
+    y = "Avg. number of network names *per file* (log)",
+    x = "Total count of unique network names in March (log)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(
+      size = 20,
+      face = "bold",
+      margin = margin(b = 8)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 12),
+      lineheight = 1.1
+    ),
+    plot.caption = element_markdown(
+      size = 9,
+      lineheight = 1.1,
+      margin = margin(t = 12)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 14,
+      face = "bold"
+    ),
+    axis.title.y = element_markdown(
+      margin = margin(r = 2),
+      size = 14,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 12,
+      lineheight = 1.3
+    ),
+    axis.text.y = element_markdown(
+      size = 12,
+      lineheight = 1.3
+    ),
+    panel.spacing.x = unit(1, "cm"),
+    strip.text.x.top = element_text(
+      size = 14,
+      face = "bold"
+    ),
+    legend.position = "top",
+    legend.box.margin = margin(b = -6, l = -200),
+    legend.margin = margin(l = -10, r = 8, t = 6, b = 6),
+    legend.text = element_markdown(
+      size = 12
+    ),
+    legend.title = element_text(
+      size = 14,
+      face = "bold",
+      margin = margin(r = 20)
+    ),
+    legend.background = element_rect(color = "grey20")
+  )
+```
+
+<br>
+
+```{r tbl_nn_cnt_per_file_top}
+# Grab the most common network name by payer + count of that name across all
+# files from that payer
+network_names_per_file_mar |>
+  unnest(cols = nn_unique_names_lst_mar) |>
+  ungroup() |>
+  count(payer_id, nn_unique_names_lst_mar) |>
+  arrange(payer_id, desc(n)) |>
+  filter(row_number() <= 5, .by = payer_id) |>
+  summarize(
+    net_names = paste(nn_unique_names_lst_mar, collapse = ", "),
+    .by = c("payer_id")
+  ) |>
+  right_join(payer_names, by = "payer_id") |>
+  left_join(
+    payer_df |>
+      select(payer_id, nn_unique_names_cnt_mar),
+    by = "payer_id"
+  ) |>
+  mutate(
+    payer_name = str_trunc(payer_name, 40),
+    nn_unique_names_cnt_mar = replace_na(nn_unique_names_cnt_mar, 0),
+    net_names = replace_na(net_names, "No networks posted")
+  ) |>
+  arrange(payer_name) |>
+  select(
+    `Payer name` = payer_name,
+    `# of unique net. names` = nn_unique_names_cnt_mar,
+    `Top 5 most common network names by file count` = net_names
+  ) |>
+  write_csv("data/publish/tbl_nn_cnt_top.csv")
+```
+
+<br><br><br>
+
+# File change plots
+
+---
+
+```{r plt_file_size_changes}
+#| column: page
+#| out-width: 100%
+#| fig-width: 11
+#| fig-height: 11
+
+plt_file_sizes_df <- payer_df |>
+  mutate(
+    pct_posted = n_dsn_mar / num_files_expected_mar
+  ) |>
+  mutate(
+    pct_diff_bytes = (tot_file_bytes_mar - tot_file_bytes_dec) /
+      tot_file_bytes_dec,
+    pct_diff_files = (num_files_expected_mar - num_files_expected_dec) /
+      num_files_expected_dec,
+    pct_diff_avg = (avg_file_bytes_mar - avg_file_bytes_dec) /
+      avg_file_bytes_dec,
+    pg_type = case_when(
+      ((num_dsn_pg_ref_ext_dec / n_dsn_dec) -
+         (num_dsn_pg_ref_ext_mar / n_dsn_mar)) >= 0.15 ~ "ext_to_int",
+      ((num_dsn_pg_inline_dec / n_dsn_dec) -
+         (num_dsn_pg_inline_mar / n_dsn_mar)) >= 0.15 ~ "inl_to_int",
+      .default = "same"
+    ),
+    pg_type = factor(
+      pg_type,
+      levels = c(
+        "ext_to_int",
+        "inl_to_int",
+        "same"
+      )
+    )
+  ) |>
+  filter(
+    payer_id %in% top_n_payer_ids,
+    pct_posted >= 0.95
+  ) |>
+  select(
+    payer_name,
+    pct_diff_bytes,
+    diff_bytes_parsed,
+    diff_bytes,
+    pct_diff_files,
+    diff_expected_files,
+    pct_diff_avg,
+    diff_avg_bytes_parsed,
+    pg_type
+  ) |>
+  mutate(
+    payer_name = replace_values(
+      payer_name,
+      "BCBS of Pennsylvania (Independence)" ~ "BCBS of Penn. (Independence)"
+    )
+  ) |>
+  pivot_longer(
+    cols = starts_with("pct_"),
+    names_to = "diff_type",
+    values_to = "pct"
+  ) |>
+  mutate(
+    diff = case_when(
+      diff_type == "pct_diff_bytes" ~ diff_bytes_parsed,
+      diff_type == "pct_diff_avg" ~ diff_avg_bytes_parsed,
+      .default = label_comma()(diff_expected_files)
+    )
+  ) |>
+  mutate(
+    diff_type = recode_values(
+      diff_type,
+      "pct_diff_bytes" ~ "% change in total file size",
+      "pct_diff_files" ~ "% change in total file count",
+      "pct_diff_avg" ~ "% change in avg. file size"
+    ),
+    diff_type = factor(
+      diff_type,
+      levels = c(
+        "% change in total file size",
+        "% change in total file count",
+        "% change in avg. file size"
+      )
+    )
+  ) |>
+  mutate(
+    pct_label = paste0(
+      case_when(
+        pct > 1 ~ "<span style='color:#fc8d62;font-size:20px'>**→**</span> +",
+        pct > 0 ~ "+",
+        NA ~ "Missing",
+        .default = ""
+      ),
+      diff
+    ),
+    pct = pmin(pct, 1),
+    pct = case_when(
+      str_detect(payer_name, "Geisinger") ~ pct + 0.03,
+      str_detect(payer_name, "SelectHealth") ~ pct + 0.02,
+      str_detect(payer_name, "Harvard Pilgrim") ~ pct + 0.01,
+      .default = pct
+    )
+  ) |>
+  mutate(
+    pct_sort = pct[diff_type == "% change in total file size"],
+    .by = payer_name
+  ) |>
+  filter(
+    diff_type %in%
+      c(
+        "% change in total file size",
+        "% change in total file count"
+      )
+  ) |>
+  mutate(
+    payer_name = fct_reorder(payer_name, pct_sort),
+    pct = pmin(pct, 1)
+  )
+
+plt_file_sizes_df |>
+  ggplot() +
+  geom_col(
+    aes(
+      x = pct,
+      y = payer_name,
+      fill = pct > 0
+    ),
+    width = 0.8
+  ) +
+  geom_richtext(
+    data = tibble(
+      "diff_type" = unique(plt_file_sizes_df$diff_type)[1],
+      "pg_type" = unique(plt_file_sizes_df$pg_type),
+      "txt" = c(
+        "Payers that made no major change to provider references*",
+        "Payers that switched from external references to internal references",
+        "Payers that switched from inline references to internal references"
+      ),
+      "pos" = c(29.5, 6.5, 15.5)
+    ),
+    aes(
+      x = -1.65,
+      y = pos,
+      label = txt,
+    ),
+    vjust = 0,
+    hjust = 0,
+    size = 5.3,
+    fontface = "bold",
+    color = "grey10",
+    label.colour = "transparent",
+    fill = "transparent"
+  ) +
+  geom_richtext(
+    aes(
+      x = pct,
+      y = payer_name,
+      label = pct_label,
+      hjust = case_when(
+        pct == 1 ~ 0.1,
+        pct < 0 ~ 1.05,
+        .default = -0.05
+      )
+    ),
+    size = 3,
+    color = "grey30",
+    label.colour = "transparent",
+    fill = "transparent"
+  ) +
+  facet_grid(
+    cols = vars(diff_type),
+    rows = vars(pg_type),
+    scales = "free_y",
+    space = "free_y",
+    switch = "both"
+  ) +
+  scale_x_continuous(
+    name = NULL,
+    labels = label_percent(),
+    expand = expansion(mult = c(0.35, 0.3)),
+    breaks = c(-1, -0.5, 0, 0.5, 1),
+  ) +
+  scale_fill_manual(
+    name = NULL,
+    values = c(
+      "FALSE" = "#66c2a5",
+      "TRUE" = "#fc8d62"
+    )
+  ) +
+  labs(
+    title = paste0(
+      "Changes to provider references had a big impact on payer file sizes"
+    ),
+    subtitle = paste0(
+      "Switching from inline to internal refs decreased file sizes, ",
+      "while moving external refs into files increased file sizes"
+    ),
+    caption = paste0(
+      "\\* A \"major\" change here means a payer switched at least 15 percent ",
+      " of their files to internal references. ",
+      "Small and unrelated (e.g. adding network_name) changes
+      can still affect file size"
+    ),
+    x = NULL,
+    y = NULL
+  ) +
+  guides(fill = "none") +
+  coord_cartesian(clip = "off", xlim = c(-1, 1)) +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(
+      size = 22,
+      face = "bold",
+      margin = margin(b = 8, l = -136)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15.5,
+      margin = margin(b = 32, l = -136),
+      lineheight = 1.1
+    ),
+    plot.caption = element_markdown(
+      size = 9,
+      lineheight = 1.1,
+      margin = margin(t = 12)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 14,
+      face = "bold"
+    ),
+    axis.title.y = element_markdown(
+      margin = margin(r = 2),
+      size = 14,
+      face = "bold"
+    ),
+    axis.text.x = element_markdown(
+      size = 11,
+      hjust = c(0.75, 0.5, 0.5, 0.5, 0.3)
+    ),
+    axis.text.y.left = element_markdown(
+      size = 9,
+      margin = margin(r = -4)
+    ),
+    panel.spacing.x = unit(-0.4, "cm"),
+    panel.spacing.y = unit(1, "cm"),
+    strip.text.y.left = element_blank(),
+    strip.text.x.bottom = element_text(
+      size = 14,
+      face = "bold",
+      vjust = 0,
+      angle = 0
+    ),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_blank(),
+    strip.placement = "outside"
+  )
+```
+
+<br><br><br>
+
+# EIN/TIN business name plots
+
+---
+
+```{r plt_ein_by_payer}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 9
+
+ein_fill_rate_mar |>
+  group_by(payer_id) |>
+  summarize(
+    n_ein_records = sum(n_ein_records),
+    n_with_business_name = sum(n_with_business_name)
+  ) |>
+  mutate(fill_rate = n_with_business_name / n_ein_records) |>
+  left_join(payer_names, by = "payer_id") |>
+  filter(payer_id %in% top_n_payer_ids) |>
+  filter(!is.na(fill_rate)) |>
+  arrange(fill_rate) |>
+  mutate(
+    no_name_pct = 1 - fill_rate,
+    payer_name = fct_reorder(payer_name, row_number())
+  ) |>
+  pivot_longer(
+    cols = c(fill_rate, no_name_pct),
+    values_to = "pct",
+    names_to = "type"
+  ) |>
+  mutate(
+    type = factor(type, levels = c("fill_rate", "no_name_pct")),
+    type = fct_rev(fct_relabel(type, \(x) {
+      replace_values(
+        x,
+        "fill_rate" ~ "Has <span style='font-family:mono'>business_name</span>",
+        "no_name_pct" ~ "No <span style='font-family:mono'>business_name</span>"
+      )
+    }))
+  ) |>
+  ggplot() +
+  geom_col(
+    aes(
+      x = pct,
+      y = payer_name,
+      fill = type
+    ),
+    width = 0.8
+  ) +
+  scale_x_continuous(
+    labels = label_percent(),
+    expand = c(0, 0),
+    breaks = c(0, 0.25, 0.5, 0.75, 1)
+  ) +
+  scale_fill_manual(
+    values = c(
+      "No <span style='font-family:mono'>business_name</span>" = "#fc8d62",
+      "Has <span style='font-family:mono'>business_name</span>" = "#66c2a5"
+    )
+  ) +
+  guides(fill = guide_legend(title = "", reverse = TRUE)) +
+  labs(
+    title = paste0(
+      "Most large payers are populating TiC 2.0's ",
+      "<span style='font-family:mono'>business_name</span>"
+    ),
+    subtitle = paste0(
+      "Share of EIN records with a non-empty ",
+      "<span style='font-family:mono'>business_name</span> value ",
+      "in Mar. 2026 files"
+    ),
+    caption = paste0(
+      "Data from Turquoise Health payer database of in-network rate files"
+    ),
+    y = "",
+    x = paste0(
+      "Percent of payer EIN records"
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(
+      size = 19,
+      face = "bold",
+      margin = margin(b = 8, l = -140)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 12, l = -140),
+      lineheight = 1.1
+    ),
+    plot.caption = element_markdown(
+      size = 9,
+      lineheight = 1.1,
+      margin = margin(t = 12, b = 4, r = -15)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x.bottom = element_markdown(
+      size = 12,
+      lineheight = 1.3
+    ),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.spacing.x = unit(1, "cm"),
+    axis.ticks.x = element_line(color = "grey40"),
+    strip.text.x.top = element_text(
+      size = 14,
+      face = "bold"
+    ),
+    legend.position = "top",
+    legend.box.margin = margin(b = -6),
+    legend.margin = margin(l = -10, r = 8, t = 6, b = 6),
+    legend.text = element_markdown(
+      size = 12
+    ),
+    legend.title = element_text(
+      size = 14,
+      face = "bold",
+      margin = margin(r = 20)
+    ),
+    legend.background = element_rect(color = "grey20"),
+    plot.margin = margin(l = -20, r = 20, t = 6)
+  )
+```
+
+<br>
+
+```{r plt_ein_overlap_by_payer}
+#| column: page
+#| out-width: 100%
+#| fig-width: 8
+#| fig-height: 7
+
+ein_names_overlap_mar |>
+  left_join(payer_names, by = "payer_id") |>
+  select(-new_ein_names, -payer_lives) |>
+  pivot_longer(
+    c(existing_ein_names, starts_with("npi_type")),
+    names_to = "ein_type",
+    values_to = "record_count"
+  ) |>
+  mutate(
+    ein_type = fct_rev(factor(
+      ein_type,
+      levels = c(
+        "existing_ein_names",
+        "npi_type_2_only",
+        "npi_type_1_only",
+        "npi_type_mixed",
+        "npi_type_unknown"
+      )
+    )),
+    ein_type = fct_relabel(
+      ein_type,
+      \(x) {
+        replace_values(
+          x,
+          "npi_type_2_only" ~ "Type 2 NPI only",
+          "npi_type_1_only" ~ "Type 1 NPI only",
+          "npi_type_mixed" ~ "Mixed NPI types",
+          "npi_type_unknown" ~ "Unknown NPI types"
+        )
+      }
+    )
+  ) |>
+  mutate(
+    existing_ein_count = record_count[ein_type == "existing_ein_names"],
+    pct = record_count / existing_ein_count,
+    .by = "payer_name"
+  ) |>
+  filter(ein_type != "existing_ein_names") |>
+  mutate(
+    total_pct = sum(pct),
+    total_cnt = sum(record_count),
+    .by = "payer_name"
+  ) |>
+  mutate(
+    payer_name = paste0(
+      "**",
+      payer_name,
+      "**<br>",
+      label_comma()(existing_ein_count)
+    )
+  ) |>
+  mutate(payer_name = fct_reorder(payer_name, total_pct)) |>
+  mutate(total_fmt = paste0("+", label_comma()(total_cnt))) |>
+  ggplot() +
+  geom_col(
+    aes(
+      x = pct,
+      y = payer_name,
+      fill = ein_type
+    )
+  ) +
+  geom_text(
+    aes(
+      x = total_pct,
+      y = payer_name,
+      label = total_fmt
+    ),
+    color = "grey30",
+    hjust = -0.1,
+    check_overlap = TRUE
+  ) +
+  annotate(
+    "richtext",
+    x = 1.33,
+    y = 1.5,
+    label = paste0(
+      "Ambetter had ~75K EIN<br>names ",
+      "tracked by Turquoise<br><br>",
+      "<span style='font-family:mono'>business_name</span>",
+      " added 41K more,<br>",
+      "but mostly related to Type 1 NPIs"
+    ),
+    hjust = 1,
+    label.color = "transparent",
+    fill = "transparent"
+  ) +
+  annotate(
+    "curve",
+    x = 0.675,
+    xend = 0.63,
+    y = 1.1,
+    yend = 1.75,
+    curvature = -0.3,
+    arrow = arrow(type = "closed", length = unit(0.2, "cm"))
+  ) +
+  scale_x_continuous(
+    name = "Percent increase from count of existing EINs",
+    labels = label_percent(),
+    expand = expansion(c(0, 0.10)),
+    breaks = c(0, 0.25, 0.5, 0.75, 1.0, 1.25)
+  ) +
+  scale_fill_manual(
+    name = "",
+    values = c(
+      "Type 2 NPI only" = "#66c2a5",
+      "Type 1 NPI only" = "#fc8d62",
+      "Mixed NPI types" = "#e78ac3",
+      "Unknown NPI types" = "#d14749"
+    )
+  ) +
+  guides(
+    fill = guide_legend(reverse = TRUE)
+  ) +
+  coord_cartesian(xlim = c(0, 1.25), clip = "off") +
+  labs(
+    title = paste0(
+      "Payers added new EIN names via TiC 2.0's ",
+      "<span style='font-family:mono'>business_name</span>"
+    ),
+    subtitle = paste0(
+      "However, most of the new names are for ",
+      "individuals (Type 1 NPIs), not businesses"
+    ),
+    caption = paste0(
+      "Data from Turquoise Health payer database of in-network rate files"
+    ),
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(
+      size = 19,
+      face = "bold",
+      margin = margin(b = 8, l = -158)
+    ),
+    plot.subtitle = element_markdown(
+      size = 15,
+      margin = margin(b = 12, l = -158),
+      lineheight = 1.1
+    ),
+    plot.caption = element_markdown(
+      size = 9,
+      lineheight = 1.1,
+      margin = margin(t = 12, b = 4, r = -15)
+    ),
+    axis.title.x = element_markdown(
+      margin = margin(t = 10),
+      size = 16,
+      face = "bold"
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 10),
+      size = 16,
+      lineheight = 1.1,
+      face = "bold"
+    ),
+    axis.text.x.bottom = element_markdown(
+      size = 12,
+      lineheight = 1.3
+    ),
+    axis.text.y.left = element_markdown(
+      size = 11,
+      lineheight = 1.1,
+      vjust = 0.4
+    ),
+    panel.grid.major.y = element_blank(),
+    panel.spacing.x = unit(1, "cm"),
+    strip.text.x.top = element_text(
+      size = 14,
+      face = "bold"
+    ),
+    legend.position = "top",
+    legend.box.margin = margin(b = -6, l = -152),
+    legend.margin = margin(l = -10, r = 8, t = 6, b = 6),
+    legend.text = element_markdown(
+      size = 12
+    ),
+    legend.title = element_text(
+      size = 14,
+      face = "bold",
+      margin = margin(r = 20)
+    ),
+    legend.background = element_rect(color = "grey20"),
+    plot.margin = margin(l = -20, r = 20, t = 6)
+  )
+```
+
+<br>
+
+```{r tbl_ein_sample_names}
+#| column: page
+
+ein_names_common_mar |>
+  select(-payer_name) |>
+  right_join(payer_names, by = "payer_id") |>
+  mutate(
+    payer_name = str_trunc(payer_name, 40),
+    business_name_value = map_chr(
+      business_name_value,
+      \(x) paste(str_trunc(x[1:3], 50), collapse = ", ")
+    ),
+    business_name_n_uniq = replace_na(business_name_n_uniq, 0),
+    business_name_value = replace_values(
+      business_name_value,
+      NA ~ "No business names posted",
+      "" ~ "No business names posted"
+    )
+  ) |>
+  arrange(payer_name) |>
+  select(
+    `Payer name` = payer_name,
+    `# of unique bus. names` = business_name_n_uniq,
+    `Top 3 most common business names by record count` = business_name_value
+  ) |>
+  write_csv("data/publish/tbl_bn_cnt_top.csv")
+```
