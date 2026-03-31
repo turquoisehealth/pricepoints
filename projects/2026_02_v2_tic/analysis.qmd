@@ -73,7 +73,7 @@ label_comma_short <- function(x) {
 
 ```{r load_data}
 DATA_DIR <- "data/output"
-DATA_DATE <- as.Date("2026-03-29")
+DATA_DATE <- as.Date("2026-03-30")
 
 # Load each parquet file in data/output/, stripping the date prefix to
 # create the dataframe name (e.g. 2026_02_18_payer_files_mar.parquet
