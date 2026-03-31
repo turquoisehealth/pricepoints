@@ -57,3 +57,8 @@ extended_capitalisation_policy = "upper"
 
 [tool.sqlfluff.rules.convention.casting_style]
 preferred_type_casting_style = "cast"
+
+[tool.sqlfluff.layout.type.where_clause]
+line_position = "alone"
+keyword_line_position = "leading"
+

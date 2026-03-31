@@ -122,5 +122,5 @@ LEFT JOIN existing_ein_counts AS ec ON nc.payer_id = ec.payer_id
 LEFT JOIN npi_type_counts AS ntc
     ON COALESCE(nc.payer_id, ec.payer_id) = ntc.payer_id
 WHERE nc.payer_id IN (
-    '7', '643', '389', '169', '151', '49', '504', '174', '229', '388'
-)
+        '7', '643', '389', '169', '151', '49', '504', '174', '229', '388'
+    )
